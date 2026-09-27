@@ -1747,7 +1747,9 @@ export class Hub {
         if (c.chosen) continue;
         if (c.awaitingScores.length) reasons.push(`proposals on "${c.topic}" need scores from ${[...new Set(c.awaitingScores.flatMap((a) => a.awaiting))].join(', ')}`);
         else if (c.ranked.length && !c.ranked.some((r) => r.choosable)) reasons.push(`every route on "${c.topic}" has an unanswered blocking objection`);
-        else if (c.ranked.length) reasons.push(`"${c.topic}" is ready to choose: ${c.verdict}`);
+        // The verdict is already a sentence ("ready: choose P#2"), so it is
+        // quoted rather than wrapped in a second lead-in.
+        else if (c.ranked.length) reasons.push(`"${c.topic}" — ${c.verdict}`);
       }
 
       const tasks = this.tasks({ idea: i.id });
