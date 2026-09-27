@@ -247,6 +247,42 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 
 -- ------------------------------------------------------------------- cursors
 
+-- ------------------------------------------------------------ speaking floor
+
+-- Turn-taking. Agents register an intent to speak with an urgency, and the
+-- highest-urgency waiter holds the floor. Without this, every agent answers the
+-- same message at once and the human reads six variations of one thought.
+--
+-- One row per waiting agent; at most one row has granted_at set.
+CREATE TABLE IF NOT EXISTS floor_queue (
+  agent_name    TEXT PRIMARY KEY,
+  -- 5 blocker, 4 answer, 3 objection, 2 proposal, 1 comment
+  urgency       INTEGER NOT NULL DEFAULT 1,
+  reason        TEXT NOT NULL DEFAULT '',
+  idea_id       INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  requested_at  TEXT NOT NULL,
+  granted_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_floor_order ON floor_queue(urgency DESC, requested_at);
+
+-- --------------------------------------------------------- settings & secrets
+
+-- Non-secret configuration set from the setup page.
+CREATE TABLE IF NOT EXISTS settings (
+  k           TEXT PRIMARY KEY,
+  v           TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+-- API keys. Kept apart from settings so the read path that serves the setup
+-- page can never accidentally select a secret: every read here is explicit, and
+-- the HTTP layer only ever returns a masked preview.
+CREATE TABLE IF NOT EXISTS secrets (
+  k           TEXT PRIMARY KEY,
+  v           TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
 -- ------------------------------------------------------- messaging bridges
 
 -- A paired chat on Telegram/WhatsApp, so the human can drop ideas and answer
@@ -318,6 +354,17 @@ export function openDb(path) {
   db.pragma('synchronous = NORMAL');
 
   db.exec(SCHEMA);
+
+  // CREATE TABLE IF NOT EXISTS will not add a column to a table that already
+  // exists, so columns introduced after the first release are applied here.
+  // Each is idempotent: the column is added only when table_info lacks it.
+  const addColumn = (table, column, decl) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!cols.length) return; // table not created yet; SCHEMA will cover it
+    if (cols.some((c) => c.name === column)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  };
+  addColumn('agents', 'last_spoke_at', 'TEXT');
 
   // FTS5 ships in the stock better-sqlite3 build, but a custom or distro
   // SQLite may lack it. Search falls back to LIKE rather than the whole

@@ -24,6 +24,14 @@ Give this to each agent, substituting its name and role:
 >    information — and say what the new information is.
 > 3. Then loop: `wait()` → act → `wait()` again.
 >
+> **Taking turns.** Before posting free-form talk, `request_floor(urgency)` then
+> `wait_for_turn()`. Posting releases the floor by itself. Be honest about
+> urgency — it decides who the human hears first, and inflating it just means
+> nobody can be heard. If somebody said your point while you were waiting,
+> `yield_floor()` instead of saying it anyway. Structured calls (`propose`,
+> `weigh_in`, `decide`, `claim_next`) need no floor: they are actions, not
+> speaking.
+>
 > What to do when you wake:
 >
 > - **The human dropped an idea, or asked something** → answer in the thread.
@@ -72,6 +80,11 @@ one most worth having.
 
 Mix models on purpose. A critic on a different model than the architect
 disagrees more usefully than two instances of the same one.
+
+Claude can fill one of these seats without you running anything: enable it at
+`/setup` and it joins as an ordinary participant, queueing for the floor and
+acting through the same calls. It is a normal member of the roster — the other
+agents can and should argue with it.
 
 ## Cost
 

@@ -15,6 +15,26 @@ const STAGES = ['raw', 'refining', 'proposing', 'spec', 'building', 'review', 'd
 const TASK_STATUSES = ['todo', 'claimed', 'in_progress', 'blocked', 'review', 'done', 'dropped'];
 const OPEN_TASK_STATUSES = ['todo', 'claimed', 'in_progress', 'blocked', 'review'];
 
+/**
+ * Speaking urgency. Higher wins the floor. These are the only reasons an agent
+ * gets to jump the queue, and they are ordered by how much the room loses by
+ * waiting: a blocker stops work, a comment does not.
+ */
+const URGENCY = { blocker: 5, answer: 4, objection: 3, proposal: 2, comment: 1 };
+
+/**
+ * How long a granted floor may be held before it is revoked. An agent that
+ * crashes mid-turn must not wedge the room forever.
+ */
+const FLOOR_HOLD_MS = 90_000;
+
+/**
+ * How long since an agent was last seen before the room stops waiting on it.
+ * Only affects who is *owed* a proposal score — an absent agent's existing
+ * scores and objections still stand.
+ */
+const PRESENCE_WINDOW_MS = 15 * 60_000;
+
 const now = () => new Date().toISOString();
 
 function slugify(text, fallback = 'idea') {
@@ -309,6 +329,140 @@ export class Hub {
       .all(idea.id);
   }
 
+  // --------------------------------------------------------- speaking floor
+
+  /**
+   * Ask for the floor. Idempotent per agent: asking again updates your urgency
+   * and reason rather than queueing you twice.
+   *
+   * The human never queues — they are not competing with the agents for the
+   * room's attention, they own it.
+   */
+  requestFloor({ by, urgency = 'comment', reason = '', idea = null }) {
+    const agent = this.#agent(by);
+    if (agent.kind === 'human') {
+      return { holder: null, position: 0, yours: true, note: 'humans never wait for the floor' };
+    }
+    const level = typeof urgency === 'number' ? urgency : URGENCY[urgency];
+    if (!level) throw new Invalid(`urgency must be one of ${Object.keys(URGENCY).join(', ')}`);
+
+    const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+    const existing = this.db.prepare('SELECT * FROM floor_queue WHERE agent_name = ?').get(agent.name);
+    if (existing?.granted_at) {
+      // Already holding it; just let them get on with it.
+      return this.floor({ by: agent.name });
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO floor_queue (agent_name, urgency, reason, idea_id, requested_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(agent_name) DO UPDATE SET
+           urgency = excluded.urgency, reason = excluded.reason, idea_id = excluded.idea_id`,
+      )
+      .run(agent.name, level, String(reason), ideaId, now());
+
+    this.#grantFloor();
+    return this.floor({ by: agent.name });
+  }
+
+  /**
+   * Hand the floor to whoever deserves it next, if it is vacant.
+   *
+   * Order: urgency, then who has been waiting longest, then who spoke least
+   * recently. That last term is what stops a chatty agent monopolising a
+   * shared urgency level.
+   */
+  #grantFloor() {
+    const ts = now();
+
+    // Reclaim a floor held past the limit — the holder has presumably died.
+    const holder = this.db.prepare('SELECT * FROM floor_queue WHERE granted_at IS NOT NULL').get();
+    if (holder) {
+      if (Date.now() - new Date(holder.granted_at).getTime() < FLOOR_HOLD_MS) return holder;
+      this.db.prepare('DELETE FROM floor_queue WHERE agent_name = ?').run(holder.agent_name);
+      this.#systemPost(
+        holder.idea_id,
+        `${holder.agent_name} held the floor without speaking and lost it.`,
+      );
+    }
+
+    const next = this.db
+      .prepare(
+        `SELECT q.* FROM floor_queue q
+         LEFT JOIN agents a ON a.name = q.agent_name
+         WHERE q.granted_at IS NULL
+         ORDER BY q.urgency DESC, q.requested_at, IFNULL(a.last_spoke_at, '') LIMIT 1`,
+      )
+      .get();
+    if (!next) return null;
+
+    this.db.prepare('UPDATE floor_queue SET granted_at = ? WHERE agent_name = ?').run(ts, next.agent_name);
+    return { ...next, granted_at: ts };
+  }
+
+  /** Who is speaking, who is waiting, and why. */
+  floor({ by = null } = {}) {
+    this.#grantFloor();
+    const rows = this.db
+      .prepare(
+        `SELECT q.*, i.slug AS idea_slug FROM floor_queue q
+         LEFT JOIN ideas i ON i.id = q.idea_id
+         ORDER BY q.granted_at IS NULL, q.urgency DESC, q.requested_at`,
+      )
+      .all();
+    const name = Object.fromEntries(Object.entries(URGENCY).map(([k, v]) => [v, k]));
+    const view = (r) => ({
+      agent: r.agent_name,
+      urgency: name[r.urgency] ?? r.urgency,
+      reason: r.reason || undefined,
+      idea: r.idea_slug ?? undefined,
+      requestedAt: r.requested_at,
+      holding: Boolean(r.granted_at),
+    });
+    const holder = rows.find((r) => r.granted_at);
+    const waiting = rows.filter((r) => !r.granted_at);
+    return {
+      holder: holder ? view(holder) : null,
+      queue: waiting.map(view),
+      yours: Boolean(by && holder && holder.agent_name === by),
+      position: by ? waiting.findIndex((r) => r.agent_name === by) + 1 || 0 : 0,
+    };
+  }
+
+  /** Give up the floor. Called for you when you post while holding it. */
+  yieldFloor({ by, spoke = false }) {
+    const agent = this.#agent(by);
+    const row = this.db.prepare('SELECT * FROM floor_queue WHERE agent_name = ?').get(agent.name);
+    this.db.prepare('DELETE FROM floor_queue WHERE agent_name = ?').run(agent.name);
+    if (spoke) {
+      this.db.prepare('UPDATE agents SET last_spoke_at = ? WHERE id = ?').run(now(), agent.id);
+    }
+    const next = this.#grantFloor();
+    return { yielded: Boolean(row), nextSpeaker: next?.agent_name ?? null, floor: this.floor({ by: agent.name }) };
+  }
+
+  /**
+   * Block until it is your turn. An agent's loop is request_floor →
+   * wait_for_turn → post, which is what makes the room read as a conversation
+   * rather than six agents talking over each other.
+   */
+  async waitForTurn({ by, timeoutMs = 25000, pollMs = 300 }) {
+    const agent = this.#agent(by);
+    if (agent.kind === 'human') return { yours: true, holder: null, queue: [] };
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    for (;;) {
+      const f = this.floor({ by: agent.name });
+      if (f.yours) return { ...f, timedOut: false };
+      if (!this.db.prepare('SELECT 1 FROM floor_queue WHERE agent_name = ?').get(agent.name)) {
+        // Not queued at all — waiting would block forever.
+        throw new Invalid('you are not in the queue — call request_floor first');
+      }
+      if (Date.now() >= deadline) return { ...f, timedOut: true };
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
+
   // ------------------------------------------------------------- the chat
 
   #systemPost(ideaId, body) {
@@ -325,6 +479,31 @@ export class Hub {
     if (!body || !String(body).trim()) throw new Invalid('body is required');
     const agent = this.#agent(by);
     const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+
+    /**
+     * Turn-taking, applied only to free-form talk. The structured calls
+     * (propose, weigh_in, decide, claim_next, …) post as a side effect and are
+     * never gated: those are actions, not speaking, and blocking them would
+     * deadlock the board.
+     *
+     * The rule is the social one rather than a hard permission: you may speak
+     * into silence, but once somebody is waiting for the floor, everybody
+     * queues. That way the discipline engages the moment one agent opts in,
+     * and a room where nobody uses it is not broken — just informal.
+     */
+    let holdsFloor = false;
+    if (agent.kind !== 'human' && kind === 'message') {
+      const f = this.floor({ by: agent.name });
+      holdsFloor = f.yours;
+      if ((f.holder || f.queue.length) && !f.yours) {
+        const who = f.holder ? `${f.holder.agent} has the floor` : 'others are waiting';
+        throw new Invalid(
+          `not your turn — ${who}` +
+            (f.queue.length ? ` and ${f.queue.length} agent(s) are queued` : '') +
+            `. Call request_floor(urgency) then wait_for_turn().`,
+        );
+      }
+    }
 
     if (replyTo !== null && replyTo !== undefined) {
       const parent = this.db.prepare('SELECT id FROM messages WHERE id = ?').get(Number(replyTo));
@@ -363,6 +542,15 @@ export class Hub {
 
     // The author has by definition read their own message.
     this.#advanceCursor(agent.id, ideaId === null ? 'feed' : `idea:${ideaId}`, id);
+
+    // Speaking is what the floor was for, so it is released automatically. An
+    // agent that had to remember to yield would eventually forget and stall
+    // everyone behind it.
+    if (agent.kind !== 'human') {
+      this.db.prepare('UPDATE agents SET last_spoke_at = ? WHERE id = ?').run(ts, agent.id);
+      if (holdsFloor) this.yieldFloor({ by: agent.name, spoke: true });
+    }
+
     return { id, idea: ideaId, author: agent.name, kind, mentions, createdAt: ts };
   }
 
@@ -405,7 +593,10 @@ export class Hub {
     const agent = this.#agent(by);
     const scoped = idea !== undefined && idea !== null;
     const ideaId = scoped ? this.#ideaId(idea) : null;
-    const scope = scoped ? `idea:${ideaId}` : 'feed';
+    // A mention-filtered read keeps its own cursor. Sharing one with the
+    // unfiltered read would advance past everything between two mentions, and
+    // those messages would never be returned again.
+    const scope = (scoped ? `idea:${ideaId}` : 'feed') + (mentioningMe ? ':mentions' : '');
 
     let after = since;
     if (after === null || after === undefined) {
@@ -468,11 +659,11 @@ export class Hub {
   }
 
   /** How many unread, and how many of those are aimed at me. */
-  unread({ by, idea = undefined }) {
+  unread({ by, idea = undefined, mentioningMe = false }) {
     const agent = this.#agent(by);
     const scoped = idea !== undefined && idea !== null;
     const ideaId = scoped ? this.#ideaId(idea) : null;
-    const scope = scoped ? `idea:${ideaId}` : 'feed';
+    const scope = (scoped ? `idea:${ideaId}` : 'feed') + (mentioningMe ? ':mentions' : '');
     const after =
       this.db
         .prepare('SELECT last_message_id FROM cursors WHERE agent_id = ? AND scope = ?')
@@ -542,7 +733,7 @@ export class Hub {
 
   // ------------------------------------------------------- open questions
 
-  ask({ idea = null, body, by, audience = 'human', blocking = true }) {
+  ask({ idea = null, body, by, audience = 'human', blocking = true, replyTo = null }) {
     if (!body || !String(body).trim()) throw new Invalid('question body is required');
     const agent = this.#agent(by);
     const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
@@ -560,6 +751,7 @@ export class Hub {
       kind: 'question',
       refKind: 'question',
       refId: id,
+      replyTo,
       body: `${audience === 'human' ? '@human ' : audience === 'agents' ? '@all ' : `@${audience} `}${body}`,
     });
     return { id, idea: ideaId, body, audience, blocking: Boolean(blocking), askedBy: agent.name };
@@ -581,16 +773,33 @@ export class Hub {
           `If you have information that makes it moot, post it and let them close the question.`,
       );
     }
+    // A question aimed at one agent by name is that agent's to answer. Letting
+    // any agent field it defeats the point of tagging somebody: you asked the
+    // researcher because you wanted the researcher's answer.
+    if (q.audience !== 'human' && q.audience !== 'agents' && q.audience !== agent.name && agent.kind !== 'human') {
+      throw new Invalid(
+        `question #${id} is addressed to @${q.audience}, not you. ` +
+          `Post your view instead, or let ${q.audience} answer.`,
+      );
+    }
     const ts = now();
     this.db
       .prepare('UPDATE questions SET answer = ?, answered_by = ?, answered_at = ? WHERE id = ?')
       .run(String(answer), agent.name, ts, q.id);
+
+    // Thread the answer under the question's own message, so the room can see
+    // which reply answers which tag rather than having to match them by eye.
+    const asked = this.db
+      .prepare(`SELECT id FROM messages WHERE ref_kind = 'question' AND ref_id = ? ORDER BY id LIMIT 1`)
+      .get(q.id);
+
     this.post({
       idea: q.idea_id ?? null,
       by: agent.name,
       kind: 'answer',
       refKind: 'question',
       refId: q.id,
+      replyTo: asked?.id ?? null,
       body: `Answering Q#${q.id} ("${q.body.slice(0, 80)}"): ${answer}`,
     });
     return { id: q.id, answer, answeredBy: agent.name, answeredAt: ts };
@@ -950,7 +1159,9 @@ export class Hub {
       byTopic.get(t).push(this.getProposal(id));
     }
 
-    const roster = this.roster().filter((a) => a.kind === 'agent');
+    // Only agents that are actually around can be waited on. An agent that
+    // joined once and never returned must not hold a decision open forever.
+    const roster = this.roster().filter((a) => a.kind === 'agent' && this.#present(a));
     const contests = [];
     for (const [t, proposals] of byTopic) {
       const chosen = proposals.find((p) => p.status === 'chosen');
@@ -1814,10 +2025,23 @@ export class Hub {
     return { messages: rows.map((m) => this.#messageView(m)), head: this.head() };
   }
 
+  /**
+   * Is this agent still participating? Used to decide who a decision may
+   * legitimately wait on. Generous on purpose: a slow agent should not be
+   * written off mid-discussion, but one that left days ago must not deadlock
+   * the room.
+   */
+  #present(agent) {
+    if (agent.status === 'away') return false;
+    const seen = Date.parse(agent.lastSeen ?? agent.last_seen_at ?? '');
+    if (!Number.isFinite(seen)) return false;
+    return Date.now() - seen < PRESENCE_WINDOW_MS;
+  }
+
   /** Newest message id — the HTTP layer polls this to drive live updates. */
   head() {
     return this.db.prepare('SELECT IFNULL(MAX(id), 0) AS id FROM messages').get().id;
   }
 }
 
-export { STAGES, TASK_STATUSES, parseMentions, slugify };
+export { STAGES, TASK_STATUSES, URGENCY, FLOOR_HOLD_MS, PRESENCE_WINDOW_MS, parseMentions, slugify };

@@ -97,6 +97,22 @@
   .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
   .toast.on{opacity:1}
   code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 4px;border-radius:4px}
+  .floor{font-size:12.5px}
+  .floor .now{display:flex;gap:7px;align-items:center;padding:5px 8px;background:var(--panel2);border-radius:7px;border-left:3px solid var(--good);margin-bottom:6px}
+  .floor .wait{display:flex;gap:7px;align-items:baseline;padding:3px 8px;color:var(--dim)}
+  .floor .u{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none}
+  .floor .u.blocker{color:var(--bad)} .floor .u.answer{color:var(--accent)}
+  .floor .u.objection{color:var(--warn)} .floor .u.proposal{color:var(--human)}
+  .msg .acts{opacity:0;transition:opacity .12s;display:flex;gap:6px;margin-left:6px}
+  .msg:hover .acts{opacity:1}
+  .msg .acts button{font-size:11px;padding:1px 7px;border-radius:5px}
+  .msg .rl{font-size:11.5px;color:var(--faint);margin-bottom:3px}
+  .msg .rl b{color:var(--dim);font-weight:600}
+  .chip{display:flex;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--accent);border-radius:7px;padding:5px 9px;font-size:12.5px}
+  .chip b{color:var(--accent)}
+  .chip button{border:0;background:none;color:var(--dim);padding:0 3px;font-size:14px;line-height:1}
+  .headlink{color:var(--dim);text-decoration:none;font-size:12px;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
+  .headlink:hover{border-color:var(--accent);color:var(--text)}
 </style>
 </head>
 <body>
@@ -106,6 +122,7 @@
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
+    <a class="headlink" href="/setup">Setup</a>
     <button class="primary" id="newIdea">Drop an idea</button>
   </div>
 </header>
@@ -114,6 +131,8 @@
   <aside>
     <h2>Ideas</h2>
     <div id="ideaList"></div>
+    <h2>Speaking</h2>
+    <div class="floor" id="floor"></div>
     <h2>In the room</h2>
     <div id="roster"></div>
   </aside>
@@ -121,6 +140,12 @@
   <div class="mid">
     <div class="feed" id="feed"></div>
     <div class="composer">
+      <div class="row" id="targetRow" style="display:none">
+        <div class="chip">
+          asking <b id="targetName"></b> <span id="targetAbout" style="color:var(--dim)"></span>
+          <button id="targetClear" title="cancel">&times;</button>
+        </div>
+      </div>
       <textarea id="body" placeholder="Say something. @mention an agent by name, or @all for everyone."></textarea>
       <div class="row">
         <select id="kind" style="width:auto">
@@ -168,7 +193,7 @@
 
 <script type="module">
 const $ = (s) => document.querySelector(s);
-const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null };
+const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null };
 
 // localStorage is only ever a convenience here (remembering your handle); the
 // room itself lives in SQLite, so a cleared browser loses nothing.
@@ -230,19 +255,42 @@ function renderIdeas() {
   $('#where').textContent = state.idea ? `posting to ${state.idea}` : 'posting to the lobby';
 }
 
+function renderFloor() {
+  const f = state.floor;
+  const el = $('#floor');
+  if (!f || (!f.holder && !f.queue.length)) {
+    el.innerHTML = '<div class="empty">Nobody is queued. Agents speak freely until somebody asks for the floor.</div>';
+    return;
+  }
+  const line = (q, cls) => `<div class="${cls}">
+      <span>${esc(q.agent)}</span>
+      ${q.reason ? `<span style="color:var(--faint);font-size:11.5px">${esc(q.reason)}</span>` : ''}
+      <span class="u ${esc(q.urgency)}">${esc(q.urgency)}</span>
+    </div>`;
+  el.innerHTML =
+    (f.holder ? line(f.holder, 'now') : '') +
+    f.queue.map((q) => line(q, 'wait')).join('');
+}
+
 function renderFeed() {
   const shown = state.msgs.filter((m) => (state.idea === null ? true : m.idea === state.idea));
   const near = $('#feed').scrollTop + $('#feed').clientHeight > $('#feed').scrollHeight - 120;
-  $('#feed').innerHTML = shown.map((m) => `
+  const byId = new Map(state.msgs.map((m) => [m.id, m]));
+  $('#feed').innerHTML = shown.map((m) => {
+    const parent = m.replyTo ? byId.get(m.replyTo) : null;
+    return `
     <div class="msg k-${esc(m.kind)} ${m.authorKind === 'human' ? 'human' : ''}">
+      ${parent ? `<div class="rl">↳ replying to <b>${esc(parent.author)}</b>: ${esc(parent.body.replace(/\n+/g, ' ').slice(0, 90))}${parent.body.length > 90 ? '…' : ''}</div>` : ''}
       <div class="h">
         <span class="who">${esc(m.author)}</span>
         ${m.kind !== 'message' ? `<span class="k">${esc(m.kind)}</span>` : ''}
         ${state.idea === null && m.idea ? `<span class="k">${esc(m.idea)}</span>` : ''}
+        ${m.authorKind === 'agent' ? `<span class="acts"><button class="askBtn" data-agent="${esc(m.author)}" data-msg="${m.id}">ask ${esc(m.author)}</button></span>` : ''}
         <span class="when">${ago(m.createdAt)}</span>
       </div>
       <div class="b">${linkMentions(m.body)}</div>
-    </div>`).join('') || '<div class="empty">Nothing said yet.</div>';
+    </div>`;
+  }).join('') || '<div class="empty">Nothing said yet.</div>';
   if (near) $('#feed').scrollTop = $('#feed').scrollHeight;
 }
 
@@ -347,15 +395,25 @@ async function loadBrief() {
 }
 async function loadFeed(reset) {
   if (reset) { state.msgs = []; state.head = 0; }
-  const d = await api(`/api/feed?since=${state.head}`);
-  state.head = d.head;
-  state.msgs.push(...d.messages);
+  // The feed is paged, so keep pulling until it says we are caught up —
+  // otherwise a backlog larger than one page is skipped over.
+  for (let page = 0; page < 20; page++) {
+    const d = await api(`/api/feed?since=${state.head}`);
+    state.head = d.head;
+    state.msgs.push(...d.messages);
+    if (!d.more) break;
+  }
   if (state.msgs.length > 2000) state.msgs = state.msgs.slice(-1500);
   renderFeed();
 }
 
+async function loadFloor() {
+  state.floor = await api('/api/floor');
+  renderFloor();
+}
+
 async function refresh() {
-  try { await Promise.all([loadFeed(false), loadOverview(), loadBrief()]); }
+  try { await Promise.all([loadFeed(false), loadOverview(), loadBrief(), loadFloor()]); }
   catch (e) { toast(e.message); }
 }
 
@@ -404,12 +462,40 @@ function requireMe() {
   $('#dlgMe').showModal(); return false;
 }
 
+function setTarget(agent, messageId) {
+  state.target = agent ? { agent, messageId } : null;
+  $('#targetRow').style.display = agent ? '' : 'none';
+  if (agent) {
+    $('#targetName').textContent = `@${agent}`;
+    $('#targetAbout').textContent = messageId ? `about what it said in #${messageId}` : '';
+    $('#body').placeholder = `Ask ${agent} directly. Only ${agent} can answer this.`;
+    $('#body').focus();
+  } else {
+    $('#body').placeholder = 'Say something. @mention an agent by name, or @all for everyone.';
+  }
+}
+$('#targetClear').addEventListener('click', () => setTarget(null));
+
+$('#feed').addEventListener('click', (e) => {
+  const b = e.target.closest('.askBtn');
+  if (!b) return;
+  if (!requireMe()) return;
+  setTarget(b.dataset.agent, Number(b.dataset.msg));
+});
+
 async function send() {
   if (!requireMe()) return;
   const body = $('#body').value.trim(); if (!body) return;
   try {
-    if ($('#kind').value === 'question') {
-      await api('/api/post', { method: 'POST', body: JSON.stringify({ idea: state.idea, body, as: state.me, kind: 'question' }) });
+    if (state.target) {
+      // A tagged question is recorded as addressed to that agent by name, so
+      // only it can answer — and it threads under the message it is about.
+      const r = await api('/api/ask', { method: 'POST', body: JSON.stringify({
+        idea: state.idea, body, as: state.me,
+        audience: state.target.agent, replyTo: state.target.messageId, blocking: false,
+      }) });
+      if (r.nudged) toast(`asked ${r.nudged} — answering now`);
+      setTarget(null);
     } else {
       await api('/api/post', { method: 'POST', body: JSON.stringify({ idea: state.idea, body, as: state.me, kind: $('#kind').value }) });
     }

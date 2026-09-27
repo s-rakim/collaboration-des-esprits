@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Hub, NotFound, Invalid } from '../core.js';
 import { buildServer } from '../mcp/tools.js';
+import { createConfig } from '../settings.js';
+import { createClaudeParticipant } from '../participants/claude.js';
+import { createRouter } from '../bridges/commands.js';
+import { createTelegram } from '../bridges/telegram.js';
 
 /**
  * Network entrypoint. Serves three things off one port:
@@ -25,7 +29,19 @@ const PORT = Number(process.env.PORT ?? process.env.ESPRITS_PORT ?? 4300);
 const HOST = process.env.ESPRITS_HOST ?? '127.0.0.1';
 const TOKEN = process.env.ESPRITS_TOKEN ?? '';
 
+/** Feed page size. The client follows `more` until it catches up. */
+const FEED_PAGE = 500;
+
 const hub = new Hub({ dbPath: process.env.ESPRITS_DB });
+const config = createConfig(hub.db);
+
+/**
+ * Optional in-process participants. Assigned during startup below; the routes
+ * close over these bindings, so they must exist before the app is built.
+ */
+let claude = null;
+let telegram = null;
+
 const app = express();
 app.use(express.json({ limit: '4mb' }));
 
@@ -119,11 +135,16 @@ app.get('/api/feed', (req, res) =>
         `SELECT m.*, i.slug AS idea_slug FROM messages m
          LEFT JOIN ideas i ON i.id = m.idea_id
          WHERE m.id > ? ${req.query.idea ? 'AND i.slug = ?' : ''}
-         ORDER BY m.id LIMIT 500`,
+         ORDER BY m.id LIMIT ?`,
       )
-      .all(...(req.query.idea ? [since, req.query.idea] : [since]));
+      .all(...(req.query.idea ? [since, req.query.idea, FEED_PAGE] : [since, FEED_PAGE]));
+    // Report the last row actually returned, not the true head: a capped page
+    // must leave the client's cursor where the next page begins, or everything
+    // between here and the head is skipped.
+    const capped = rows.length === FEED_PAGE;
     return {
-      head: hub.head(),
+      head: capped ? rows[rows.length - 1].id : hub.head(),
+      more: capped,
       messages: rows.map((m) => ({
         id: m.id,
         idea: m.idea_slug,
@@ -131,6 +152,7 @@ app.get('/api/feed', (req, res) =>
         authorKind: m.author_kind,
         kind: m.kind,
         body: m.body,
+        replyTo: m.reply_to ?? null,
         ref: m.ref_kind ? { kind: m.ref_kind, id: m.ref_id } : null,
         createdAt: m.created_at,
       })),
@@ -158,6 +180,125 @@ app.post('/api/advance', (req, res) =>
   send(res, () => hub.advance({ ref: req.body.idea, stage: req.body.stage, by: req.body.as, force: Boolean(req.body.force) })),
 );
 app.post('/api/join', (req, res) => send(res, () => hub.join(req.body)));
+
+/**
+ * Tag one agent with a question. The question is recorded as addressed to that
+ * agent by name, which means only it (or the human) can answer — asking the
+ * researcher should get the researcher's answer, not whoever happens to be idle.
+ *
+ * When the tagged agent is the in-process Claude participant, it is nudged
+ * immediately rather than waiting for its watch loop; the answer arrives over
+ * the live feed like any other message.
+ */
+app.post('/api/ask', (req, res) =>
+  send(res, () => {
+    const audience = String(req.body?.audience ?? 'agents');
+    const q = hub.ask({
+      idea: req.body.idea ?? null,
+      body: req.body.body,
+      by: req.body.as,
+      audience,
+      blocking: req.body.blocking !== false,
+      replyTo: req.body.replyTo ?? null,
+    });
+
+    if (claude && audience === claude.name && config.secret('anthropic_api_key')) {
+      // Deliberately not awaited: a reply can take a while, and the page should
+      // not sit on an open request when the feed will deliver the answer.
+      claude
+        .askDirect({ body: req.body.body, idea: req.body.idea ?? null, from: req.body.as })
+        .catch((err) => process.stderr.write(`claude: direct ask failed — ${err.message}\n`));
+      return { ...q, nudged: claude.name };
+    }
+    return q;
+  }),
+);
+
+// ------------------------------------------------------------------ setup page
+
+app.get('/api/settings', (_req, res) => send(res, () => config.describe()));
+
+app.post('/api/settings', (req, res) =>
+  send(res, () => {
+    const { settings = {}, secrets = {} } = req.body ?? {};
+    const before = config.describe();
+    const applied = [];
+    for (const [k, v] of Object.entries(settings)) {
+      // An env-locked field is read-only; saving it would appear to work and
+      // then have no effect, which is worse than refusing.
+      if (before.settings[k]?.locked) continue;
+      config.set(k, v);
+      applied.push(k);
+    }
+    for (const [k, v] of Object.entries(secrets)) {
+      if (before.secrets[k]?.locked) continue;
+      // An empty string means "clear it"; an unchanged masked preview is never
+      // sent back by the page, so a blank field cannot wipe a stored key by
+      // accident — the page sends only fields the user actually edited.
+      config.setSecret(k, v === '' ? null : v);
+      applied.push(k);
+    }
+    return { applied, ...config.describe() };
+  }),
+);
+
+/** Does the configured key actually work? Cheapest possible real call. */
+app.post('/api/settings/test-anthropic', async (req, res) => {
+  const key = config.secret('anthropic_api_key');
+  if (!key) return res.status(400).json({ ok: false, error: 'no API key set' });
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: key });
+    const r = await client.messages.create({
+      model: config.get('claude_model'),
+      // Thinking is on by default on current models, so a tiny budget can be
+      // spent before any text is emitted. Leave room and keep effort low.
+      max_tokens: 1024,
+      output_config: { effort: 'low' },
+      messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+    });
+    if (r.stop_reason === 'refusal') {
+      return res.status(400).json({ ok: false, error: 'the model declined the test request' });
+    }
+    const said = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    res.json({ ok: true, model: r.model, said: said || '(no text, but the call succeeded)' });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message, status: err.status });
+  }
+});
+
+// -------------------------------------------------------- talking to Claude
+
+app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
+
+/**
+ * Ask Claude directly and get the answer in this request, rather than waiting
+ * for the watch loop to notice. This is what the chat page's "ask Claude"
+ * button uses, and what tagging @claude in a message resolves to.
+ */
+app.post('/api/claude/ask', async (req, res) => {
+  if (!claude) return res.status(400).json({ error: 'the Claude participant is not configured' });
+  if (!config.secret('anthropic_api_key')) {
+    return res.status(400).json({ error: 'no Anthropic API key — add one on the setup page' });
+  }
+  const body = String(req.body?.body ?? '').trim();
+  if (!body) return res.status(400).json({ error: 'body is required' });
+  try {
+    // Post the human's question first so the room sees what was asked, then
+    // let Claude answer into the same thread.
+    hub.post({
+      idea: req.body.idea ?? null,
+      body: `@${claude.name} ${body}`,
+      by: req.body.as,
+      kind: 'question',
+    });
+    const r = await claude.askDirect({ body, idea: req.body.idea ?? null, from: req.body.as });
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    const status = err instanceof NotFound ? 404 : err instanceof Invalid ? 400 : 502;
+    res.status(status).json({ error: err.message });
+  }
+});
 
 /**
  * Live updates by polling the message high-water mark. Chosen over websockets
@@ -195,6 +336,9 @@ app.get('/api/events', (req, res) => {
   req.on('close', () => clearInterval(tick));
 });
 
+// /setup is friendlier to type than /setup.html.
+app.get('/setup', (_req, res) => res.redirect('/setup.html'));
+
 app.use(express.static(join(here, '..', 'web')));
 
 // ------------------------------------------------------------------- listen
@@ -209,12 +353,54 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
   process.exit(1);
 }
 
+/**
+ * The Claude participant and the Telegram bridge run in this process when they
+ * are configured, so `npm start` is the whole system. Each is optional and
+ * neither can take the server down: a missing key or a bad token leaves that
+ * piece idle and logs why.
+ */
+function startParticipants() {
+  claude = createClaudeParticipant({ hub, config, log: (m) => process.stdout.write(`${m}\n`) });
+  if (config.bool('claude_enabled')) {
+    if (config.secret('anthropic_api_key')) {
+      claude.run().catch((err) => process.stderr.write(`claude: stopped — ${err.message}\n`));
+    } else {
+      // Still constructed, so /api/claude/ask can report the real reason and
+      // the setup page can enable it without a restart.
+      process.stdout.write('claude: enabled but no API key yet — add one at /setup\n');
+    }
+  }
+
+  const token = config.secret('telegram_token');
+  const pairCode = config.secret('pair_code');
+  if (config.bool('telegram_enabled')) {
+    if (!token || !pairCode) {
+      process.stdout.write('telegram: enabled but needs both a bot token and a pairing code — set them at /setup\n');
+    } else {
+      const router = createRouter({ hub, pairCode, defaultHandle: config.get('human_handle') });
+      telegram = createTelegram({ hub, router, token, log: (m) => process.stdout.write(`${m}\n`) });
+      telegram.run().catch((err) => process.stderr.write(`telegram: stopped — ${err.message}\n`));
+    }
+  }
+}
+
 app.listen(PORT, HOST, () => {
   process.stdout.write(
     `collaboration-des-esprits\n` +
       `  room       http://${HOST}:${PORT}/\n` +
+      `  setup      http://${HOST}:${PORT}/setup\n` +
       `  connector  http://${HOST}:${PORT}/mcp\n` +
       `  database   ${hub.db.name}\n` +
-      `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n`,
+      `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n` +
+      `  claude     ${config.bool('claude_enabled') ? (config.secret('anthropic_api_key') ? `on (${config.get('claude_model')})` : 'enabled, no key yet') : 'off'}\n` +
+      `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n`,
   );
+  startParticipants();
 });
+
+const shutdown = () => {
+  try { claude?.stop(); telegram?.stop(); hub.close(); } catch { /* best effort */ }
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

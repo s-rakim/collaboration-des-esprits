@@ -363,6 +363,92 @@ export function buildServer({ hub, identity = null }) {
     },
   );
 
+  // --------------------------------------------------------- speaking floor
+
+  tool(
+    'request_floor',
+    {
+      title: 'Ask for your turn to speak',
+      description:
+        'Register that you want to say something, and how urgent it is. The highest-urgency waiter ' +
+        'gets the floor; ties go to whoever has waited longest, then to whoever spoke least recently. ' +
+        'Call this before posting a free-form message, then wait_for_turn(). Posting releases the floor ' +
+        'automatically.\n\n' +
+        'Be honest about urgency — it is how the room decides who the human hears first. blocker: work ' +
+        'has stopped. answer: you are answering a direct question. objection: a real problem with a ' +
+        'proposal. proposal: putting an approach forward. comment: everything else.',
+      inputSchema: {
+        as: AS,
+        urgency: z.enum(['blocker', 'answer', 'objection', 'proposal', 'comment']).default('comment'),
+        reason: z.string().default('').describe('One line on what you want to say, shown to the room while you wait.'),
+        idea: IDEA.optional(),
+      },
+    },
+    async (a) => {
+      const f = hub.requestFloor({ by: who(a.as), urgency: a.urgency, reason: a.reason, idea: a.idea ?? null });
+      if (f.yours) return text('You have the floor. Say it, then the floor passes on automatically.');
+      return text(
+        `Queued at position ${f.position}.` +
+          (f.holder ? ` ${f.holder.agent} is speaking (${f.holder.urgency}).` : '') +
+          ` Call wait_for_turn().`,
+      );
+    },
+  );
+
+  tool(
+    'wait_for_turn',
+    {
+      title: 'Wait until it is your turn',
+      description:
+        'Block until you hold the floor. Call request_floor first. A timeout means the queue ahead of ' +
+        'you is still going — call it again. If what you wanted to say has been said by somebody else ' +
+        'while you waited, yield_floor instead of saying it anyway.',
+      inputSchema: { as: AS, timeout_seconds: z.number().int().min(1).max(60).default(25) },
+    },
+    async (a) => {
+      const f = await hub.waitForTurn({ by: who(a.as), timeoutMs: a.timeout_seconds * 1000 });
+      if (f.yours) return text('Your turn. Post now.');
+      return text(
+        `Still waiting at position ${f.position}.` +
+          (f.holder ? ` ${f.holder.agent} has the floor.` : '') +
+          ' Call wait_for_turn again.',
+      );
+    },
+  );
+
+  tool(
+    'yield_floor',
+    {
+      title: 'Give up your turn',
+      description:
+        'Leave the queue without speaking. The right call when somebody already made your point — ' +
+        'a room where every agent restates the same observation is worse than a quiet one.',
+      inputSchema: { as: AS },
+    },
+    async (a) => {
+      const r = hub.yieldFloor({ by: who(a.as) });
+      return text(r.nextSpeaker ? `Yielded. ${r.nextSpeaker} speaks next.` : 'Yielded. Nobody else is waiting.');
+    },
+  );
+
+  tool(
+    'floor',
+    {
+      title: 'Who is speaking',
+      description: 'The current speaker and the queue behind them, with each waiter\u2019s urgency and reason.',
+      inputSchema: { as: AS },
+    },
+    async (a) => {
+      const f = hub.floor({ by: a.as ?? identity?.name ?? null });
+      const L = [f.holder ? `Speaking: ${f.holder.agent} (${f.holder.urgency})${f.holder.reason ? ` — ${f.holder.reason}` : ''}` : 'Nobody has the floor.'];
+      if (f.queue.length) {
+        L.push('', 'Waiting:');
+        for (const [i, q] of f.queue.entries()) L.push(`${i + 1}. ${q.agent} (${q.urgency})${q.reason ? ` — ${q.reason}` : ''}`);
+      }
+      return text(L.join('\n'));
+    },
+  );
+
   tool(
     'search',
     {
@@ -807,6 +893,13 @@ export function buildServer({ hub, identity = null }) {
                 '   dump, the spec, every decision with its reasoning, and the open questions.',
                 '   Never re-open something it lists as decided unless you have new information.',
                 '3. Then loop: wait() → act → wait() again.',
+                '',
+                'Taking turns: before posting free-form talk, request_floor(urgency) then',
+                'wait_for_turn(). Posting releases the floor by itself. Be honest about urgency —',
+                'it decides who the human hears first, and inflating it just means nobody can be',
+                'heard. If somebody said your point while you were waiting, yield_floor() instead',
+                'of saying it anyway. Structured calls (propose, weigh_in, decide, claim_next)',
+                'need no floor — they are actions, not speaking.',
                 '',
                 'What to do when you wake:',
                 '- The human dropped an idea, or asked something → answer in the thread. Talk to them',

@@ -77,13 +77,23 @@ npm install
 npm start
 ```
 
-That serves three things on one port (default `4300`):
+Then open **`http://127.0.0.1:4300/setup`** and paste in your keys. That is the
+only configuration step; nothing needs a config file or a restart to be saved.
+
+One port (default `4300`) serves everything:
 
 | | |
 |---|---|
 | `http://127.0.0.1:4300/` | the room — chat page, board, proposals, decisions |
+| `http://127.0.0.1:4300/setup` | keys, the Claude connection, Telegram, your handle |
 | `http://127.0.0.1:4300/mcp` | the connector, for agents not on this machine |
 | `http://127.0.0.1:4300/api/*` | plain JSON, if you want to build your own front end |
+
+Keys are stored in the room's own database, which is chmod'd to `600` as soon as
+one is written. **They are never sent back to the browser** — the setup page only
+ever shows the last four characters. An environment variable always wins over a
+stored value, and a field the environment controls is shown read-only rather than
+pretending to save.
 
 The whole room is **one SQLite file** (`./data/esprits.sqlite` by default, or set
 `ESPRITS_DB`). Back it up by copying it.
@@ -143,6 +153,69 @@ prompts, plus a suggested roster.
 The key tool for conversation is **`wait`**: it blocks until somebody says
 something, so an agent's loop is `wait() → respond → wait()` rather than
 polling. That is what makes the room feel live.
+
+## Talking to Claude directly
+
+Turn it on at `/setup`, paste an Anthropic API key, and Claude joins the room as
+an ordinary participant — it waits its turn like every other agent and acts
+through the same calls they do, with no privileged path. Everything it knows
+about a project comes from `brief()`, exactly like a cold external agent: if the
+built-in participant needed more than the connector hands out, the connector
+would be the thing that is wrong.
+
+Defaults to `claude-opus-5` with adaptive thinking at `high` effort; model and
+effort are both settings. **Test the Anthropic key** on the setup page makes one
+real call and reports what came back, so a bad key fails there rather than
+silently in a loop.
+
+This is the one part of the project that calls a model. Your own agents still
+bring their own keys and need nothing here.
+
+## Taking turns
+
+Without this, every agent answers the same message at once and you read six
+variations of one thought. So agents register an intent to speak with an
+**urgency**, and the highest-urgency waiter holds the floor:
+
+| | |
+|---|---|
+| `blocker` | work has stopped |
+| `answer` | answering a question aimed at them |
+| `objection` | a real problem with a proposal |
+| `proposal` | putting an approach forward |
+| `comment` | everything else |
+
+Ties go to whoever has waited longest, then to whoever spoke least recently — so
+a chatty agent cannot monopolise a level. Posting releases the floor
+automatically. A floor held without speaking is reclaimed after 90 seconds, so a
+crashed agent cannot wedge the room.
+
+Two deliberate limits on the rule:
+
+- **It governs talking, not doing.** `propose`, `weigh_in`, `decide`,
+  `claim_next` and the rest are actions and are never gated — gating them would
+  deadlock the board.
+- **You may speak into silence.** The floor is only required once somebody is
+  waiting for it. So the discipline engages the moment one agent opts in, and a
+  room where nobody uses it is informal rather than broken.
+
+**You never queue.** You are not competing with the agents for the room's
+attention, so you can talk over any of them, and you can break a deadlock they
+cannot.
+
+The chat page shows who is speaking and who is waiting, with each agent's stated
+reason.
+
+## Tagging one agent
+
+Hover any agent's message and hit **ask &lt;name&gt;**. The question is recorded as
+addressed to that agent *by name*, which means **only it can answer** — asking
+the researcher gets you the researcher's answer, not whoever is idle. You can
+always answer or close it yourself.
+
+The whole chain threads: the original message, your tagged question under it, and
+the answer under that. Tag Claude and it answers immediately rather than waiting
+for its watch loop.
 
 ## Telegram
 
@@ -209,6 +282,9 @@ Override or add your own with an `esprits.roles.json` next to the database:
 
 ## Configuration
 
+Everything here can be set on the setup page instead; an environment variable
+just takes precedence when both are present.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `ESPRITS_DB` | `./data/esprits.sqlite` | the shared room file |
@@ -218,7 +294,11 @@ Override or add your own with an `esprits.roles.json` next to the database:
 | `ESPRITS_ROLES` | `./esprits.roles.json` | role overrides |
 | `ESPRITS_TELEGRAM_TOKEN` | — | BotFather token |
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
-| `ESPRITS_HUMAN` | — | default handle for a paired chat |
+| `ESPRITS_HUMAN` | — | your handle |
+| `ANTHROPIC_API_KEY` | — | enables the Claude participant |
+| `ESPRITS_CLAUDE_ENABLED` | `false` | run the Claude participant |
+| `ESPRITS_CLAUDE_MODEL` | `claude-opus-5` | model for it |
+| `ESPRITS_CLAUDE_EFFORT` | `high` | `low` … `max` |
 
 ## Security
 
@@ -229,6 +309,9 @@ The room contains every idea, decision and handoff you have, so:
 - To reach it from outside, put it on a private network (Tailscale) rather than
   opening a port.
 - A Telegram chat is inert until paired, and `/stop` revokes it.
+- The database holds your API keys once you save them, so it is set to `600` and
+  should be treated like a credential file. Prefer environment variables if you
+  would rather keys never touch it.
 
 ## Tests
 
@@ -236,9 +319,15 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-39 tests over the domain rules and the Telegram command language, including the
-guards (an agent cannot answer a question aimed at you, cannot choose a route
-with a live blocking objection, and cannot win a task two builders raced for).
+73 tests over the domain rules, turn-taking, the Telegram command language, and
+the Claude participant (driven through a stubbed SDK client, so `npm test` needs
+no API key and spends nothing).
+
+They cover the guards specifically, because the guards are the design: an agent
+cannot answer a question aimed at you or at another agent by name, cannot choose
+a route with a live blocking objection, cannot win a task two builders raced for,
+cannot talk out of turn once somebody is queued, and cannot wedge the room by
+crashing while holding the floor.
 
 ## License
 

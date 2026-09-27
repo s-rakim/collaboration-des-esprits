@@ -7,6 +7,8 @@
  * generates a reply on an agent's behalf.
  */
 
+import { chunk } from './commands.js';
+
 const API = (token, method) => `https://api.telegram.org/bot${token}/${method}`;
 
 async function call(token, method, payload, { timeoutMs = 70000 } = {}) {
@@ -37,7 +39,6 @@ export function createTelegram({ hub, router, token, log = (m) => process.stdout
 
   /** Chunked so a long brief is never silently cut off by the 4096 limit. */
   async function send(chatId, body) {
-    const { chunk } = await import('./commands.js');
     for (const part of chunk(body)) {
       if (!part.trim()) continue;
       await call(token, 'sendMessage', { chat_id: chatId, text: part, disable_web_page_preview: true });
