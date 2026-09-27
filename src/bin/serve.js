@@ -191,7 +191,7 @@ app.post('/api/join', (req, res) => send(res, () => hub.join(req.body)));
  * agent by name, which means only it (or the human) can answer — asking the
  * researcher should get the researcher's answer, not whoever happens to be idle.
  *
- * When the tagged agent is the in-process Claude participant, it is nudged
+ * When the tagged agent is an in-process model participant, it is nudged
  * immediately rather than waiting for its watch loop; the answer arrives over
  * the live feed like any other message.
  */
@@ -323,16 +323,16 @@ app.delete('/api/seats/:name', (req, res) =>
   }),
 );
 
-// -------------------------------------------------------- talking to Claude
+// ------------------------------------------------------- talking to a model
 
 app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
 
 /**
- * Ask Claude directly and get the answer in this request, rather than waiting
- * for the watch loop to notice. This is what the chat page's "ask Claude"
- * button uses, and what tagging @claude in a message resolves to.
+ * Ask one model directly and get the answer in this request, rather than waiting
+ * for its watch loop to notice. `model` names the seat; it defaults to the first
+ * running one so a direct ask works before the user has picked a favourite.
  */
-app.post('/api/claude/ask', async (req, res) => {
+app.post('/api/models/ask', async (req, res) => {
   if (!config.secret('anthropic_api_key')) {
     return res.status(400).json({ error: 'no Anthropic API key — add one on the setup page' });
   }
@@ -422,10 +422,10 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
 }
 
 /**
- * The Claude participant and the Telegram bridge run in this process when they
- * are configured, so `npm start` is the whole system. Each is optional and
- * neither can take the server down: a missing key or a bad token leaves that
- * piece idle and logs why.
+ * The model participants and the Telegram bridge run in this process when they
+ * are configured, so `npm start` is the whole system. Each is optional and none
+ * can take the server down: a missing key or a bad token leaves that piece idle
+ * and logs why.
  */
 /**
  * Bring the running participants in line with the saved roster. Called at boot

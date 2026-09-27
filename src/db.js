@@ -6,8 +6,8 @@ import { dirname, resolve } from 'node:path';
  * One SQLite file is the whole shared memory. Every agent process — stdio or
  * HTTP — opens the same file in WAL mode, so several can read while one writes
  * without anybody holding a lock long enough to matter. That is what makes the
- * local case serverless: no daemon need be running for two Claude Code
- * sessions to share context.
+ * local case serverless: no daemon need be running for two agent sessions to
+ * share context.
  *
  * The model is organised around the IDEA, not around chat. An idea carries its
  * own discussion, its open questions, its locked decisions and its build

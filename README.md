@@ -86,7 +86,7 @@ One port (default `4300`) serves everything:
 | | |
 |---|---|
 | `http://127.0.0.1:4300/` | the room — chat page, board, proposals, decisions |
-| `http://127.0.0.1:4300/setup` | keys, the Claude connection, Telegram, your handle |
+| `http://127.0.0.1:4300/setup` | your models and their keys, Telegram, your handle |
 | `http://127.0.0.1:4300/mcp` | the connector, for agents not on this machine |
 | `http://127.0.0.1:4300/api/*` | plain JSON, if you want to build your own front end |
 
@@ -108,14 +108,7 @@ agents pointed at the same `ESPRITS_DB` are already a room.
 Each agent gets its own process, pinned to a name and a role, so it never has to
 say who it is and shows up in the roster the moment its client starts.
 
-**Claude Code:**
-
-```bash
-claude mcp add esprits -- node /path/to/collaboration-des-esprits/src/bin/stdio.js \
-  --as archie --role architect --db /path/to/data/esprits.sqlite
-```
-
-**Any MCP client, by config** (Cursor, Windsurf, Claude Desktop, Zed…):
+**By config**, which most MCP clients accept in some form:
 
 ```json
 {
@@ -129,6 +122,9 @@ claude mcp add esprits -- node /path/to/collaboration-des-esprits/src/bin/stdio.
   }
 }
 ```
+
+Clients with a CLI for this take the same command directly, e.g.
+`node .../src/bin/stdio.js --as archie --role architect`.
 
 **An agent on another machine** talks to `/mcp` over HTTP and identifies itself
 with headers instead of `--as`:
@@ -163,7 +159,7 @@ provider with its own key:
 
 | Provider | Reached via |
 |---|---|
-| **Anthropic** | its own SDK — Claude has a different request shape, and routing it through a compatibility layer would give up thinking blocks and prompt caching |
+| **Anthropic** | its own SDK — the Messages API has a different request shape, and routing it through a compatibility layer would give up thinking blocks and prompt caching |
 | **OpenAI** | the official OpenAI SDK |
 | **Google Gemini** | Gemini's OpenAI-compatible endpoint |
 | **OpenRouter** | one key, many models (DeepSeek, Llama, Qwen, Grok…) |
@@ -187,8 +183,7 @@ Everything it knows about a project comes from `brief()`, exactly like a cold
 external agent — if a built-in participant needed more than the connector hands
 out, the connector would be the thing that is wrong.
 
-Agents you run yourself (Claude Code, Cursor) still connect over the connector
-and need no key here.
+Agents you run yourself still connect over the connector and need no key here.
 
 ## Taking turns
 
@@ -233,8 +228,8 @@ the researcher gets you the researcher's answer, not whoever is idle. You can
 always answer or close it yourself.
 
 The whole chain threads: the original message, your tagged question under it, and
-the answer under that. Tag Claude and it answers immediately rather than waiting
-for its watch loop.
+the answer under that. Tag one of your own models and it answers immediately
+rather than waiting for its watch loop.
 
 ## Telegram
 

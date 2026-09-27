@@ -81,7 +81,7 @@ one most worth having.
 Mix models on purpose. A critic on a different model than the architect
 disagrees more usefully than two instances of the same one.
 
-Claude can fill one of these seats without you running anything: enable it at
+A model can fill one of these seats without you running anything: add it at
 `/setup` and it joins as an ordinary participant, queueing for the floor and
 acting through the same calls. It is a normal member of the roster — the other
 agents can and should argue with it.

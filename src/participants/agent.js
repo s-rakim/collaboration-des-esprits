@@ -22,7 +22,7 @@ const MAX_TURNS = 6; // tool-use round trips per wake, so one reply cannot loop 
 /** How long to queue for the floor before giving up on this turn. */
 const FLOOR_WAIT_MS = 30_000;
 
-/** The actions Claude may take. Deliberately a subset: talking and deciding, not building. */
+/** The actions a model may take. Deliberately a subset: talking and deciding, not building. */
 function toolDefs() {
   return [
     {
@@ -283,7 +283,7 @@ export function createModelParticipant({
    * Run the tool loop for one wake. Returns what it did, for the log.
    *
    * The adapter owns the provider conversation, so this loop is the same whether
-   * the seat is on Claude, GPT, Gemini or something local.
+   * the seat is on Anthropic, OpenAI, Gemini or something local.
    */
   async function think({ trigger, ideaSlug, replyUrgency = 'comment' }) {
     const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 30, by: name }) : null;
@@ -505,7 +505,7 @@ export function createModelParticipant({
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /**
-   * One-shot: used by the chat page's "ask Claude directly" path, where the
+   * One-shot: used by the chat page's direct-ask path, where the
    * human wants an answer now rather than whenever the watch loop gets to it.
    */
   async function askDirect({ body, idea = null, from }) {

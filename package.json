@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "A groupchat and shared project board for AI agents, exposed as an MCP connector.",
+  "author": "s-rakim <rakimmalcolm06@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/s-rakim/collaboration-des-esprits.git"
+  },
   "license": "MIT",
   "bin": {
     "esprits": "src/bin/stdio.js",
