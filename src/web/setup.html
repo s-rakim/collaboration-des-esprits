@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Setup — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
@@ -52,19 +53,29 @@
   .msg.ok{color:var(--good)} .msg.err{color:var(--bad)}
   code{font-family:var(--mono);font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px}
   .back{color:var(--accent);text-decoration:none;font-size:13px}
+  .seat{display:grid;grid-template-columns:.9fr 1fr 1.2fr .9fr .7fr 1fr auto auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .seat:last-of-type{border-bottom:0}
+  .seat input,.seat select{padding:6px 8px;font-size:13px}
+  .seat .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;justify-self:center}
+  .seat .dot.on{background:var(--good)}
+  .seat .del{color:var(--bad);border-color:transparent;background:none;padding:4px 7px}
+  .seat .del:hover{border-color:var(--bad)}
+  .seathead{display:grid;grid-template-columns:.9fr 1fr 1.2fr .9fr .7fr 1fr auto auto auto;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-bottom:5px;border-bottom:1px solid var(--line)}
+  @media (max-width:900px){.seat{grid-template-columns:1fr 1fr}.seathead{display:none}}
+  .seat .test{font-size:11px;padding:4px 8px}
+  .modelnote{color:var(--faint);font-size:12px;margin-top:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <a class="back" href="/">← back to the room</a>
   <h1>Setup</h1>
-  <p class="sub">Keys are stored in the room's own database on this machine and are never sent back to this page — you'll only ever see the last four characters.</p>
+  <p class="sub">Every model has its own provider and its own key. Keys are stored in the room's own database on this machine and are never sent back to this page — you'll only ever see the last four characters.</p>
 
   <div id="body">Loading…</div>
 
   <div class="bar">
     <button class="primary" id="save">Save changes</button>
-    <button id="test">Test the Anthropic key</button>
     <span class="msg" id="msg"></span>
   </div>
 </div>
@@ -131,28 +142,34 @@ function toggleField(key, s) {
 function render() {
   const { settings: st, secrets: sec } = state;
   $('#body').innerHTML = `
-    <h2>Talk to Claude in the chat</h2>
+    <h2>The models in your chat</h2>
     <div class="card">
-      ${toggleField('claude_enabled', st.claude_enabled)}
-      <p class="hint" style="margin:8px 0 14px">
-        Claude joins the room as an ordinary participant: it waits its turn like every other agent,
-        and acts through the same calls they do. Tag it by name in the chat, or use the
-        <strong>Ask Claude</strong> button, to get an answer straight away.
+      <p class="hint" style="margin:0 0 12px">
+        Each row is a seat in the group chat, with <strong>its own provider and its own key</strong>.
+        They see each other's messages, take turns, argue, and score each other's proposals — so mix
+        providers and roles and you get a real disagreement rather than one voice repeated.
       </p>
-      ${secretField('anthropic_api_key', sec.anthropic_api_key)}
-      ${settingField('claude_agent_name', st.claude_agent_name)}
-      ${settingField('claude_role', st.claude_role, ['architect','critic','researcher','planner','backend','frontend','reviewer','generalist'])}
-      ${settingField('claude_model', st.claude_model)}
-      ${settingField('claude_effort', st.claude_effort, ['low','medium','high','xhigh','max'])}
-      ${settingField('claude_max_tokens', st.claude_max_tokens)}
-      <div class="note">Higher effort means more thorough reasoning and more tokens. <code>high</code> is the sweet spot; use <code>max</code> when correctness matters more than cost.</div>
+      <div class="seathead">
+        <span>Name</span><span>Provider</span><span>Model</span><span>Role</span><span>Effort</span>
+        <span>API key</span><span>On</span><span></span><span></span>
+      </div>
+      <div id="seats"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="addSeat">+ Add a model</button>
+        <span class="modelnote" id="seatNote"></span>
+      </div>
+      <div class="note">
+        Effort trades thoroughness against tokens. <code>high</code> is the sweet spot; <code>low</code> is
+        plenty for a researcher or a scorer; <code>max</code> when correctness matters more than cost.
+        It only applies to providers that support it.
+      </div>
     </div>
 
     <h2>Your other agents</h2>
     <div class="card">
       <p class="hint" style="margin:0">
-        Agents you run yourself (Claude Code, Cursor, and so on) connect to the connector and need no
-        key here — they bring their own. Point each one at:
+        Agents you run yourself (Claude Code, Cursor, a model from another provider) connect over the
+        connector and need no key here — they bring their own. Point each one at:
       </p>
       <div class="field" style="margin-top:10px">
         <input readonly value="${location.origin}/mcp" onclick="this.select()">
@@ -182,8 +199,8 @@ function render() {
     </div>
 
     <div class="note warn">
-      Changing any of this takes effect for new work immediately, but the Claude and Telegram
-      background loops are started once at boot — restart the server after switching either of them on.
+      Models start and stop as you edit the roster, no restart needed. Telegram is started once at
+      boot — restart the server after switching that on.
     </div>`;
 
   for (const el of document.querySelectorAll('[data-setting]')) {
@@ -200,9 +217,159 @@ function render() {
   }
 }
 
+// ------------------------------------------------------------- model roster
+
+let roster = null;
+
+const provider = (id) => roster.providers.find((p) => p.id === id) ?? roster.providers[0];
+
+function seatRow(s, isNew = false) {
+  const prov = provider(s.provider);
+  const provs = roster.providers
+    .map((p) => `<option value="${esc(p.id)}" ${s.provider === p.id ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+
+  // A model typed by hand, or one newer than this list, must still round-trip.
+  const known = prov.models.map((m) =>
+    `<option value="${esc(m.id)}" ${s.model === m.id ? 'selected' : ''} title="${esc(m.note ?? '')}">${esc(m.label)}</option>`).join('');
+  const custom = s.model && !prov.models.some((m) => m.id === s.model)
+    ? `<option value="${esc(s.model)}" selected>${esc(s.model)}</option>` : '';
+
+  const roles = ['architect','critic','researcher','planner','backend','frontend','reviewer','generalist']
+    .map((r) => `<option ${s.role === r ? 'selected' : ''}>${r}</option>`).join('');
+  const efforts = ['low','medium','high','xhigh','max']
+    .map((e) => `<option ${s.effort === e ? 'selected' : ''}>${e}</option>`).join('');
+
+  const keyPlaceholder = s.keySource === 'env'
+    ? `from ${prov.keyEnv}`
+    : s.keySet && s.keySource === 'stored'
+      ? 'saved — blank keeps it'
+      : prov.keyOptional ? 'not needed' : 'paste key';
+
+  return `<div class="seat" data-seat="${esc(s.name)}" ${isNew ? 'data-new="1"' : ''}>
+      <input class="sn" value="${esc(s.name)}" placeholder="name" ${isNew ? '' : 'readonly'}>
+      <select class="sp">${provs}</select>
+      <select class="sm">${custom}${known}<option value="__other">other…</option></select>
+      <select class="sr">${roles}</select>
+      <select class="se">${efforts}</select>
+      <input class="sk" type="password" autocomplete="off" placeholder="${esc(keyPlaceholder)}"
+        title="${esc(s.keyPreview ?? prov.keyHint ?? '')}">
+      <span class="dot ${s.running ? 'on' : ''}" title="${s.running ? 'running' : 'not running'}"></span>
+      <button class="test" title="make one real call">test</button>
+      <button class="del" title="remove">&times;</button>
+    </div>`;
+}
+
+function renderSeats() {
+  $('#seats').innerHTML = roster.seats.length
+    ? roster.seats.map((s) => seatRow(s)).join('')
+    : '<p class="hint" style="margin:0">No models yet. Add one to start the chat.</p>';
+  const running = roster.seats.filter((s) => s.running).length;
+  const keyless = roster.seats.filter((s) => s.enabled && !s.keySet).map((s) => s.name);
+  $('#seatNote').textContent = keyless.length
+    ? `${running} running · ${keyless.join(', ')} still ${keyless.length === 1 ? 'needs' : 'need'} a key`
+    : `${running} running`;
+  wireSeats();
+}
+
+function wireSeats() {
+  for (const el of document.querySelectorAll('.seat')) {
+    const save = async () => {
+      const name = el.querySelector('.sn').value.trim();
+      if (!name) return say('a model needs a name', 'err');
+      let model = el.querySelector('.sm').value;
+      if (model === '__other') {
+        model = prompt('Model id, exactly as the provider spells it:') ?? '';
+        if (!model.trim()) return loadSeats();
+      }
+      const typedKey = el.querySelector('.sk').value;
+      try {
+        say('saving…');
+        await api('/api/seats', { method: 'POST', body: JSON.stringify({
+          name,
+          provider: el.querySelector('.sp').value,
+          model,
+          role: el.querySelector('.sr').value,
+          effort: el.querySelector('.se').value,
+          // Sent only when actually typed, so saving a row cannot wipe the key
+          // that is already stored for it.
+          ...(typedKey ? { apiKey: typedKey } : {}),
+          enabled: true,
+        }) });
+        await loadSeats();
+        say('saved', 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    };
+
+    // Changing provider changes which models are valid, so re-render the row
+    // from the provider's own list before saving anything.
+    el.querySelector('.sp').addEventListener('change', () => {
+      const p = provider(el.querySelector('.sp').value);
+      const s = {
+        name: el.querySelector('.sn').value.trim(),
+        provider: p.id,
+        model: p.models[0]?.id ?? '',
+        role: el.querySelector('.sr').value,
+        effort: el.querySelector('.se').value,
+        keySet: false, keySource: 'unset', running: false,
+      };
+      el.outerHTML = seatRow(s, Boolean(el.dataset.new) || !s.name);
+      wireSeats();
+      say('pick a model and key, then it saves', 'err');
+    });
+
+    for (const sel of el.querySelectorAll('.sm, .sr, .se')) sel.addEventListener('change', save);
+    el.querySelector('.sk').addEventListener('change', save);
+    el.querySelector('.sn').addEventListener('blur', () => { if (el.dataset.new) save(); });
+
+    el.querySelector('.test').addEventListener('click', async () => {
+      const name = el.dataset.seat || el.querySelector('.sn').value.trim();
+      if (!name) return say('save the row first', 'err');
+      try {
+        say(`calling ${name}'s provider…`);
+        const r = await api(`/api/seats/${encodeURIComponent(name)}/test`, { method: 'POST', body: '{}' });
+        say(`${r.seat} works — ${r.model} replied "${r.said}"`, 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    });
+
+    el.querySelector('.del').addEventListener('click', async () => {
+      if (el.dataset.new) { el.remove(); return; }
+      const name = el.dataset.seat;
+      if (!confirm(`Remove ${name} from the chat? Everything it already said and decided stays.`)) return;
+      try {
+        await api(`/api/seats/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await loadSeats();
+        say(`${name} removed`, 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    });
+  }
+}
+
+/**
+ * Delegated from the static container, because #addSeat is created by render()
+ * and so does not exist when this module first runs.
+ */
+$('#body').addEventListener('click', (e) => {
+  if (!e.target.closest('#addSeat')) return;
+  if (!roster.seats.length) $('#seats').innerHTML = '';
+  const p = roster.providers[0];
+  $('#seats').insertAdjacentHTML('beforeend', seatRow(
+    { name: '', provider: p.id, model: p.models[0]?.id ?? '', role: 'generalist', effort: 'high',
+      keySet: false, keySource: 'unset', running: false },
+    true,
+  ));
+  wireSeats();
+  $('#seats').lastElementChild.querySelector('.sn').focus();
+});
+
+async function loadSeats() {
+  roster = await api('/api/seats');
+  renderSeats();
+}
+
 async function load() {
   state = await api('/api/settings');
   render();
+  await loadSeats();
 }
 
 $('#save').addEventListener('click', async () => {
@@ -212,24 +379,13 @@ $('#save').addEventListener('click', async () => {
     state = await api('/api/settings', { method: 'POST', body: JSON.stringify(edited) });
     edited.settings = {}; edited.secrets = {};
     render();
+    // render() rebuilds the whole panel, including the roster's container.
+    await loadSeats();
     say('saved', 'ok');
   } catch (e) {
     say(e.message, 'err');
   } finally {
     $('#save').disabled = false;
-  }
-});
-
-$('#test').addEventListener('click', async () => {
-  $('#test').disabled = true;
-  try {
-    say('calling the API…');
-    const r = await api('/api/settings/test-anthropic', { method: 'POST', body: '{}' });
-    say(`works — ${r.model} replied "${r.said}"`, 'ok');
-  } catch (e) {
-    say(e.message, 'err');
-  } finally {
-    $('#test').disabled = false;
   }
 });
 

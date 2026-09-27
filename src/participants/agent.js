@@ -1,17 +1,20 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { describeRole } from '../roles.js';
+import { providerFor } from './providers/index.js';
 
 /**
- * Claude as a participant in the room.
+ * One model's seat in the room, on whichever provider that seat uses.
  *
- * This is the one place in the project that calls a model. It is a thin agent:
- * it watches the room, waits its turn like everyone else, and acts through the
- * same Hub methods the external agents use — it has no privileged path.
+ * This is the only part of the project that calls a model, and it is a thin
+ * agent: it watches the room, waits its turn like everyone else, and acts
+ * through the same Hub methods the external agents use — no privileged path.
  *
- * Everything it needs to know about a project comes from brief(), the same call
- * a cold external agent makes. That is deliberate: if the built-in participant
- * needed more context than the connector can hand out, the connector would be
- * the thing that is wrong.
+ * Everything it knows about a project comes from brief(), the same call a cold
+ * external agent makes. That is deliberate: if a built-in participant needed
+ * more context than the connector hands out, the connector would be the thing
+ * that is wrong.
+ *
+ * Provider differences live entirely in the adapters. This file never mentions
+ * a vendor, which is what lets one room hold models from several of them.
  */
 
 const MAX_TURNS = 6; // tool-use round trips per wake, so one reply cannot loop forever
@@ -27,7 +30,7 @@ function toolDefs() {
       description:
         'Say something in the room. This is how you answer the human and talk to the other agents. ' +
         'Use it once you have said everything you mean to; it ends your turn.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -41,7 +44,7 @@ function toolDefs() {
       description:
         'Put an approach on the table for the room to score. Use this when there is more than one sane ' +
         'way to do the work, instead of just asserting one.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -60,7 +63,7 @@ function toolDefs() {
       description:
         "Score another agent's open proposal. Feasibility is 1-5 and means buildable now, with what is " +
         'actually available — not elegant. An objection must name the concrete failure case.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -78,7 +81,7 @@ function toolDefs() {
       description:
         'Ask the human something you genuinely cannot proceed without. Do not use this for anything a ' +
         'decision or a fact in the brief already answers.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -91,7 +94,7 @@ function toolDefs() {
     {
       name: 'answer',
       description: 'Answer an open question that was addressed to you by name.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: { id: { type: 'integer' }, answer: { type: 'string' } },
@@ -103,7 +106,7 @@ function toolDefs() {
       description:
         'Record a binding decision with its reasoning, so no later agent re-argues it blind. Prefer ' +
         'choose() when the decision is between proposals on the table.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -117,7 +120,7 @@ function toolDefs() {
     {
       name: 'choose',
       description: 'Settle a contest by picking a proposal. Refused while an unanswered blocking objection stands.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: { proposal: { type: 'integer' }, rationale: { type: 'string' } },
@@ -127,7 +130,7 @@ function toolDefs() {
     {
       name: 'refine_spec',
       description: 'Write or revise the spec after a route has been chosen. Send the whole spec, not a patch.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: { spec: { type: 'string' }, summary: { type: 'string' } },
@@ -137,7 +140,7 @@ function toolDefs() {
     {
       name: 'remember',
       description: 'Store a durable fact every agent should know — a version constraint, an API limit, a convention.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: { key: { type: 'string' }, value: { type: 'string' }, source: { type: 'string' } },
@@ -147,7 +150,7 @@ function toolDefs() {
     {
       name: 'plan',
       description: 'Cut a settled spec into ordered tasks. dependsOn refers to positions in this same list.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
@@ -175,7 +178,7 @@ function toolDefs() {
       description:
         'End your turn without speaking. Use this when the room does not need you — somebody already ' +
         'made your point, or the conversation is not yours. Staying quiet is a valid contribution.',
-      input_schema: {
+      parameters: {
         type: 'object',
         additionalProperties: false,
         properties: { why: { type: 'string' } },
@@ -185,54 +188,71 @@ function toolDefs() {
   ];
 }
 
-export function createClaudeParticipant({
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * `seat` is {name, provider, model, role, effort, maxTokens, baseURL}.
+ * `getKey()` returns that seat's own credential — each seat has its own, because
+ * the seats are on different providers.
+ *
+ * Several of these run side by side in one process, one per model in the chat.
+ * That is what makes the room "you and your different models" rather than you
+ * and one assistant.
+ */
+export function createModelParticipant({
   hub,
-  config,
+  seat,
+  getKey,
   log = (m) => process.stdout.write(`${m}\n`),
   // Injectable so the tool-dispatch path can be tested without a live key or a
-  // network call. Production always uses the real SDK client.
-  createClient = (apiKey) => new Anthropic({ apiKey }),
+  // network call. Production uses each provider's real SDK client.
+  createClient = null,
 }) {
-  const name = config.get('claude_agent_name');
-  const role = config.get('claude_role');
-  const model = config.get('claude_model');
-  const maxTokens = config.int('claude_max_tokens');
+  const name = seat?.name ?? 'model';
+  const role = seat?.role ?? 'generalist';
+  const model = seat?.model ?? 'claude-opus-5';
+  const providerId = seat?.provider ?? 'anthropic';
+  const provider = providerFor(providerId);
+  const maxTokens = Number.isFinite(seat?.maxTokens) ? seat.maxTokens : 64000;
+  const baseURL = seat?.baseURL || provider.baseURL || undefined;
 
-  // A typo in the setup page would otherwise surface as an opaque 400 on every
-  // wake. Fall back to the documented default instead.
-  const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-  const configured = String(config.get('claude_effort')).toLowerCase();
+  // A typo would otherwise surface as an opaque 400 on every wake. Fall back to
+  // the documented default instead.
+  const configured = String(seat?.effort ?? 'high').toLowerCase();
   const effort = EFFORTS.includes(configured) ? configured : 'high';
   if (effort !== configured) {
-    log(`claude: "${configured}" is not a valid effort; using ${effort}`);
+    log(`${name}: "${configured}" is not a valid effort; using ${effort}`);
   }
 
-  let client = null;
   let stopped = false;
 
-  const apiKey = () => config.secret('anthropic_api_key');
+  const apiKey = () => (getKey ? getKey(name) : null);
+  const usable = () => Boolean(apiKey()) || Boolean(provider.keyOptional);
 
-  /** Built lazily so the key can be set from the setup page without a restart. */
-  const anthropic = () => {
-    const key = apiKey();
-    if (!key) throw new Error('no Anthropic API key set — add one on the setup page');
-    // Rebuilt when the key changes, so saving a new one on the setup page takes
-    // effect without a restart.
-    if (!client || client.apiKey !== key) {
-      client = createClient(key);
-      if (client && client.apiKey === undefined) client.apiKey = key;
+  /**
+   * Built per turn so a key changed on the setup page takes effect without a
+   * restart, and so each seat holds its own client rather than a shared one.
+   */
+  const adapter = () => {
+    if (!usable()) {
+      throw new Error(`no API key for ${name} (${provider.label}) — add one on the setup page`);
     }
-    return client;
+    return provider.adapter({ apiKey: apiKey(), model, maxTokens, effort, baseURL, createClient });
   };
 
   function join() {
-    return hub.join({ name, role, kind: 'agent', model, capabilities: ['discusses', 'proposes', 'scores', 'plans'] });
+    return hub.join({
+      name, role, kind: 'agent', model,
+      capabilities: ['discusses', 'proposes', 'scores', 'plans'],
+    });
   }
 
   const systemPrompt = () => {
     const charter = describeRole(hub.roles, role);
     return [
-      `You are "${name}", the ${role}, in a group chat with a human and several other AI agents.`,
+      `You are "${name}", the ${role}, in a group chat with a human and several other AI models.`,
+      `You are running on ${model}. The others may be different models with different strengths, and`,
+      `they will disagree with you.`,
       `The human drops half-formed ideas; the room refines them into something buildable and then builds it.`,
       '',
       `## Your charter`,
@@ -262,9 +282,8 @@ export function createClaudeParticipant({
   /**
    * Run the tool loop for one wake. Returns what it did, for the log.
    *
-   * Streaming is used because these requests carry a whole brief and can return
-   * a long spec, and a non-streaming call at this max_tokens risks an HTTP
-   * timeout. finalMessage() gives the assembled message back.
+   * The adapter owns the provider conversation, so this loop is the same whether
+   * the seat is on Claude, GPT, Gemini or something local.
    */
   async function think({ trigger, ideaSlug, replyUrgency = 'comment' }) {
     const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 30, by: name }) : null;
@@ -282,82 +301,50 @@ export function createClaudeParticipant({
       trigger,
     ].join('\n');
 
-    const messages = [{ role: 'user', content: context }];
-    const tools = toolDefs();
+    const turn = adapter().startTurn({ system: systemPrompt(), tools: toolDefs() });
     const done = [];
 
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      let response;
-      try {
-        const stream = anthropic().beta.messages.stream({
-          model,
-          max_tokens: maxTokens,
-          system: systemPrompt(),
-          thinking: { type: 'adaptive' },
-          output_config: { effort },
-          tools,
-          messages,
-          // Opus 5 can decline a request outright; the server reruns it on a
-          // fallback model inside the same call rather than returning nothing.
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
-        });
-        response = await stream.finalMessage();
-      } catch (err) {
-        if (err instanceof Anthropic.AuthenticationError) throw new Error('Anthropic rejected the API key');
-        if (err instanceof Anthropic.RateLimitError) throw new Error('rate limited by Anthropic — backing off');
-        if (err instanceof Anthropic.APIError) throw new Error(`Anthropic API error ${err.status}: ${err.message}`);
-        throw err;
-      }
+    // Requests are counted rather than loop iterations: the first one happens
+    // before the loop, so iterating MAX_TURNS times would spend MAX_TURNS + 1.
+    let requests = 1;
+    let step = await turn.send(context);
 
-      // A refusal must be checked before content is read: the whole fallback
-      // chain declined, and content will not hold the answer.
-      if (response.stop_reason === 'refusal') {
-        return { actions: done, refused: true };
-      }
-      if (response.stop_reason === 'max_tokens') {
-        return { actions: done, truncated: true };
-      }
+    for (;;) {
+      if (step.stopReason === 'refusal') return { actions: done, refused: true };
+      if (step.stopReason === 'max_tokens') return { actions: done, truncated: true };
 
-      const toolUses = response.content.filter((b) => b.type === 'tool_use');
-      if (!toolUses.length) {
+      if (!step.toolCalls.length) {
         // It answered in prose without calling reply. Post that rather than
         // dropping it on the floor.
-        const prose = response.content
-          .filter((b) => b.type === 'text')
-          .map((b) => b.text)
-          .join('\n')
-          .trim();
-        if (prose) {
-          speak(prose);
+        if (step.text) {
+          await speak(step.text, { idea: ideaSlug, urgency: replyUrgency });
           done.push('reply');
         }
         return { actions: done };
       }
 
-      messages.push({ role: 'assistant', content: response.content });
       const results = [];
       let finished = false;
-
-      for (const use of toolUses) {
+      for (const call of step.toolCalls) {
         let out;
         try {
-          const r = await act(use.name, use.input ?? {}, { ideaSlug, replyUrgency });
+          const r = await act(call.name, call.input ?? {}, { ideaSlug, replyUrgency });
           out = r.text;
           if (r.ends) finished = true;
-          done.push(use.name);
+          done.push(call.name);
         } catch (err) {
           // Hand the failure back so it can correct itself — the Hub's errors
           // are written to be actionable ("resolve it, or have the human choose").
           out = `FAILED: ${err.message}`;
         }
-        results.push({ type: 'tool_result', tool_use_id: use.id, content: out });
+        results.push({ id: call.id, name: call.name, output: out });
       }
 
-      messages.push({ role: 'user', content: results });
       if (finished) return { actions: done };
+      if (requests >= MAX_TURNS) return { actions: done, exhausted: true };
+      step = await turn.toolResults(results);
+      requests++;
     }
-    return { actions: done, exhausted: true };
   }
 
   /**
@@ -459,16 +446,16 @@ export function createClaudeParticipant({
    * proposals it owes a score, then takes exactly one action.
    */
   async function run() {
-    if (!apiKey()) {
-      log('claude: no API key set; participant idle until one is added on the setup page');
+    if (!usable()) {
+      log(`${name}: no API key yet; idle until one is added on the setup page`);
     }
     join();
-    log(`claude: ${name} (${role}) joined on ${model}`);
+    log(`${name} (${role}) joined on ${model} via ${provider.label}`);
 
     let backoff = 5000;
     while (!stopped) {
       try {
-        if (!apiKey() || !config.bool('claude_enabled')) {
+        if (!usable()) {
           await sleep(3000);
           continue;
         }
@@ -499,13 +486,13 @@ export function createClaudeParticipant({
           // proposal score is ordinary business.
           replyUrgency: woke.messages.length ? 'answer' : 'comment',
         });
-        if (result.refused) log('claude: the request was declined by safety classifiers; skipping this wake');
-        else if (result.truncated) log('claude: response hit max_tokens');
-        else log(`claude: ${result.actions.join(', ') || 'no action'}`);
+        if (result.refused) log(`${name}: declined by safety classifiers; skipping this wake`);
+        else if (result.truncated) log(`${name}: response hit max_tokens`);
+        else log(`${name}: ${result.actions.join(', ') || 'no action'}`);
         backoff = 5000;
       } catch (err) {
         if (stopped) break;
-        log(`claude: ${err.message} — retrying in ${Math.round(backoff / 1000)}s`);
+        log(`${name}: ${err.message} — retrying in ${Math.round(backoff / 1000)}s`);
         // Always drop the floor on the way out; holding it through a backoff
         // would stall every other agent for as long as the error persists.
         try { hub.yieldFloor({ by: name }); } catch { /* not queued */ }
@@ -527,5 +514,11 @@ export function createClaudeParticipant({
     return think({ trigger, ideaSlug: idea, replyUrgency: 'answer' });
   }
 
-  return { run, stop: () => { stopped = true; }, askDirect, join, name, role, model };
+  return {
+    run,
+    stop: () => { stopped = true; },
+    askDirect,
+    join,
+    name, role, model, provider: providerId,
+  };
 }

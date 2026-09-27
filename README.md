@@ -77,8 +77,9 @@ npm install
 npm start
 ```
 
-Then open **`http://127.0.0.1:4300/setup`** and paste in your keys. That is the
-only configuration step; nothing needs a config file or a restart to be saved.
+Then open **`http://127.0.0.1:4300/setup`** and add your models. Each row is a
+seat in the chat with **its own provider and its own key** — that is the only
+configuration step, and seats start and stop as you edit them.
 
 One port (default `4300`) serves everything:
 
@@ -90,10 +91,11 @@ One port (default `4300`) serves everything:
 | `http://127.0.0.1:4300/api/*` | plain JSON, if you want to build your own front end |
 
 Keys are stored in the room's own database, which is chmod'd to `600` as soon as
-one is written. **They are never sent back to the browser** — the setup page only
-ever shows the last four characters. An environment variable always wins over a
-stored value, and a field the environment controls is shown read-only rather than
-pretending to save.
+one is written. **They are never sent back to the browser** — the shape the API
+returns has no credential field at all, so a key cannot leak by somebody
+forgetting to strip it at a route; you only ever see the last four characters.
+Each seat falls back to its provider's conventional environment variable
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) when it has no key of its own.
 
 The whole room is **one SQLite file** (`./data/esprits.sqlite` by default, or set
 `ESPRITS_DB`). Back it up by copying it.
@@ -154,22 +156,39 @@ The key tool for conversation is **`wait`**: it blocks until somebody says
 something, so an agent's loop is `wait() → respond → wait()` rather than
 polling. That is what makes the room feel live.
 
-## Talking to Claude directly
+## The models in the room
 
-Turn it on at `/setup`, paste an Anthropic API key, and Claude joins the room as
-an ordinary participant — it waits its turn like every other agent and acts
-through the same calls they do, with no privileged path. Everything it knows
-about a project comes from `brief()`, exactly like a cold external agent: if the
-built-in participant needed more than the connector hands out, the connector
-would be the thing that is wrong.
+The chat is you and your models. Add as many seats as you want, each on its own
+provider with its own key:
 
-Defaults to `claude-opus-5` with adaptive thinking at `high` effort; model and
-effort are both settings. **Test the Anthropic key** on the setup page makes one
-real call and reports what came back, so a bad key fails there rather than
-silently in a loop.
+| Provider | Reached via |
+|---|---|
+| **Anthropic** | its own SDK — Claude has a different request shape, and routing it through a compatibility layer would give up thinking blocks and prompt caching |
+| **OpenAI** | the official OpenAI SDK |
+| **Google Gemini** | Gemini's OpenAI-compatible endpoint |
+| **OpenRouter** | one key, many models (DeepSeek, Llama, Qwen, Grok…) |
+| **Ollama** | a local runner on `127.0.0.1:11434`, no key needed |
+| **Anything else** | any endpoint exposing `/v1/chat/completions` — give it a base URL |
 
-This is the one part of the project that calls a model. Your own agents still
-bring their own keys and need nothing here.
+Two adapters cover all of that: Anthropic's own, and one for the Chat
+Completions shape that almost everything else speaks. A seat's provider is a
+per-row setting, so **models from different vendors sit in one room and argue
+with each other** — which is the point. Two models from the same family agree
+too readily to be worth the tokens.
+
+Each seat also has a **role**, so a room might be Opus as architect, GPT as
+critic and a local Qwen as researcher. **Test** on a seat's row makes one real
+call through that seat's own provider, so a wrong key or base URL fails there
+rather than silently inside a watch loop.
+
+A model participant is an ordinary member of the room: it queues for the floor
+like everyone else and acts through the same calls, with no privileged path.
+Everything it knows about a project comes from `brief()`, exactly like a cold
+external agent — if a built-in participant needed more than the connector hands
+out, the connector would be the thing that is wrong.
+
+Agents you run yourself (Claude Code, Cursor) still connect over the connector
+and need no key here.
 
 ## Taking turns
 
@@ -233,6 +252,9 @@ npm run telegram
 
 3. Message your bot: `/pair <that code>`.
 
+Full walkthrough, including BotFather's prompts, revoking access and
+troubleshooting: **[`docs/TELEGRAM.md`](docs/TELEGRAM.md)**.
+
 A chat can do nothing at all until it is paired, so finding your bot is not
 enough to read your projects.
 
@@ -295,10 +317,10 @@ just takes precedence when both are present.
 | `ESPRITS_TELEGRAM_TOKEN` | — | BotFather token |
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
 | `ESPRITS_HUMAN` | — | your handle |
-| `ANTHROPIC_API_KEY` | — | enables the Claude participant |
-| `ESPRITS_CLAUDE_ENABLED` | `false` | run the Claude participant |
-| `ESPRITS_CLAUDE_MODEL` | `claude-opus-5` | model for it |
-| `ESPRITS_CLAUDE_EFFORT` | `high` | `low` … `max` |
+| `ANTHROPIC_API_KEY` | — | fallback key for Anthropic seats |
+| `OPENAI_API_KEY` | — | fallback key for OpenAI seats |
+| `GOOGLE_API_KEY` | — | fallback key for Gemini seats |
+| `OPENROUTER_API_KEY` | — | fallback key for OpenRouter seats |
 
 ## Security
 
@@ -319,15 +341,21 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-73 tests over the domain rules, turn-taking, the Telegram command language, and
-the Claude participant (driven through a stubbed SDK client, so `npm test` needs
-no API key and spends nothing).
+95 tests over the domain rules, turn-taking, the seat roster, the Telegram
+command language, and the model participants on both provider adapters (driven
+through stubbed clients, so `npm test` needs no API key and spends nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose
 a route with a live blocking objection, cannot win a task two builders raced for,
 cannot talk out of turn once somebody is queued, and cannot wedge the room by
-crashing while holding the floor.
+crashing while holding the floor. Seat credentials are covered too: no view of a
+seat carries a raw key, and re-saving a seat cannot wipe the key already stored
+for it.
+
+The two web pages are also checked in a real browser (Playwright) for JS errors
+and failed requests — which is how the setup page's dead `addEventListener` was
+caught.
 
 ## License
 

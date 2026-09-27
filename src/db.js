@@ -247,6 +247,27 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 
 -- ------------------------------------------------------------------- cursors
 
+-- ------------------------------------------------------- model participants
+
+-- The models you want in the chat. One row per seat, so the room can be you
+-- plus Opus, Sonnet and Haiku arguing with each other, all on the one API key.
+-- Agents you run yourself connect over the connector instead and are not listed
+-- here — they need no key from us.
+CREATE TABLE IF NOT EXISTS participants (
+  name         TEXT PRIMARY KEY,
+  provider     TEXT NOT NULL DEFAULT 'anthropic',
+  model        TEXT NOT NULL,
+  role         TEXT NOT NULL DEFAULT 'generalist',
+  effort       TEXT NOT NULL DEFAULT 'high',
+  max_tokens   INTEGER NOT NULL DEFAULT 64000,
+  -- Each seat carries its own credential, because the seats are on different
+  -- providers. Never selected by the view that feeds the setup page.
+  api_key      TEXT,
+  base_url     TEXT,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL
+);
+
 -- ------------------------------------------------------------ speaking floor
 
 -- Turn-taking. Agents register an intent to speak with an urgency, and the
@@ -365,6 +386,9 @@ export function openDb(path) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   };
   addColumn('agents', 'last_spoke_at', 'TEXT');
+  addColumn('participants', 'provider', "TEXT NOT NULL DEFAULT 'anthropic'");
+  addColumn('participants', 'api_key', 'TEXT');
+  addColumn('participants', 'base_url', 'TEXT');
 
   // FTS5 ships in the stock better-sqlite3 build, but a custom or distro
   // SQLite may lack it. Search falls back to LIKE rather than the whole

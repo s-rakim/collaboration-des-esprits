@@ -178,57 +178,54 @@ test('a tagged question threads under the message it is about', () => {
 test('a secret is readable by the server and never by describe()', () => {
   const h = room();
   const c = createConfig(h.db);
-  c.setSecret('anthropic_api_key', 'sk-ant-supersecret-7777');
-  assert.equal(c.secret('anthropic_api_key'), 'sk-ant-supersecret-7777');
+  c.setSecret('telegram_token', '123456:AAsupersecret7777');
+  assert.equal(c.secret('telegram_token'), '123456:AAsupersecret7777');
 
   const shown = JSON.stringify(c.describe());
-  assert.ok(!shown.includes('supersecret'), 'the raw key must never reach the page');
+  assert.ok(!shown.includes('supersecret'), 'the raw secret must never reach the page');
   assert.match(shown, /7777/, 'only the last four are previewed');
-  assert.equal(c.describe().secrets.anthropic_api_key.set, true);
+  assert.equal(c.describe().secrets.telegram_token.set, true);
 });
 
 test('the environment overrides a stored value and is marked read-only', () => {
   const h = room();
   const c = createConfig(h.db);
-  c.set('claude_model', 'claude-opus-5');
-  c.setSecret('anthropic_api_key', 'sk-stored');
+  c.set('human_handle', 'stored-handle');
+  c.setSecret('telegram_token', 'stored-token');
 
-  process.env.ESPRITS_CLAUDE_MODEL = 'claude-sonnet-5';
-  process.env.ANTHROPIC_API_KEY = 'sk-from-env';
+  process.env.ESPRITS_HUMAN = 'env-handle';
+  process.env.ESPRITS_TELEGRAM_TOKEN = 'env-token';
   try {
-    assert.equal(c.get('claude_model'), 'claude-sonnet-5');
-    assert.equal(c.secret('anthropic_api_key'), 'sk-from-env');
-    assert.equal(c.describe().settings.claude_model.locked, true);
-    assert.equal(c.describe().secrets.anthropic_api_key.locked, true);
+    assert.equal(c.get('human_handle'), 'env-handle');
+    assert.equal(c.secret('telegram_token'), 'env-token');
+    assert.equal(c.describe().settings.human_handle.locked, true);
+    assert.equal(c.describe().secrets.telegram_token.locked, true);
   } finally {
-    delete process.env.ESPRITS_CLAUDE_MODEL;
-    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ESPRITS_HUMAN;
+    delete process.env.ESPRITS_TELEGRAM_TOKEN;
   }
   // With the env cleared, the stored value is in force again.
-  assert.equal(c.get('claude_model'), 'claude-opus-5');
-  assert.equal(c.describe().settings.claude_model.locked, false);
+  assert.equal(c.get('human_handle'), 'stored-handle');
+  assert.equal(c.describe().settings.human_handle.locked, false);
 });
 
-test('defaults are sane and booleans parse the usual spellings', () => {
+test('stored() distinguishes a real setting from a default', () => {
   const c = createConfig(room().db);
-  assert.equal(c.get('claude_model'), 'claude-opus-5');
-  assert.equal(c.bool('claude_enabled'), false);
+  assert.equal(c.stored('human_handle'), null, 'nothing configured yet');
+  assert.equal(c.get('human_handle'), '', 'but get() still answers with the default');
+  c.set('human_handle', 'rakim');
+  assert.equal(c.stored('human_handle'), 'rakim');
+});
+
+test('booleans parse the usual spellings', () => {
+  const c = createConfig(room().db);
+  assert.equal(c.bool('telegram_enabled'), false);
   for (const yes of ['true', 'TRUE', '1', 'yes', 'on']) {
-    c.set('claude_enabled', yes);
-    assert.equal(c.bool('claude_enabled'), true, `${yes} should be truthy`);
+    c.set('telegram_enabled', yes);
+    assert.equal(c.bool('telegram_enabled'), true, `${yes} should be truthy`);
   }
-  c.set('claude_enabled', 'false');
-  assert.equal(c.bool('claude_enabled'), false);
-  assert.equal(c.int('claude_max_tokens'), 64000);
-});
-
-test('clearing a secret removes it', () => {
-  const c = createConfig(room().db);
-  c.setSecret('pair_code', 'abc123');
-  assert.equal(c.secret('pair_code'), 'abc123');
-  c.setSecret('pair_code', null);
-  assert.equal(c.secret('pair_code'), null);
-  assert.equal(c.describe().secrets.pair_code.set, false);
+  c.set('telegram_enabled', 'false');
+  assert.equal(c.bool('telegram_enabled'), false);
 });
 
 test('unknown keys are refused rather than silently stored', () => {

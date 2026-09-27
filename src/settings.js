@@ -16,23 +16,12 @@ import { chmodSync } from 'node:fs';
 
 /** Non-secret settings: safe to display in full. */
 export const SETTINGS = {
-  claude_enabled: { env: 'ESPRITS_CLAUDE_ENABLED', default: 'false', label: 'Talk to Claude in the chat' },
-  claude_agent_name: { env: 'ESPRITS_CLAUDE_AGENT', default: 'claude', label: 'Name Claude appears under' },
-  claude_role: { env: 'ESPRITS_CLAUDE_ROLE', default: 'architect', label: "Claude's role in the room" },
-  claude_model: { env: 'ESPRITS_CLAUDE_MODEL', default: 'claude-opus-5', label: 'Model' },
-  claude_effort: { env: 'ESPRITS_CLAUDE_EFFORT', default: 'high', label: 'Effort (low → max)' },
-  claude_max_tokens: { env: 'ESPRITS_CLAUDE_MAX_TOKENS', default: '64000', label: 'Max output tokens' },
   telegram_enabled: { env: 'ESPRITS_TELEGRAM_ENABLED', default: 'false', label: 'Telegram bridge' },
   human_handle: { env: 'ESPRITS_HUMAN', default: '', label: 'Your handle' },
 };
 
 /** Secrets: write-only from the outside. */
 export const SECRETS = {
-  anthropic_api_key: {
-    env: 'ANTHROPIC_API_KEY',
-    label: 'Anthropic API key',
-    hint: 'From console.anthropic.com. Needed for the Claude participant.',
-  },
   telegram_token: {
     env: 'ESPRITS_TELEGRAM_TOKEN',
     label: 'Telegram bot token',
@@ -98,6 +87,18 @@ export function createConfig(db) {
     set(key, value) {
       if (!SETTINGS[key]) throw new Error(`unknown setting ${key}`);
       return write('settings', key, value);
+    },
+
+    /**
+     * Was this deliberately set, or is it just the default? Callers that
+     * migrate old configuration need the difference — a default is not
+     * evidence that anybody configured anything.
+     */
+    stored(key) {
+      if (!SETTINGS[key]) throw new Error(`unknown setting ${key}`);
+      const fromEnv = process.env[SETTINGS[key].env];
+      if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+      return read('settings', key);
     },
 
     /**

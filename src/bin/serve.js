@@ -7,7 +7,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { Hub, NotFound, Invalid } from '../core.js';
 import { buildServer } from '../mcp/tools.js';
 import { createConfig } from '../settings.js';
-import { createClaudeParticipant } from '../participants/claude.js';
+import { createSeats } from '../seats.js';
+import { describeProviders, providerFor } from '../participants/providers/index.js';
+import { createModelParticipant } from '../participants/agent.js';
 import { createRouter } from '../bridges/commands.js';
 import { createTelegram } from '../bridges/telegram.js';
 
@@ -34,12 +36,15 @@ const FEED_PAGE = 500;
 
 const hub = new Hub({ dbPath: process.env.ESPRITS_DB });
 const config = createConfig(hub.db);
+const seats = createSeats(hub.db);
+seats.seedIfEmpty();
 
 /**
  * Optional in-process participants. Assigned during startup below; the routes
  * close over these bindings, so they must exist before the app is built.
  */
-let claude = null;
+/** Running model participants, keyed by seat name. */
+const models = new Map();
 let telegram = null;
 
 const app = express();
@@ -202,13 +207,14 @@ app.post('/api/ask', (req, res) =>
       replyTo: req.body.replyTo ?? null,
     });
 
-    if (claude && audience === claude.name && config.secret('anthropic_api_key')) {
+    const tagged = models.get(audience);
+    if (tagged && config.secret('anthropic_api_key')) {
       // Deliberately not awaited: a reply can take a while, and the page should
       // not sit on an open request when the feed will deliver the answer.
-      claude
+      tagged
         .askDirect({ body: req.body.body, idea: req.body.idea ?? null, from: req.body.as })
-        .catch((err) => process.stderr.write(`claude: direct ask failed — ${err.message}\n`));
-      return { ...q, nudged: claude.name };
+        .catch((err) => process.stderr.write(`${audience}: direct ask failed — ${err.message}\n`));
+      return { ...q, nudged: audience };
     }
     return q;
   }),
@@ -242,30 +248,80 @@ app.post('/api/settings', (req, res) =>
   }),
 );
 
-/** Does the configured key actually work? Cheapest possible real call. */
-app.post('/api/settings/test-anthropic', async (req, res) => {
-  const key = config.secret('anthropic_api_key');
-  if (!key) return res.status(400).json({ ok: false, error: 'no API key set' });
+/**
+ * Does this seat's key actually reach its provider? One real call through the
+ * same adapter the seat uses, so a bad key or a wrong base URL fails here rather
+ * than silently inside a watch loop.
+ */
+app.post('/api/seats/:name/test', async (req, res) => {
+  const seat = seats.get(req.params.name);
+  if (!seat) return res.status(404).json({ ok: false, error: `no seat named "${req.params.name}"` });
+  if (!seat.keySet) return res.status(400).json({ ok: false, error: `no key set for ${seat.name}` });
+
   try {
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: key });
-    const r = await client.messages.create({
-      model: config.get('claude_model'),
-      // Thinking is on by default on current models, so a tiny budget can be
-      // spent before any text is emitted. Leave room and keep effort low.
-      max_tokens: 1024,
-      output_config: { effort: 'low' },
-      messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+    const provider = providerFor(seat.provider);
+    const adapter = provider.adapter({
+      apiKey: seats.keyFor(seat.name),
+      model: seat.model,
+      maxTokens: 1024,
+      effort: 'low',
+      baseURL: seat.baseURL || provider.baseURL || undefined,
     });
-    if (r.stop_reason === 'refusal') {
+    const turn = adapter.startTurn({
+      system: 'Answer in one word.',
+      // A tool is declared because that is how the seat will really be used, so
+      // a provider that rejects the tool shape fails here too.
+      tools: [{
+        name: 'noop',
+        description: 'Do nothing. Never call this.',
+        parameters: { type: 'object', additionalProperties: false, properties: {} },
+      }],
+    });
+    const step = await turn.send('Reply with the single word: ready');
+    if (step.stopReason === 'refusal') {
       return res.status(400).json({ ok: false, error: 'the model declined the test request' });
     }
-    const said = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    res.json({ ok: true, model: r.model, said: said || '(no text, but the call succeeded)' });
+    res.json({
+      ok: true,
+      seat: seat.name,
+      provider: seat.provider,
+      model: seat.model,
+      said: step.text || '(no text, but the call succeeded)',
+    });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message, status: err.status });
   }
 });
+
+// ---------------------------------------------------------- the model roster
+
+app.get('/api/seats', (_req, res) =>
+  send(res, () => ({
+    // seats.all() already omits every credential, so there is no key to strip here.
+    seats: seats.all().map((s) => ({ ...s, running: models.has(s.name) })),
+    providers: describeProviders(),
+  })),
+);
+
+app.post('/api/seats', (req, res) =>
+  send(res, () => {
+    const saved = seats.save(req.body ?? {});
+    // Start or stop it to match, so the roster takes effect without a restart.
+    syncSeats();
+    return { ...saved, running: models.has(saved.name) };
+  }),
+);
+
+app.delete('/api/seats/:name', (req, res) =>
+  send(res, () => {
+    const stopped = models.get(req.params.name);
+    if (stopped) {
+      stopped.stop();
+      models.delete(req.params.name);
+    }
+    return { removed: seats.remove(req.params.name) };
+  }),
+);
 
 // -------------------------------------------------------- talking to Claude
 
@@ -277,23 +333,35 @@ app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
  * button uses, and what tagging @claude in a message resolves to.
  */
 app.post('/api/claude/ask', async (req, res) => {
-  if (!claude) return res.status(400).json({ error: 'the Claude participant is not configured' });
   if (!config.secret('anthropic_api_key')) {
     return res.status(400).json({ error: 'no Anthropic API key — add one on the setup page' });
   }
   const body = String(req.body?.body ?? '').trim();
   if (!body) return res.status(400).json({ error: 'body is required' });
+
+  // Which model was asked. Defaults to the first running seat, so "ask a model"
+  // works before the user has thought about which one.
+  const who = req.body.model ?? [...models.keys()][0];
+  const participant = models.get(who);
+  if (!participant) {
+    return res.status(400).json({
+      error: models.size
+        ? `no model named "${who}" is running — ${[...models.keys()].join(', ')} are`
+        : 'no model participants are running — add one at /setup',
+    });
+  }
+
   try {
-    // Post the human's question first so the room sees what was asked, then
-    // let Claude answer into the same thread.
+    // Post the question first so the room sees what was asked, then let the
+    // model answer into the same thread.
     hub.post({
       idea: req.body.idea ?? null,
-      body: `@${claude.name} ${body}`,
+      body: `@${participant.name} ${body}`,
       by: req.body.as,
       kind: 'question',
     });
-    const r = await claude.askDirect({ body, idea: req.body.idea ?? null, from: req.body.as });
-    res.json({ ok: true, ...r });
+    const r = await participant.askDirect({ body, idea: req.body.idea ?? null, from: req.body.as });
+    res.json({ ok: true, model: participant.name, ...r });
   } catch (err) {
     const status = err instanceof NotFound ? 404 : err instanceof Invalid ? 400 : 502;
     res.status(status).json({ error: err.message });
@@ -359,17 +427,49 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
  * neither can take the server down: a missing key or a bad token leaves that
  * piece idle and logs why.
  */
-function startParticipants() {
-  claude = createClaudeParticipant({ hub, config, log: (m) => process.stdout.write(`${m}\n`) });
-  if (config.bool('claude_enabled')) {
-    if (config.secret('anthropic_api_key')) {
-      claude.run().catch((err) => process.stderr.write(`claude: stopped — ${err.message}\n`));
-    } else {
-      // Still constructed, so /api/claude/ask can report the real reason and
-      // the setup page can enable it without a restart.
-      process.stdout.write('claude: enabled but no API key yet — add one at /setup\n');
+/**
+ * Bring the running participants in line with the saved roster. Called at boot
+ * and after every roster edit, so adding a model in the browser puts it in the
+ * chat without a restart.
+ */
+function syncSeats() {
+  const wanted = new Map(seats.enabled().map((s) => [s.name, s]));
+
+  for (const [name, running] of models) {
+    const seat = wanted.get(name);
+    // Stop anything disabled, removed, or reconfigured — the seat spec is
+    // captured at construction, so a changed seat needs a fresh participant.
+    if (!seat || running.model !== seat.model || running.role !== seat.role || running.provider !== seat.provider) {
+      running.stop();
+      models.delete(name);
     }
   }
+
+  for (const seat of wanted.values()) {
+    if (models.has(seat.name)) continue;
+    if (!seat.keySet) {
+      process.stdout.write(`${seat.name}: enabled but has no key for ${seat.provider} — add one at /setup\n`);
+      continue;
+    }
+    const p = createModelParticipant({
+      hub,
+      seat,
+      // Read through on every turn rather than captured, so a key replaced on
+      // the setup page takes effect without restarting the seat.
+      getKey: (n) => seats.keyFor(n),
+      log: (m) => process.stdout.write(`${m}\n`),
+    });
+    models.set(seat.name, p);
+    // One model failing must not take the others, or the server, down.
+    p.run().catch((err) => {
+      process.stderr.write(`${seat.name}: stopped — ${err.message}\n`);
+      models.delete(seat.name);
+    });
+  }
+}
+
+function startParticipants() {
+  syncSeats();
 
   const token = config.secret('telegram_token');
   const pairCode = config.secret('pair_code');
@@ -392,14 +492,18 @@ app.listen(PORT, HOST, () => {
       `  connector  http://${HOST}:${PORT}/mcp\n` +
       `  database   ${hub.db.name}\n` +
       `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n` +
-      `  claude     ${config.bool('claude_enabled') ? (config.secret('anthropic_api_key') ? `on (${config.get('claude_model')})` : 'enabled, no key yet') : 'off'}\n` +
+      `  models     ${seats.enabled().map((s) => `${s.name}=${s.model}${s.keySet ? '' : ' (no key)'}`).join(', ') || 'none — add some at /setup'}\n` +
       `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n`,
   );
   startParticipants();
 });
 
 const shutdown = () => {
-  try { claude?.stop(); telegram?.stop(); hub.close(); } catch { /* best effort */ }
+  try {
+    for (const p of models.values()) p.stop();
+    telegram?.stop();
+    hub.close();
+  } catch { /* best effort */ }
   process.exit(0);
 };
 process.on('SIGINT', shutdown);
