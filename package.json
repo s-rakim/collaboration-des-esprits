@@ -13,7 +13,8 @@
     "start": "node src/bin/serve.js",
     "stdio": "node src/bin/stdio.js",
     "test": "node --test test/*.test.mjs",
-    "seed": "node src/bin/seed.js"
+    "seed": "node src/bin/seed.js",
+    "telegram": "node src/bin/telegram.js"
   },
   "engines": {
     "node": ">=20.11"

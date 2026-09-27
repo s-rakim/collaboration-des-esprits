@@ -247,6 +247,31 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 
 -- ------------------------------------------------------------------- cursors
 
+-- ------------------------------------------------------- messaging bridges
+
+-- A paired chat on Telegram/WhatsApp, so the human can drop ideas and answer
+-- blocking questions from their phone. A chat must be paired before it can see
+-- or touch anything: without that, anyone who finds the bot gets the room.
+CREATE TABLE IF NOT EXISTS bridge_chats (
+  platform          TEXT NOT NULL,                   -- telegram | whatsapp
+  chat_id           TEXT NOT NULL,
+  agent_name        TEXT,                            -- which room identity this chat speaks as
+  current_idea      INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  notify            INTEGER NOT NULL DEFAULT 1,
+  -- Watermark, so a restart does not re-send everything already delivered.
+  last_notified_id  INTEGER NOT NULL DEFAULT 0,
+  paired_at         TEXT,
+  created_at        TEXT NOT NULL,
+  PRIMARY KEY (platform, chat_id)
+);
+
+-- Small key/value scratch for bridge bookkeeping (e.g. the Telegram update
+-- offset), kept in the same file so a restart resumes exactly where it stopped.
+CREATE TABLE IF NOT EXISTS bridge_state (
+  k  TEXT PRIMARY KEY,
+  v  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS cursors (
   agent_id         TEXT NOT NULL,
   scope            TEXT NOT NULL,                    -- 'feed' or 'idea:<id>'

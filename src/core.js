@@ -449,6 +449,24 @@ export class Hub {
     };
   }
 
+  /**
+   * Block until something new arrives, or the timeout expires. This is what
+   * makes an agent conversational rather than a poller: its loop is
+   * wait() → think → post(), and it costs one query every pollMs while idle.
+   *
+   * SQLite is polled rather than pushed because the writers are separate OS
+   * processes — there is no in-process event to listen for.
+   */
+  async waitFor({ by, idea = undefined, timeoutMs = 25000, pollMs = 500, mentioningMe = false, limit = 50 }) {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    for (;;) {
+      const r = this.read({ by, idea, limit, advance: true, mentioningMe });
+      if (r.messages.length) return { ...r, timedOut: false };
+      if (Date.now() >= deadline) return { ...r, timedOut: true };
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+
   /** How many unread, and how many of those are aimed at me. */
   unread({ by, idea = undefined }) {
     const agent = this.#agent(by);
@@ -1768,6 +1786,30 @@ export class Hub {
         .get(),
       houseRules: HOUSE_RULES,
     };
+  }
+
+  /**
+   * Everything addressed to one participant since a watermark. The messaging
+   * bridges use this to push only what actually needs the person, rather than
+   * relaying the whole room to their phone.
+   *
+   * A human is also addressed by @human, which is what ask() uses when a
+   * question is aimed at them.
+   */
+  notifications({ name, since = 0 }) {
+    const agent = this.#agent(name);
+    const targets = agent.kind === 'human' ? [agent.name, 'all', 'human'] : [agent.name, 'all'];
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, i.slug AS idea_slug FROM messages m
+         LEFT JOIN ideas i ON i.id = m.idea_id
+         WHERE m.id > ? AND m.author != ?
+           AND EXISTS (SELECT 1 FROM mentions x WHERE x.message_id = m.id
+                       AND x.name IN (${targets.map(() => '?').join(',')}))
+         ORDER BY m.id LIMIT 50`,
+      )
+      .all(since, agent.name, ...targets);
+    return { messages: rows.map((m) => this.#messageView(m)), head: this.head() };
   }
 
   /** Newest message id — the HTTP layer polls this to drive live updates. */

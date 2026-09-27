@@ -336,6 +336,34 @@ export function buildServer({ hub, identity = null }) {
   );
 
   tool(
+    'wait',
+    {
+      title: 'Wait for someone to say something',
+      description:
+        'Block until a new message arrives or the timeout expires, then return it. This is how you ' +
+        'hold a conversation instead of polling: loop on wait(), respond to what comes back, and ' +
+        'wait again. Returns immediately if something is already unread. A timeout is normal and ' +
+        'means the room is quiet — just call it again.',
+      inputSchema: {
+        as: AS,
+        idea: IDEA.optional().describe('Only wait on one idea.'),
+        mentioning_me: z.boolean().default(false).describe('Only wake for messages that @mention you or @all.'),
+        timeout_seconds: z.number().int().min(1).max(60).default(25).describe('Keep this under your client request timeout.'),
+      },
+    },
+    async (a) => {
+      const r = await hub.waitFor({
+        by: who(a.as),
+        idea: a.idea,
+        mentioningMe: a.mentioning_me,
+        timeoutMs: a.timeout_seconds * 1000,
+      });
+      if (r.timedOut) return text(`(quiet for ${a.timeout_seconds}s — nothing new. Call wait again.)`);
+      return text(renderMessages(r.messages) + `\n\n---\ncursor ${r.cursor}`);
+    },
+  );
+
+  tool(
     'search',
     {
       title: 'Search the history',
@@ -742,5 +770,77 @@ export function buildServer({ hub, identity = null }) {
           .join('\n') || 'No open handoffs.',
       ),
   );
+  // ------------------------------------------------------------------ prompts
+
+  /**
+   * The operating loop, as a prompt the client can load into its agent. Without
+   * something like this an agent joins and then sits there: it has the tools
+   * but no reason to keep listening.
+   */
+  server.registerPrompt(
+    'participate',
+    {
+      title: 'Work in the room',
+      description: 'The loop to run as a participant: listen, contribute, propose, score, build.',
+      argsSchema: {
+        as: z.string().optional().describe('Your agent name.'),
+        role: z.string().optional().describe('Your role, if different from how you joined.'),
+      },
+    },
+    (args) => {
+      const name = args?.as ?? identity?.name ?? '<your name>';
+      const role = args?.role ?? identity?.role ?? '<your role>';
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: [
+                `You are "${name}", the ${role}, in a room with a human and several other AI agents.`,
+                `The human drops ideas; the room refines them into something buildable and then builds it.`,
+                '',
+                'Run this loop and keep running it. Do not stop after one pass.',
+                '',
+                '1. join(name, role) once, then catch_up() to see what is waiting on you.',
+                '2. brief(idea) before your first contribution to any idea. It contains the original',
+                '   dump, the spec, every decision with its reasoning, and the open questions.',
+                '   Never re-open something it lists as decided unless you have new information.',
+                '3. Then loop: wait() → act → wait() again.',
+                '',
+                'What to do when you wake:',
+                '- The human dropped an idea, or asked something → answer in the thread. Talk to them',
+                '  like a colleague, not a form. They are reading this on their phone.',
+                '- No approach is on the table yet → propose() one. Be concrete: how it works, the',
+                '  effort, the real risks. If somebody already proposed what you would have, score',
+                '  theirs instead of restating it.',
+                '- An open proposal you have not scored → weigh_in() with a feasibility score 1-5 and',
+                '  the reason. Feasibility means buildable now, with what is actually available — not',
+                '  elegant. Silence stalls the room, so score it even if you are indifferent.',
+                '- Somebody objected to your proposal → answer the objection on its merits. If they',
+                '  are right, say so and withdraw_proposal(), or change your own score. Being argued',
+                '  out of a position is the mechanism working.',
+                '- standing() says a route is ready → choose() it, or say why you disagree. Get to a',
+                '  decision; an undecided room is the failure mode.',
+                '- A route is chosen → refine_spec() to write up what was agreed, then plan() it into',
+                '  tasks with roles and dependencies.',
+                '- There is claimable work for you → claim_next(), do it, then update_task() with what',
+                '  you changed and how to verify it. handoff() instead if you have to stop mid-task.',
+                '',
+                'Two standing rules:',
+                '- Anything a future agent would need goes in decide(), remember() or handoff().',
+                '  If it only exists in the chat, treat it as lost.',
+                '- Argue with the plan, never the agent. Give the concrete failure case.',
+                '',
+                'The human wants viable options they can pick from, with the trade-offs stated, not a',
+                'single answer handed down and not an endless discussion. Converge.',
+              ].join('\n'),
+            },
+          },
+        ],
+      };
+    },
+  );
+
   return { server, who };
 }
