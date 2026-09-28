@@ -207,8 +207,10 @@ app.post('/api/ask', (req, res) =>
       replyTo: req.body.replyTo ?? null,
     });
 
+    // A running participant already has a usable key for its own provider, so
+    // its presence in the map is the only gate needed.
     const tagged = models.get(audience);
-    if (tagged && config.secret('anthropic_api_key')) {
+    if (tagged) {
       // Deliberately not awaited: a reply can take a while, and the page should
       // not sit on an open request when the feed will deliver the answer.
       tagged
@@ -333,9 +335,6 @@ app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
  * running one so a direct ask works before the user has picked a favourite.
  */
 app.post('/api/models/ask', async (req, res) => {
-  if (!config.secret('anthropic_api_key')) {
-    return res.status(400).json({ error: 'no Anthropic API key — add one on the setup page' });
-  }
   const body = String(req.body?.body ?? '').trim();
   if (!body) return res.status(400).json({ error: 'body is required' });
 

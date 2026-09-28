@@ -1,16 +1,13 @@
 import OpenAI from 'openai';
 
 /**
- * OpenAI adapter, on the official SDK, also used for every provider that speaks
- * the Chat Completions shape — Gemini's compatible endpoint, OpenRouter, Ollama,
- * and anything self-hosted. The only difference between them is the base URL.
- *
- * Deliberately not used for Anthropic: Claude has its own SDK and its own
- * request shape, and going through a compatibility layer would cost thinking
- * blocks and prompt caching.
+ * The one adapter, on the official OpenAI SDK. It serves every provider that
+ * speaks the Chat Completions shape — OpenAI itself, Gemini's compatible
+ * endpoint, OpenRouter, a local Ollama, and anything self-hosted. The only
+ * difference between them is the base URL and the key.
  */
 
-export function openaiAdapter({ apiKey, model, maxTokens, baseURL, createClient }) {
+export function openaiAdapter({ apiKey, model, maxTokens, effort, effortParam, baseURL, createClient }) {
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
@@ -40,6 +37,9 @@ export function openaiAdapter({ apiKey, model, maxTokens, baseURL, createClient 
             messages,
             tools: toolDefs,
             tool_choice: 'auto',
+            // Omitted entirely unless the provider declared the field, since an
+            // unknown parameter fails the request rather than being ignored.
+            ...(effortParam && effort ? { [effortParam]: effort } : {}),
           });
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.
@@ -90,8 +90,7 @@ export function openaiAdapter({ apiKey, model, maxTokens, baseURL, createClient 
           return request();
         },
         async toolResults(results) {
-          // This shape wants one message per tool result, keyed by call id —
-          // unlike Anthropic, which wants them all in a single user message.
+          // One message per tool result, keyed by the call id it answers.
           for (const r of results) {
             messages.push({ role: 'tool', tool_call_id: r.id, content: r.output });
           }

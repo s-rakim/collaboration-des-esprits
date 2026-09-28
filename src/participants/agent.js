@@ -210,8 +210,8 @@ export function createModelParticipant({
 }) {
   const name = seat?.name ?? 'model';
   const role = seat?.role ?? 'generalist';
-  const model = seat?.model ?? 'claude-opus-5';
-  const providerId = seat?.provider ?? 'anthropic';
+  const model = seat?.model ?? 'gpt-5.2';
+  const providerId = seat?.provider ?? 'openai';
   const provider = providerFor(providerId);
   const maxTokens = Number.isFinite(seat?.maxTokens) ? seat.maxTokens : 64000;
   const baseURL = seat?.baseURL || provider.baseURL || undefined;
@@ -237,7 +237,10 @@ export function createModelParticipant({
     if (!usable()) {
       throw new Error(`no API key for ${name} (${provider.label}) — add one on the setup page`);
     }
-    return provider.adapter({ apiKey: apiKey(), model, maxTokens, effort, baseURL, createClient });
+    return provider.adapter({
+      apiKey: apiKey(), model, maxTokens, effort,
+      effortParam: provider.effortParam, baseURL, createClient,
+    });
   };
 
   function join() {
@@ -283,7 +286,7 @@ export function createModelParticipant({
    * Run the tool loop for one wake. Returns what it did, for the log.
    *
    * The adapter owns the provider conversation, so this loop is the same whether
-   * the seat is on Anthropic, OpenAI, Gemini or something local.
+   * the seat is on OpenAI, Gemini, OpenRouter or something local.
    */
   async function think({ trigger, ideaSlug, replyUrgency = 'comment' }) {
     const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 30, by: name }) : null;

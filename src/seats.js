@@ -10,12 +10,12 @@ import { providerFor, PROVIDERS } from './participants/providers/index.js';
 
 /**
  * What a fresh install starts with: a room that already disagrees with itself,
- * switched off until credentials are added. Different providers on purpose —
+ * switched off until credentials are added. Two different providers on purpose —
  * two models from the same family agree too readily to be worth the tokens.
  */
 export const STARTER_SEATS = [
-  { name: 'opus', provider: 'anthropic', model: 'claude-opus-5', role: 'architect', effort: 'high' },
-  { name: 'sonnet', provider: 'anthropic', model: 'claude-sonnet-5', role: 'critic', effort: 'high' },
+  { name: 'architect', provider: 'openai', model: 'gpt-5.2', role: 'architect', effort: 'high' },
+  { name: 'critic', provider: 'google', model: 'gemini-3-pro', role: 'critic', effort: 'high' },
 ];
 
 const VALID_EFFORT = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -77,7 +77,7 @@ export function createSeats(db) {
      * same rule as any other agent: no spaces, because it is an @mention.
      */
     save({
-      name, model, provider = 'anthropic', role = 'generalist', effort = 'high',
+      name, model, provider = 'openai', role = 'generalist', effort = 'high',
       maxTokens = 64000, enabled = true, apiKey = undefined, baseURL = undefined,
     }) {
       const handle = String(name ?? '').trim();

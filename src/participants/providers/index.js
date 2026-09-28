@@ -1,38 +1,25 @@
-import { anthropicAdapter } from './anthropic.js';
 import { openaiAdapter } from './openai.js';
 
 /**
  * Providers a seat can run on.
  *
- * Two adapters cover all of these. Anthropic gets its own, because the Messages
- * API has a different shape and its own SDK — routing Claude through an
- * OpenAI-compatible shim would give up thinking blocks and prompt caching. The
- * rest speak the OpenAI Chat Completions shape, which is what almost every other
- * provider and local runner exposes, so one adapter with a different base URL
- * reaches them all.
+ * All of them speak the OpenAI Chat Completions shape, which is what almost
+ * every provider and local runner exposes, so a single adapter with a different
+ * base URL reaches them all. Adding another is a row in this table, not code.
  *
  * `keyEnv` is the conventional environment variable for that provider, used as a
  * fallback when a seat has no key of its own.
  */
 export const PROVIDERS = {
-  anthropic: {
-    label: 'Anthropic',
-    adapter: anthropicAdapter,
-    keyEnv: 'ANTHROPIC_API_KEY',
-    keyHint: 'console.anthropic.com',
-    models: [
-      { id: 'claude-opus-5', label: 'Claude Opus 5', note: 'Strong general reasoning. A good architect.' },
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', note: 'Cheaper and quick. A good critic or builder.' },
-      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', note: 'Cheapest. Fine for research and scoring.' },
-      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', note: 'Newer Opus, lower price.' },
-      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', note: 'Most capable, most expensive.' },
-    ],
-  },
   openai: {
     label: 'OpenAI',
     adapter: openaiAdapter,
     keyEnv: 'OPENAI_API_KEY',
     keyHint: 'platform.openai.com',
+    // Reasoning models take a reasoning_effort parameter. Declared per provider
+    // rather than sent everywhere, because a provider that does not know the
+    // field will reject the whole request.
+    effortParam: 'reasoning_effort',
     models: [
       { id: 'gpt-5.2', label: 'GPT-5.2', note: '' },
       { id: 'gpt-5.1', label: 'GPT-5.1', note: '' },
@@ -88,8 +75,12 @@ export const PROVIDERS = {
   },
 };
 
+/** Falls back to the first declared provider so an unknown name cannot crash a caller. */
+/** Used when a seat names a provider that no longer exists. */
+export const DEFAULT_PROVIDER = 'openai';
+
 export function providerFor(name) {
-  return PROVIDERS[name] ?? PROVIDERS.anthropic;
+  return PROVIDERS[name] ?? PROVIDERS[DEFAULT_PROVIDER];
 }
 
 /** What the setup page needs to render the picker. Never includes a key. */
@@ -101,6 +92,7 @@ export function describeProviders() {
     keyHint: p.keyHint,
     keyOptional: Boolean(p.keyOptional),
     needsBaseURL: Boolean(p.needsBaseURL),
+    supportsEffort: Boolean(p.effortParam),
     defaultBaseURL: p.baseURL ?? '',
     models: p.models,
   }));

@@ -255,7 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 -- here — they need no key from us.
 CREATE TABLE IF NOT EXISTS participants (
   name         TEXT PRIMARY KEY,
-  provider     TEXT NOT NULL DEFAULT 'anthropic',
+  provider     TEXT NOT NULL DEFAULT 'openai',
   model        TEXT NOT NULL,
   role         TEXT NOT NULL DEFAULT 'generalist',
   effort       TEXT NOT NULL DEFAULT 'high',
@@ -386,7 +386,7 @@ export function openDb(path) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   };
   addColumn('agents', 'last_spoke_at', 'TEXT');
-  addColumn('participants', 'provider', "TEXT NOT NULL DEFAULT 'anthropic'");
+  addColumn('participants', 'provider', "TEXT NOT NULL DEFAULT 'openai'");
   addColumn('participants', 'api_key', 'TEXT');
   addColumn('participants', 'base_url', 'TEXT');
 

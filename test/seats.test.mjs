@@ -12,9 +12,9 @@ const fresh = () => {
 
 test('a seat round-trips with its model, role and effort', () => {
   const { seats } = fresh();
-  seats.save({ name: 'opus', model: 'claude-opus-5', role: 'architect', effort: 'max' });
-  const s = seats.get('opus');
-  assert.equal(s.model, 'claude-opus-5');
+  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'architect', effort: 'max' });
+  const s = seats.get('gpt');
+  assert.equal(s.model, 'gpt-5.2');
   assert.equal(s.role, 'architect');
   assert.equal(s.effort, 'max');
   assert.equal(s.enabled, true);
@@ -22,50 +22,50 @@ test('a seat round-trips with its model, role and effort', () => {
 
 test('saving the same name updates rather than duplicating the seat', () => {
   const { seats } = fresh();
-  seats.save({ name: 'opus', model: 'claude-opus-5', role: 'architect' });
-  seats.save({ name: 'opus', model: 'claude-sonnet-5', role: 'critic' });
+  seats.save({ name: 'gpt', model: 'gpt-5.2', role: 'architect' });
+  seats.save({ name: 'gpt', model: 'gpt-5-mini', role: 'critic' });
   assert.equal(seats.all().length, 1);
-  assert.equal(seats.get('opus').model, 'claude-sonnet-5');
+  assert.equal(seats.get('gpt').model, 'gpt-5-mini');
 });
 
 test('a name with spaces is refused, because it is an @mention handle', () => {
   const { seats } = fresh();
-  assert.throws(() => seats.save({ name: 'my model', model: 'claude-opus-5' }), /cannot contain spaces/);
-  assert.throws(() => seats.save({ name: '', model: 'claude-opus-5' }), /needs a name/);
+  assert.throws(() => seats.save({ name: 'my model', model: 'gpt-5.2' }), /cannot contain spaces/);
+  assert.throws(() => seats.save({ name: '', model: 'gpt-5.2' }), /needs a name/);
   assert.throws(() => seats.save({ name: 'x', model: '' }), /needs a model/);
 });
 
 test('an invalid effort is clamped to a usable one', () => {
   const { seats } = fresh();
-  seats.save({ name: 'x', model: 'claude-opus-5', effort: 'ludicrous' });
+  seats.save({ name: 'x', model: 'gpt-5.2', effort: 'ludicrous' });
   assert.equal(seats.get('x').effort, 'high');
 });
 
 test('only enabled seats are started', () => {
   const { seats } = fresh();
-  seats.save({ name: 'on1', model: 'claude-opus-5' });
-  seats.save({ name: 'on2', model: 'claude-sonnet-5' });
-  seats.save({ name: 'off', model: 'claude-haiku-4-5', enabled: false });
+  seats.save({ name: 'on1', model: 'gpt-5.2' });
+  seats.save({ name: 'on2', provider: 'google', model: 'gemini-3-pro' });
+  seats.save({ name: 'off', provider: 'ollama', model: 'qwen3', enabled: false });
   assert.deepEqual(seats.enabled().map((s) => s.name).sort(), ['on1', 'on2']);
 });
 
 test('removing a seat keeps everything that model already contributed', () => {
   const { hub, seats } = fresh();
   hub.join({ name: 'rakim', role: 'human', kind: 'human' });
-  seats.save({ name: 'opus', model: 'claude-opus-5', role: 'architect' });
-  hub.join({ name: 'opus', role: 'architect', model: 'claude-opus-5' });
+  seats.save({ name: 'gpt', model: 'gpt-5.2', role: 'architect' });
+  hub.join({ name: 'gpt', role: 'architect', model: 'gpt-5.2' });
 
   const idea = hub.dropIdea({ title: 'Legacy', raw: '', by: 'rakim' });
-  hub.post({ idea: idea.slug, body: 'my reasoning', by: 'opus' });
-  const d = hub.decide({ idea: idea.slug, choice: 'do it this way', rationale: 'because', by: 'opus' });
+  hub.post({ idea: idea.slug, body: 'my reasoning', by: 'gpt' });
+  const d = hub.decide({ idea: idea.slug, choice: 'do it this way', rationale: 'because', by: 'gpt' });
 
-  assert.equal(seats.remove('opus'), true);
-  assert.equal(seats.get('opus'), null);
+  assert.equal(seats.remove('gpt'), true);
+  assert.equal(seats.get('gpt'), null);
   // The decision still stands — deleting the reasoning behind a live decision
   // because the model left would be worse than keeping it.
   assert.ok(hub.decisions({ idea: idea.slug }).some((x) => x.id === d.id));
   assert.ok(hub.db.prepare('SELECT 1 FROM messages WHERE body = ?').get('my reasoning'));
-  assert.equal(seats.remove('opus'), false, 'removing twice is not an error');
+  assert.equal(seats.remove('gpt'), false, 'removing twice is not an error');
 });
 
 test('a fresh install is seeded with a room that can disagree with itself', () => {
@@ -87,28 +87,34 @@ test('every provider advertises an adapter, a key variable and models', () => {
     assert.ok(p.label && p.keyEnv, `${id} needs a label and a key env var`);
     assert.ok(Array.isArray(p.models), `${id} needs a model list`);
   }
-  // Only Anthropic gets its own SDK path; the rest share the compatible one.
-  assert.notEqual(PROVIDERS.anthropic.adapter, PROVIDERS.openai.adapter);
-  assert.equal(PROVIDERS.google.adapter, PROVIDERS.openai.adapter);
+  // One adapter serves them all; a provider is a table row, not new code.
+  const adapters = new Set(Object.values(PROVIDERS).map((p) => p.adapter));
+  assert.equal(adapters.size, 1, 'every provider shares the Chat Completions adapter');
+});
+
+test('only providers that accept an effort knob advertise one', () => {
+  const shown = describeProviders();
+  const withEffort = shown.filter((p) => p.supportsEffort).map((p) => p.id);
+  assert.deepEqual(withEffort, ['openai'], 'sending an unknown parameter fails the whole request');
 });
 
 test('the provider description sent to the browser carries no credentials', () => {
   const shown = JSON.stringify(describeProviders());
   assert.ok(!/apiKey|api_key/.test(shown));
-  assert.match(shown, /anthropic/);
+  assert.match(shown, /openai/);
   assert.match(shown, /openrouter/);
 });
 
 test('seats on different providers each keep their own key', () => {
   const { seats } = fresh();
-  seats.save({ name: 'opus', provider: 'anthropic', model: 'claude-opus-5', apiKey: 'sk-ant-1111' });
+  seats.save({ name: 'gem', provider: 'google', model: 'gemini-3-pro', apiKey: 'AIza-1111' });
   seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5.2', apiKey: 'sk-oai-2222' });
-  assert.equal(seats.keyFor('opus'), 'sk-ant-1111');
+  assert.equal(seats.keyFor('gem'), 'AIza-1111');
   assert.equal(seats.keyFor('gpt'), 'sk-oai-2222');
 
   // And no view of a seat ever carries the raw value.
   const shown = JSON.stringify(seats.all());
-  assert.ok(!shown.includes('sk-ant-1111') && !shown.includes('sk-oai-2222'));
+  assert.ok(!shown.includes('AIza-1111') && !shown.includes('sk-oai-2222'));
   assert.match(shown, /1111/, 'only the last four are previewed');
 });
 

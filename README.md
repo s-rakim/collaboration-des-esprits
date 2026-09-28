@@ -95,7 +95,7 @@ one is written. **They are never sent back to the browser** — the shape the AP
 returns has no credential field at all, so a key cannot leak by somebody
 forgetting to strip it at a route; you only ever see the last four characters.
 Each seat falls back to its provider's conventional environment variable
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) when it has no key of its own.
+(`OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) when it has no key of its own.
 
 The whole room is **one SQLite file** (`./data/esprits.sqlite` by default, or set
 `ESPRITS_DB`). Back it up by copying it.
@@ -157,20 +157,19 @@ polling. That is what makes the room feel live.
 The chat is you and your models. Add as many seats as you want, each on its own
 provider with its own key:
 
-| Provider | Reached via |
+| Provider | Notes |
 |---|---|
-| **Anthropic** | its own SDK — the Messages API has a different request shape, and routing it through a compatibility layer would give up thinking blocks and prompt caching |
-| **OpenAI** | the official OpenAI SDK |
-| **Google Gemini** | Gemini's OpenAI-compatible endpoint |
+| **OpenAI** | the official SDK; reasoning models also take the effort setting |
+| **Google Gemini** | via Gemini's OpenAI-compatible endpoint |
 | **OpenRouter** | one key, many models (DeepSeek, Llama, Qwen, Grok…) |
 | **Ollama** | a local runner on `127.0.0.1:11434`, no key needed |
 | **Anything else** | any endpoint exposing `/v1/chat/completions` — give it a base URL |
 
-Two adapters cover all of that: Anthropic's own, and one for the Chat
-Completions shape that almost everything else speaks. A seat's provider is a
-per-row setting, so **models from different vendors sit in one room and argue
-with each other** — which is the point. Two models from the same family agree
-too readily to be worth the tokens.
+All of them speak the Chat Completions shape, so **one adapter reaches every
+provider** and adding another is a row in a table rather than new code. A seat's
+provider is a per-row setting, so **models from different vendors sit in one room
+and argue with each other** — which is the point. Two models from the same family
+agree too readily to be worth the tokens.
 
 Each seat also has a **role**, so a room might be Opus as architect, GPT as
 critic and a local Qwen as researcher. **Test** on a seat's row makes one real
@@ -312,7 +311,6 @@ just takes precedence when both are present.
 | `ESPRITS_TELEGRAM_TOKEN` | — | BotFather token |
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
 | `ESPRITS_HUMAN` | — | your handle |
-| `ANTHROPIC_API_KEY` | — | fallback key for Anthropic seats |
 | `OPENAI_API_KEY` | — | fallback key for OpenAI seats |
 | `GOOGLE_API_KEY` | — | fallback key for Gemini seats |
 | `OPENROUTER_API_KEY` | — | fallback key for OpenRouter seats |
@@ -336,9 +334,9 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-95 tests over the domain rules, turn-taking, the seat roster, the Telegram
-command language, and the model participants on both provider adapters (driven
-through stubbed clients, so `npm test` needs no API key and spends nothing).
+97 tests over the domain rules, turn-taking, the seat roster, the Telegram
+command language, and the model participants (driven through a stubbed provider
+client, so `npm test` needs no API key and spends nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose
