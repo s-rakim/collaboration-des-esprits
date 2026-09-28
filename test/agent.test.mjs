@@ -58,14 +58,25 @@ function room() {
 }
 
 const SEAT = {
-  name: 'gpt', provider: 'openai', model: 'gpt-5.2',
+  name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2',
   role: 'architect', effort: 'high', maxTokens: 64000,
 };
 
-const participant = ({ hub }, turns, log = () => {}, seat = SEAT) => {
+/**
+ * Stands in for seats.resolve(): the live endpoint, model and credential the
+ * participant re-reads on every turn.
+ */
+const resolver = (seat) => () => ({
+  ...seat,
+  baseURL: seat.baseURL ?? 'https://endpoint.example/v1',
+  apiKey: seat.apiKey ?? 'sk-test',
+  effortParam: seat.effortParam === undefined ? 'reasoning_effort' : seat.effortParam,
+});
+
+const participant = ({ hub }, turns, log = () => {}, seat = SEAT, media = null) => {
   const { client, calls } = scripted(turns);
   const p = createModelParticipant({
-    hub, seat, log, getKey: () => 'sk-test', createClient: () => client,
+    hub, seat, log, resolve: resolver(seat), createClient: () => client, media,
   });
   return { p, calls };
 };
@@ -107,6 +118,7 @@ test('the request uses the seat\u2019s own model and its tool surface', async ()
   assert.equal(req.model, 'gpt-5.2');
   assert.equal(req.messages[0].role, 'system', 'the charter goes in a system message');
   assert.equal(req.tool_choice, 'auto');
+  assert.ok(req.tools.some((t) => t.function.name === 'generate_image'), 'media tools are offered too');
   assert.ok(req.tools.some((t) => t.function.name === 'propose'), 'tools are translated to the function shape');
 });
 
@@ -126,14 +138,15 @@ test('effort is sent only to providers that declare the field', async () => {
   const idea = ctx.hub.dropIdea({ title: 'Effort routing', raw: '', by: 'rakim' });
 
   const oai = participant(ctx, [msg('ok')], () => {},
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic', effort: 'low' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic', effort: 'low' });
   await oai.p.askDirect({ body: 'hi', idea: idea.slug, from: 'rakim' });
   assert.equal(oai.calls[0].reasoning_effort, 'low');
 
   // Gemini's compatible endpoint does not take it, and an unknown parameter
   // fails the whole request rather than being ignored.
   const gem = participant(ctx, [msg('ok')], () => {},
-    { name: 'gem', provider: 'google', model: 'gemini-3-pro', role: 'critic', effort: 'low' });
+    // This endpoint declares no effort field, so nothing should be sent.
+    { name: 'gem', connection: 'other-endpoint', model: 'gemini-3-pro', role: 'critic', effort: 'low', effortParam: null });
   await gem.p.askDirect({ body: 'hi', idea: idea.slug, from: 'rakim' });
   assert.ok(!('reasoning_effort' in gem.calls[0]), 'not sent where it is unsupported');
 });
@@ -247,15 +260,62 @@ test('the participant queues for the floor like any other agent', async () => {
   assert.equal(ctx.hub.floor().holder, null, 'and released it after speaking');
 });
 
-test("a seat with no key says so, naming itself and its provider", async () => {
+test('a seat with no key says which connection is missing one', async () => {
   const hub = new Hub({ dbPath: ':memory:' });
   hub.join({ name: 'rakim', role: 'human', kind: 'human' });
   const p = createModelParticipant({
     hub,
-    seat: { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' },
-    getKey: () => null,
+    seat: { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' },
+    resolve: () => ({ connection: 'my-endpoint', baseURL: 'https://endpoint.example/v1', model: 'gpt-5.2', apiKey: null }),
   });
-  await assert.rejects(() => p.askDirect({ body: 'hi', from: 'rakim' }), /no API key for gpt \(OpenAI\)/);
+  await assert.rejects(() => p.askDirect({ body: 'hi', from: 'rakim' }), /no API key for "my-endpoint"/);
+});
+
+test('a seat with no connection at all says that instead', async () => {
+  const hub = new Hub({ dbPath: ':memory:' });
+  hub.join({ name: 'rakim', role: 'human', kind: 'human' });
+  const p = createModelParticipant({
+    hub, seat: { name: 'gpt', role: 'critic' }, resolve: () => null,
+  });
+  await assert.rejects(() => p.askDirect({ body: 'hi', from: 'rakim' }), /no connection/);
+});
+
+test('an agent can generate an image and it lands in the room', async () => {
+  const ctx = room();
+  const idea = ctx.hub.dropIdea({ title: 'Show me', raw: '', by: 'rakim' });
+  const asked = [];
+  const { p } = participant(
+    ctx,
+    [msg(null, [{ name: 'generate_image', input: { prompt: 'a red square', caption: 'like this' } }])],
+    () => {}, SEAT,
+    { image: async (prompt) => { asked.push(prompt); return '/media/abc.png'; } },
+  );
+
+  const r = await p.askDirect({ body: 'draw it', idea: idea.slug, from: 'rakim' });
+  assert.deepEqual(r.actions, ['generate_image']);
+  assert.deepEqual(asked, ['a red square']);
+
+  const posted = ctx.hub.db.prepare("SELECT body FROM messages WHERE author = 'gpt' ORDER BY id DESC").get();
+  assert.match(posted.body, /like this/);
+  assert.match(posted.body, /!\[image\]\(\/media\/abc\.png\)/, 'posted as markdown the feed can render');
+});
+
+test('the generation tools report honestly when no such connection exists', async () => {
+  const ctx = room();
+  const idea = ctx.hub.dropIdea({ title: 'No generator', raw: '', by: 'rakim' });
+  const { p, calls } = participant(
+    ctx,
+    [msg(null, [{ name: 'generate_video', input: { prompt: 'a clip' } }]), msg('I cannot make video here.')],
+    () => {}, SEAT,
+    null, // no media connections at all
+  );
+
+  const r = await p.askDirect({ body: 'make a video', idea: idea.slug, from: 'rakim' });
+  const fed = JSON.stringify(calls[1].messages.at(-1));
+  assert.match(fed, /FAILED: no video connection/);
+  // The refused call is not counted as something it did; the recovery is.
+  assert.deepEqual(r.actions, ['reply'], 'and it recovers rather than dying');
+  assert.ok(ctx.hub.db.prepare('SELECT 1 FROM messages WHERE body LIKE ?').get('%cannot make video%'));
 });
 
 // ------------------------------------------------- several providers, one room
@@ -267,7 +327,7 @@ test('an OpenAI-shaped seat drives the same room through the other adapter', asy
     [msg(null, [{ name: 'propose', input: { title: 'GPT route', approach: 'do it this way' } }]),
      msg('Proposed it.')],
     () => {},
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic', effort: 'high' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic', effort: 'high' });
 
   const r = await p.askDirect({ body: 'how would you do it?', idea: idea.slug, from: 'rakim' });
   assert.deepEqual(r.actions, ['propose']);
@@ -292,7 +352,7 @@ test('an OpenAI-shaped tool result goes back keyed by call id', async () => {
     [msg(null, [{ name: 'weigh_in', input: { proposal: theirs.id, stance: 'endorse', feasibility: 4, reasoning: 'fine' } }]),
      msg(null, [{ name: 'reply', input: { body: 'scored it' } }])],
     () => {},
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' });
 
   await p.askDirect({ body: 'score it', idea: idea.slug, from: 'rakim' });
   const toolMsg = calls[1].messages.find((m) => m.role === 'tool');
@@ -319,10 +379,11 @@ test('malformed tool arguments do not take the turn down', async () => {
     return { client, calls };
   })();
 
+  const seat = { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' };
   const p = createModelParticipant({
     hub: ctx.hub,
-    seat: { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' },
-    getKey: () => 'sk-test',
+    seat,
+    resolve: () => ({ ...seat, baseURL: 'https://endpoint.example/v1', apiKey: 'sk-test' }),
     createClient: () => client,
   });
 
@@ -337,7 +398,7 @@ test('a content filter reads as a refusal, not an empty success', async () => {
   const ctx = room();
   const idea = ctx.hub.dropIdea({ title: 'Filtered', raw: '', by: 'rakim' });
   const { p } = participant(ctx, [msg(null, [], 'content_filter')], () => {},
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' });
 
   const r = await p.askDirect({ body: 'x', idea: idea.slug, from: 'rakim' });
   assert.equal(r.refused, true);
@@ -347,7 +408,7 @@ test('a truncated OpenAI response is reported rather than posted half-finished',
   const ctx = room();
   const idea = ctx.hub.dropIdea({ title: 'Cut off', raw: '', by: 'rakim' });
   const { p } = participant(ctx, [msg('I was saying that', [], 'length')], () => {},
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' });
 
   const r = await p.askDirect({ body: 'go on', idea: idea.slug, from: 'rakim' });
   assert.equal(r.truncated, true);
@@ -358,11 +419,11 @@ test('models from different providers argue with each other in one room', async 
   const idea = ctx.hub.dropIdea({ title: 'Mixed room', raw: 'pick an approach', by: 'rakim' });
 
   const gem = participant(ctx, [msg(null, [{ name: 'propose', input: { title: 'Gemini route', approach: 'a' } }])], () => {},
-    { name: 'gem', provider: 'google', model: 'gemini-3-pro', role: 'architect', effort: 'high' });
+    { name: 'gem', connection: 'other-endpoint', model: 'gemini-3-pro', role: 'architect', effort: 'high' });
   const gpt = participant(ctx,
     [msg(null, [{ name: 'weigh_in', input: { proposal: 1, stance: 'object', feasibility: 2, reasoning: 'breaks on retries', blocking: true } }]),
      msg('Objected.')],
-    { name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'critic' });
+    { name: 'gpt', connection: 'my-endpoint', model: 'gpt-5.2', role: 'critic' });
 
   await gem.p.askDirect({ body: 'how?', idea: idea.slug, from: 'rakim' });
   await gpt.p.askDirect({ body: 'is that sound?', idea: idea.slug, from: 'rakim' });
@@ -382,9 +443,9 @@ test('several models sit in one room under their own names and models', async ()
   const idea = ctx.hub.dropIdea({ title: 'Two minds', raw: 'settle this', by: 'rakim' });
 
   const big = participant(ctx, [msg(null, [{ name: 'propose', input: { title: 'Route A', approach: 'do it this way' } }])],
-    () => {}, { name: 'big', provider: 'openai', model: 'gpt-5.2', role: 'architect', effort: 'high' });
+    () => {}, { name: 'big', connection: 'my-endpoint', model: 'gpt-5.2', role: 'architect', effort: 'high' });
   const small = participant(ctx, [msg(null, [{ name: 'weigh_in', input: { proposal: 1, stance: 'object', feasibility: 2, reasoning: 'falls over on empty input', blocking: true } }])],
-    () => {}, { name: 'small', provider: 'openai', model: 'gpt-5-mini', role: 'critic', effort: 'medium' });
+    () => {}, { name: 'small', connection: 'my-endpoint', model: 'gpt-5-mini', role: 'critic', effort: 'medium' });
 
   await big.p.askDirect({ body: 'how?', idea: idea.slug, from: 'rakim' });
   await small.p.askDirect({ body: 'is that sound?', idea: idea.slug, from: 'rakim' });
@@ -409,7 +470,7 @@ test('a model is told which model it is and that the others differ', async () =>
   const ctx = room();
   const idea = ctx.hub.dropIdea({ title: 'Identity', raw: '', by: 'rakim' });
   const { p, calls } = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])], () => {},
-    { name: 'mini', provider: 'openai', model: 'gpt-5-mini', role: 'researcher', effort: 'low' });
+    { name: 'mini', connection: 'my-endpoint', model: 'gpt-5-mini', role: 'researcher', effort: 'low' });
 
   await p.askDirect({ body: 'hi', idea: idea.slug, from: 'rakim' });
   const system = calls[0].messages[0].content;

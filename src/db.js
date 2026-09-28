@@ -247,6 +247,29 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 
 -- ------------------------------------------------------------------- cursors
 
+-- ---------------------------------------------------------------- connections
+
+-- Every endpoint the room can reach: a name, a URL, a key, and what it is for.
+--
+-- Deliberately not an enum of blessed providers. Presets exist in the UI to
+-- prefill the fields, but any endpoint can be added under any name, so a
+-- provider that did not exist when this was written needs no code change.
+CREATE TABLE IF NOT EXISTS connections (
+  name        TEXT PRIMARY KEY,
+  -- chat | transcribe | speak | image | video
+  kind        TEXT NOT NULL DEFAULT 'chat',
+  base_url    TEXT NOT NULL DEFAULT '',
+  -- Never selected by the view that feeds the setup page.
+  api_key     TEXT,
+  -- Default model for this endpoint; a seat may override it.
+  model       TEXT NOT NULL DEFAULT '',
+  -- Free-form JSON: extra headers, request-shape overrides, response paths for
+  -- endpoints that do not follow the common shape.
+  extra       TEXT NOT NULL DEFAULT '{}',
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_connections_kind ON connections(kind);
+
 -- ------------------------------------------------------- model participants
 
 -- The models you want in the chat. One row per seat, so the room can be you
@@ -356,6 +379,36 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_upd AFTER UPDATE ON messages BEGIN
 END;
 `;
 
+/**
+ * Lift the old per-seat endpoint/key columns into named connections, once.
+ * Seats configured before connections existed keep working untouched.
+ */
+function migrateSeatsToConnections(db) {
+  const orphans = db
+    .prepare(`SELECT * FROM participants WHERE connection IS NULL OR connection = ''`)
+    .all();
+  if (!orphans.length) return;
+
+  const ts = new Date().toISOString();
+  for (const seat of orphans) {
+    // One connection per distinct provider, reusing it across seats that shared it.
+    const name = seat.provider || 'openai';
+    const existing = db.prepare('SELECT name FROM connections WHERE name = ?').get(name);
+    if (!existing) {
+      db.prepare(
+        `INSERT INTO connections (name, kind, base_url, api_key, model, extra, created_at)
+         VALUES (?, 'chat', ?, ?, '', '{}', ?)`,
+      ).run(name, seat.base_url ?? '', seat.api_key ?? null, ts);
+    } else if (seat.api_key) {
+      // Fill in a key only where the connection has none, so the first seat
+      // that carried one wins rather than the last.
+      db.prepare(`UPDATE connections SET api_key = COALESCE(api_key, ?) WHERE name = ?`)
+        .run(seat.api_key, name);
+    }
+    db.prepare('UPDATE participants SET connection = ? WHERE name = ?').run(name, seat.name);
+  }
+}
+
 /** Env wins, so every agent's config can point at the one shared file. */
 export function resolveDbPath(explicit) {
   const p = explicit || process.env.ESPRITS_DB || './data/esprits.sqlite';
@@ -452,6 +505,11 @@ export function openDb(path) {
   addColumn('participants', 'provider', "TEXT NOT NULL DEFAULT 'openai'");
   addColumn('participants', 'api_key', 'TEXT');
   addColumn('participants', 'base_url', 'TEXT');
+  addColumn('participants', 'connection', 'TEXT');
+
+  // Seats used to carry their own endpoint and key. Anything configured that
+  // way is lifted into a connection once, so the two never disagree.
+  migrateSeatsToConnections(db);
 
   // FTS5 ships in Node's bundled SQLite, but a future build could drop it.
   // Search falls back to LIKE rather than the whole connector refusing to start.

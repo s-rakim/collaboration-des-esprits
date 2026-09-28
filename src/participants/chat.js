@@ -1,13 +1,17 @@
 import OpenAI from 'openai';
 
 /**
- * The one adapter, on the official OpenAI SDK. It serves every provider that
- * speaks the Chat Completions shape — OpenAI itself, Gemini's compatible
- * endpoint, OpenRouter, a local Ollama, and anything self-hosted. The only
- * difference between them is the base URL and the key.
+ * The chat adapter, on the official OpenAI SDK.
+ *
+ * It serves every endpoint that speaks the Chat Completions shape, which is
+ * nearly all of them — OpenAI, Gemini's compatible endpoint, OpenRouter, Groq,
+ * Mistral, DeepSeek, xAI, a local Ollama or LM Studio, anything self-hosted.
+ * The only thing that differs between them is the base URL, the key and the
+ * model string, all of which come from a user-defined connection. So any model
+ * on any such endpoint can take a seat without touching this file.
  */
 
-export function openaiAdapter({ apiKey, model, maxTokens, effort, effortParam, baseURL, createClient }) {
+export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, baseURL, createClient }) {
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
@@ -21,7 +25,6 @@ export function openaiAdapter({ apiKey, model, maxTokens, effort, effortParam, b
     }));
 
   return {
-    provider: 'openai-compatible',
     model,
 
     startTurn({ system, tools }) {

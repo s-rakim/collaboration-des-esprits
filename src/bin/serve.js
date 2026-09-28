@@ -8,7 +8,9 @@ import { Hub, NotFound, Invalid } from '../core.js';
 import { buildServer } from '../mcp/tools.js';
 import { createConfig } from '../settings.js';
 import { createSeats } from '../seats.js';
-import { describeProviders, providerFor } from '../participants/providers/index.js';
+import { createConnections, PRESETS, KINDS } from '../connections.js';
+import { chatAdapter } from '../participants/chat.js';
+import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
 import { createModelParticipant } from '../participants/agent.js';
 import { createRouter } from '../bridges/commands.js';
 import { createTelegram } from '../bridges/telegram.js';
@@ -36,8 +38,10 @@ const FEED_PAGE = 500;
 
 const hub = new Hub({ dbPath: process.env.ESPRITS_DB });
 const config = createConfig(hub.db);
-const seats = createSeats(hub.db);
+const connections = createConnections(hub.db);
+const seats = createSeats(hub.db, connections);
 seats.seedIfEmpty();
+const MEDIA = mediaDir(hub.db.name);
 
 /**
  * Optional in-process participants. Assigned during startup below; the routes
@@ -299,16 +303,17 @@ app.post('/api/seats/:name/test', async (req, res) => {
 
 app.get('/api/seats', (_req, res) =>
   send(res, () => ({
-    // seats.all() already omits every credential, so there is no key to strip here.
+    // Neither view carries a credential, so there is none to strip at the route.
     seats: seats.all().map((s) => ({ ...s, running: models.has(s.name) })),
-    providers: describeProviders(),
+    connections: connections.all(),
+    kinds: KINDS,
+    presets: PRESETS,
   })),
 );
 
 app.post('/api/seats', (req, res) =>
   send(res, () => {
     const saved = seats.save(req.body ?? {});
-    // Start or stop it to match, so the roster takes effect without a restart.
     syncSeats();
     return { ...saved, running: models.has(saved.name) };
   }),
@@ -316,14 +321,146 @@ app.post('/api/seats', (req, res) =>
 
 app.delete('/api/seats/:name', (req, res) =>
   send(res, () => {
-    const stopped = models.get(req.params.name);
-    if (stopped) {
-      stopped.stop();
+    const running = models.get(req.params.name);
+    if (running) {
+      running.stop();
       models.delete(req.params.name);
     }
     return { removed: seats.remove(req.params.name) };
   }),
 );
+
+// ---------------------------------------------------------------- connections
+
+app.get('/api/connections', (_req, res) =>
+  send(res, () => ({ connections: connections.all(), kinds: KINDS, presets: PRESETS })),
+);
+
+app.post('/api/connections', (req, res) =>
+  send(res, () => {
+    const saved = connections.save(req.body ?? {});
+    // A key added here may be exactly what an idle seat was waiting for.
+    syncSeats();
+    return saved;
+  }),
+);
+
+app.delete('/api/connections/:name', (req, res) =>
+  send(res, () => ({ removed: connections.remove(req.params.name) })),
+);
+
+/** One real call, so a wrong key or base URL fails here and not in a loop. */
+app.post('/api/connections/:name/test', async (req, res) => {
+  const conn = connections.resolve(req.params.name);
+  if (!conn) return res.status(404).json({ ok: false, error: `no connection named "${req.params.name}"` });
+  if (!conn.model) return res.status(400).json({ ok: false, error: 'set a model on this connection first' });
+
+  try {
+    if (conn.kind === 'chat') {
+      const adapter = chatAdapter({
+        apiKey: conn.apiKey, model: conn.model, maxTokens: 512,
+        effort: 'low', effortParam: conn.extra?.effortParam, baseURL: conn.baseURL,
+      });
+      const turn = adapter.startTurn({ system: 'Answer in one word.', tools: [] });
+      const step = await turn.send('Reply with the single word: ready');
+      if (step.stopReason === 'refusal') throw new Error('the model declined the test request');
+      return res.json({ ok: true, kind: conn.kind, model: conn.model, said: step.text || '(no text, but the call succeeded)' });
+    }
+
+    if (conn.kind === 'image') {
+      const url = await generateImage({ conn, prompt: 'a single small grey square, plain', dir: MEDIA });
+      return res.json({ ok: true, kind: conn.kind, model: conn.model, said: 'generated an image', url });
+    }
+
+    if (conn.kind === 'speak') {
+      const url = await speak({ conn, text: 'ready', dir: MEDIA });
+      return res.json({ ok: true, kind: conn.kind, model: conn.model, said: 'generated audio', url });
+    }
+
+    // Transcription needs a clip to send and video costs real money and minutes,
+    // so those are proven by using them rather than by a synthetic probe.
+    return res.json({
+      ok: true,
+      kind: conn.kind,
+      model: conn.model,
+      said: conn.kind === 'transcribe'
+        ? 'saved — it is exercised the first time you hold the mic button'
+        : 'saved — video is exercised the first time you generate one',
+      untested: true,
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// --------------------------------------------------------------------- media
+
+app.use('/media', express.static(MEDIA, { maxAge: '1h' }));
+
+/**
+ * Turn a spoken clip into a message. The browser records, this transcribes and
+ * posts, so the room sees speech as ordinary text that every agent can read.
+ */
+app.post('/api/voice', express.raw({ type: 'audio/*', limit: '25mb' }), async (req, res) => {
+  const which = req.query.connection || connections.ofKind('transcribe')[0]?.name;
+  const conn = which ? connections.resolve(which) : null;
+  if (!conn) {
+    return res.status(400).json({ error: 'no speech-to-text connection is configured — add one at /setup' });
+  }
+  if (!req.body?.length) return res.status(400).json({ error: 'no audio received' });
+
+  try {
+    const text = await transcribe({
+      conn,
+      audio: req.body,
+      mimeType: req.get('content-type') ?? 'audio/webm',
+      filename: `clip.${(req.get('content-type') ?? 'audio/webm').split('/')[1].split(';')[0]}`,
+      // Bias the transcriber toward the names it would otherwise mangle.
+      prompt: hub.roster().map((a) => a.name).join(', '),
+    });
+
+    const post = req.query.post !== 'false';
+    if (!post) return res.json({ text, posted: false });
+
+    const msg = hub.post({
+      idea: req.query.idea || null,
+      body: text,
+      by: req.query.as,
+      kind: 'message',
+    });
+    res.json({ text, posted: true, id: msg.id, mentions: msg.mentions });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/api/generate', async (req, res) => {
+  const kind = req.body?.kind === 'video' ? 'video' : 'image';
+  const which = req.body?.connection || connections.ofKind(kind)[0]?.name;
+  const conn = which ? connections.resolve(which) : null;
+  if (!conn) return res.status(400).json({ error: `no ${kind} connection is configured — add one at /setup` });
+
+  const prompt = String(req.body?.prompt ?? '').trim();
+  if (!prompt) return res.status(400).json({ error: 'a prompt is required' });
+
+  try {
+    const url = kind === 'video'
+      ? await generateVideo({ conn, prompt, dir: MEDIA })
+      : await generateImage({ conn, prompt, size: req.body?.size, dir: MEDIA });
+
+    if (req.body?.as) {
+      hub.post({
+        idea: req.body.idea ?? null,
+        by: req.body.as,
+        kind: 'message',
+        body: `${prompt}\n\n![${kind}](${url})`,
+      });
+    }
+    res.json({ url, kind, model: conn.model });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 // ------------------------------------------------------- talking to a model
 
@@ -436,9 +573,9 @@ function syncSeats() {
 
   for (const [name, running] of models) {
     const seat = wanted.get(name);
-    // Stop anything disabled, removed, or reconfigured — the seat spec is
-    // captured at construction, so a changed seat needs a fresh participant.
-    if (!seat || running.model !== seat.model || running.role !== seat.role || running.provider !== seat.provider) {
+    // Stop anything disabled, removed, or repointed — the seat spec is captured
+    // at construction, so a changed seat needs a fresh participant.
+    if (!seat || running.connection !== seat.connection || running.role !== seat.role) {
       running.stop();
       models.delete(name);
     }
@@ -446,17 +583,25 @@ function syncSeats() {
 
   for (const seat of wanted.values()) {
     if (models.has(seat.name)) continue;
-    if (!seat.keySet) {
-      process.stdout.write(`${seat.name}: enabled but has no key for ${seat.provider} — add one at /setup\n`);
-      continue;
-    }
     const p = createModelParticipant({
       hub,
       seat,
-      // Read through on every turn rather than captured, so a key replaced on
-      // the setup page takes effect without restarting the seat.
-      getKey: (n) => seats.keyFor(n),
+      resolve: (n) => seats.resolve(n),
       log: (m) => process.stdout.write(`${m}\n`),
+      // Resolved per call, so adding an image connection later lights the tool
+      // up without restarting the seat.
+      media: {
+        image: async (prompt) => {
+          const conn = connections.resolve(connections.ofKind('image')[0]?.name);
+          if (!conn) throw new Error('no image connection is configured');
+          return generateImage({ conn, prompt, dir: MEDIA });
+        },
+        video: async (prompt) => {
+          const conn = connections.resolve(connections.ofKind('video')[0]?.name);
+          if (!conn) throw new Error('no video connection is configured');
+          return generateVideo({ conn, prompt, dir: MEDIA });
+        },
+      },
     });
     models.set(seat.name, p);
     // One model failing must not take the others, or the server, down.
@@ -464,6 +609,14 @@ function syncSeats() {
       process.stderr.write(`${seat.name}: stopped — ${err.message}\n`);
       models.delete(seat.name);
     });
+  }
+
+  // Say once which seats are configured but not runnable, so a missing key is
+  // visible in the log rather than only on the settings page.
+  for (const s of seats.all()) {
+    if (s.enabled && !s.ready) {
+      process.stdout.write(`${s.name}: enabled but ${s.connectionMissing ? 'its connection is gone' : 'has no key yet'} — see /setup\n`);
+    }
   }
 }
 
@@ -491,7 +644,8 @@ app.listen(PORT, HOST, () => {
       `  connector  http://${HOST}:${PORT}/mcp\n` +
       `  database   ${hub.db.name}\n` +
       `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n` +
-      `  models     ${seats.enabled().map((s) => `${s.name}=${s.model}${s.keySet ? '' : ' (no key)'}`).join(', ') || 'none — add some at /setup'}\n` +
+      `  models     ${seats.enabled().map((s) => `${s.name}=${s.model || '?'}`).join(', ') || 'none — add some at /setup'}\n` +
+      `  endpoints  ${connections.all().map((c) => `${c.name}(${c.kind})`).join(', ') || 'none'}\n` +
       `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n`,
   );
   startParticipants();

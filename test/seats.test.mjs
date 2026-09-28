@@ -1,157 +1,92 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hub } from '../src/core.js';
-import { createConfig } from '../src/settings.js';
+import { createConnections } from '../src/connections.js';
 import { createSeats, STARTER_SEATS } from '../src/seats.js';
-import { PROVIDERS, describeProviders } from '../src/participants/providers/index.js';
 
 const fresh = () => {
   const hub = new Hub({ dbPath: ':memory:' });
-  return { hub, seats: createSeats(hub.db), config: createConfig(hub.db) };
+  const connections = createConnections(hub.db);
+  return { hub, connections, seats: createSeats(hub.db, connections) };
 };
 
-test('a seat round-trips with its model, role and effort', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5.2', role: 'architect', effort: 'max' });
-  const s = seats.get('gpt');
-  assert.equal(s.model, 'gpt-5.2');
+const withChat = (ctx, name = 'c') => {
+  ctx.connections.save({ name, kind: 'chat', baseURL: 'https://x/v1', model: 'default', apiKey: 'k' });
+  return name;
+};
+
+test('a seat round-trips with its connection, model, role and effort', () => {
+  const ctx = fresh();
+  withChat(ctx);
+  ctx.seats.save({ name: 'gpt', connection: 'c', model: 'anything-at-all', role: 'architect', effort: 'max' });
+  const s = ctx.seats.get('gpt');
+  assert.equal(s.connection, 'c');
+  assert.equal(s.model, 'anything-at-all');
   assert.equal(s.role, 'architect');
   assert.equal(s.effort, 'max');
   assert.equal(s.enabled, true);
 });
 
 test('saving the same name updates rather than duplicating the seat', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'gpt', model: 'gpt-5.2', role: 'architect' });
-  seats.save({ name: 'gpt', model: 'gpt-5-mini', role: 'critic' });
-  assert.equal(seats.all().length, 1);
-  assert.equal(seats.get('gpt').model, 'gpt-5-mini');
+  const ctx = fresh();
+  withChat(ctx);
+  ctx.seats.save({ name: 'gpt', connection: 'c', model: 'a', role: 'architect' });
+  ctx.seats.save({ name: 'gpt', connection: 'c', model: 'b', role: 'critic' });
+  assert.equal(ctx.seats.all().length, 1);
+  assert.equal(ctx.seats.get('gpt').model, 'b');
 });
 
 test('a name with spaces is refused, because it is an @mention handle', () => {
-  const { seats } = fresh();
-  assert.throws(() => seats.save({ name: 'my model', model: 'gpt-5.2' }), /cannot contain spaces/);
-  assert.throws(() => seats.save({ name: '', model: 'gpt-5.2' }), /needs a name/);
-  assert.throws(() => seats.save({ name: 'x', model: '' }), /needs a model/);
+  const ctx = fresh();
+  withChat(ctx);
+  assert.throws(() => ctx.seats.save({ name: 'my model', connection: 'c' }), /cannot contain spaces/);
+  assert.throws(() => ctx.seats.save({ name: '', connection: 'c' }), /needs a name/);
 });
 
 test('an invalid effort is clamped to a usable one', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'x', model: 'gpt-5.2', effort: 'ludicrous' });
-  assert.equal(seats.get('x').effort, 'high');
+  const ctx = fresh();
+  withChat(ctx);
+  ctx.seats.save({ name: 'x', connection: 'c', model: 'm', effort: 'ludicrous' });
+  assert.equal(ctx.seats.get('x').effort, 'high');
 });
 
-test('only enabled seats are started', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'on1', model: 'gpt-5.2' });
-  seats.save({ name: 'on2', provider: 'google', model: 'gemini-3-pro' });
-  seats.save({ name: 'off', provider: 'ollama', model: 'qwen3', enabled: false });
-  assert.deepEqual(seats.enabled().map((s) => s.name).sort(), ['on1', 'on2']);
+test('only seats that are both enabled and ready are started', () => {
+  const ctx = fresh();
+  withChat(ctx, 'ready');
+  ctx.connections.save({ name: 'keyless', kind: 'chat', baseURL: 'https://y/v1', model: 'm' });
+  ctx.seats.save({ name: 'on', connection: 'ready', model: 'm' });
+  ctx.seats.save({ name: 'nokey', connection: 'keyless', model: 'm' });
+  ctx.seats.save({ name: 'off', connection: 'ready', model: 'm', enabled: false });
+  assert.deepEqual(ctx.seats.enabled().map((s) => s.name), ['on']);
 });
 
 test('removing a seat keeps everything that model already contributed', () => {
-  const { hub, seats } = fresh();
-  hub.join({ name: 'rakim', role: 'human', kind: 'human' });
-  seats.save({ name: 'gpt', model: 'gpt-5.2', role: 'architect' });
-  hub.join({ name: 'gpt', role: 'architect', model: 'gpt-5.2' });
+  const ctx = fresh();
+  withChat(ctx);
+  ctx.hub.join({ name: 'rakim', role: 'human', kind: 'human' });
+  ctx.seats.save({ name: 'gpt', connection: 'c', model: 'm', role: 'architect' });
+  ctx.hub.join({ name: 'gpt', role: 'architect', model: 'm' });
 
-  const idea = hub.dropIdea({ title: 'Legacy', raw: '', by: 'rakim' });
-  hub.post({ idea: idea.slug, body: 'my reasoning', by: 'gpt' });
-  const d = hub.decide({ idea: idea.slug, choice: 'do it this way', rationale: 'because', by: 'gpt' });
+  const idea = ctx.hub.dropIdea({ title: 'Legacy', raw: '', by: 'rakim' });
+  ctx.hub.post({ idea: idea.slug, body: 'my reasoning', by: 'gpt' });
+  const d = ctx.hub.decide({ idea: idea.slug, choice: 'do it this way', rationale: 'because', by: 'gpt' });
 
-  assert.equal(seats.remove('gpt'), true);
-  assert.equal(seats.get('gpt'), null);
+  assert.equal(ctx.seats.remove('gpt'), true);
+  assert.equal(ctx.seats.get('gpt'), null);
   // The decision still stands — deleting the reasoning behind a live decision
   // because the model left would be worse than keeping it.
-  assert.ok(hub.decisions({ idea: idea.slug }).some((x) => x.id === d.id));
-  assert.ok(hub.db.prepare('SELECT 1 FROM messages WHERE body = ?').get('my reasoning'));
-  assert.equal(seats.remove('gpt'), false, 'removing twice is not an error');
+  assert.ok(ctx.hub.decisions({ idea: idea.slug }).some((x) => x.id === d.id));
+  assert.ok(ctx.hub.db.prepare('SELECT 1 FROM messages WHERE body = ?').get('my reasoning'));
+  assert.equal(ctx.seats.remove('gpt'), false, 'removing twice is not an error');
 });
 
 test('a fresh install is seeded with a room that can disagree with itself', () => {
-  const { seats, config } = fresh();
-  const made = seats.seedIfEmpty();
+  const ctx = fresh();
+  const made = ctx.seats.seedIfEmpty();
   assert.equal(made.length, STARTER_SEATS.length);
-  const roles = seats.all().map((s) => s.role);
+  const roles = ctx.seats.all().map((s) => s.role);
   assert.ok(roles.includes('architect') && roles.includes('critic'), 'a critic ships by default');
-  // Off until a key is added, so nothing tries to run without credentials.
-  assert.deepEqual(seats.enabled(), []);
-  // And seeding is idempotent.
-  assert.deepEqual(seats.seedIfEmpty(), []);
-  assert.equal(seats.all().length, STARTER_SEATS.length);
-});
-
-test('every provider advertises an adapter, a key variable and models', () => {
-  for (const [id, p] of Object.entries(PROVIDERS)) {
-    assert.equal(typeof p.adapter, 'function', `${id} needs an adapter`);
-    assert.ok(p.label && p.keyEnv, `${id} needs a label and a key env var`);
-    assert.ok(Array.isArray(p.models), `${id} needs a model list`);
-  }
-  // One adapter serves them all; a provider is a table row, not new code.
-  const adapters = new Set(Object.values(PROVIDERS).map((p) => p.adapter));
-  assert.equal(adapters.size, 1, 'every provider shares the Chat Completions adapter');
-});
-
-test('only providers that accept an effort knob advertise one', () => {
-  const shown = describeProviders();
-  const withEffort = shown.filter((p) => p.supportsEffort).map((p) => p.id);
-  assert.deepEqual(withEffort, ['openai'], 'sending an unknown parameter fails the whole request');
-});
-
-test('the provider description sent to the browser carries no credentials', () => {
-  const shown = JSON.stringify(describeProviders());
-  assert.ok(!/apiKey|api_key/.test(shown));
-  assert.match(shown, /openai/);
-  assert.match(shown, /openrouter/);
-});
-
-test('seats on different providers each keep their own key', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'gem', provider: 'google', model: 'gemini-3-pro', apiKey: 'AIza-1111' });
-  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5.2', apiKey: 'sk-oai-2222' });
-  assert.equal(seats.keyFor('gem'), 'AIza-1111');
-  assert.equal(seats.keyFor('gpt'), 'sk-oai-2222');
-
-  // And no view of a seat ever carries the raw value.
-  const shown = JSON.stringify(seats.all());
-  assert.ok(!shown.includes('AIza-1111') && !shown.includes('sk-oai-2222'));
-  assert.match(shown, /1111/, 'only the last four are previewed');
-});
-
-test('re-saving a seat without the key field keeps the stored key', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5.2', apiKey: 'sk-keep-me' });
-  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5-mini', role: 'critic' });
-  assert.equal(seats.keyFor('gpt'), 'sk-keep-me');
-  assert.equal(seats.get('gpt').model, 'gpt-5-mini');
-
-  // An explicit empty string is a deliberate clear.
-  seats.save({ name: 'gpt', provider: 'openai', model: 'gpt-5-mini', apiKey: '' });
-  assert.equal(seats.keyFor('gpt'), null);
-});
-
-test("a provider's conventional env var is the fallback when a seat has no key", () => {
-  const { seats } = fresh();
-  seats.save({ name: 'gem', provider: 'google', model: 'gemini-3-pro' });
-  assert.equal(seats.get('gem').keySet, false);
-
-  process.env.GOOGLE_API_KEY = 'AIza-from-env';
-  try {
-    assert.equal(seats.keyFor('gem'), 'AIza-from-env');
-    assert.equal(seats.get('gem').keySet, true);
-    assert.equal(seats.get('gem').keySource, 'env');
-  } finally {
-    delete process.env.GOOGLE_API_KEY;
-  }
-});
-
-test('a local provider that needs no key is still usable', () => {
-  const { seats } = fresh();
-  seats.save({ name: 'local', provider: 'ollama', model: 'qwen3' });
-  assert.equal(seats.get('local').keySet, true, 'a local runner needs no credential');
-});
-
-test('an unknown provider is refused', () => {
-  const { seats } = fresh();
-  assert.throws(() => seats.save({ name: 'x', provider: 'skynet', model: 'm' }), /unknown provider/);
+  // Off until connections exist, so nothing tries to call an endpoint it lacks.
+  assert.deepEqual(ctx.seats.enabled(), []);
+  assert.deepEqual(ctx.seats.seedIfEmpty(), [], 'and seeding is idempotent');
 });

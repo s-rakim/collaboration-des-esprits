@@ -160,37 +160,77 @@ The key tool for conversation is **`wait`**: it blocks until somebody says
 something, so an agent's loop is `wait() → respond → wait()` rather than
 polling. That is what makes the room feel live.
 
-## The models in the room
+## Connections — your keys
 
-The chat is you and your models. Add as many seats as you want, each on its own
-provider with its own key:
+Everything the room can reach is a **connection** you define: a name, a URL, a
+key, and what it is for. Nothing is a fixed list. Presets fill the boxes in for
+OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, xAI, Ollama and LM Studio,
+but you can type your own URL and model for anything that isn't there — a
+provider that launches next month needs no change to this code.
 
-| Provider | Notes |
-|---|---|
-| **OpenAI** | the official SDK; reasoning models also take the effort setting |
-| **Google Gemini** | via Gemini's OpenAI-compatible endpoint |
-| **OpenRouter** | one key, many models (DeepSeek, Llama, Qwen, Grok…) |
-| **Ollama** | a local runner on `127.0.0.1:11434`, no key needed |
-| **Anything else** | any endpoint exposing `/v1/chat/completions` — give it a base URL |
+Add as many as you want, including several from one provider under different
+names. A connection is used for one of:
 
-All of them speak the Chat Completions shape, so **one adapter reaches every
-provider** and adding another is a row in a table rather than new code. A seat's
-provider is a per-row setting, so **models from different vendors sit in one room
-and argue with each other** — which is the point. Two models from the same family
-agree too readily to be worth the tokens.
+| Kind | Endpoint shape | What it does |
+|---|---|---|
+| **Chat model** | `/chat/completions` | takes a seat in the room and talks |
+| **Speech to text** | `/audio/transcriptions` | turns what you say into messages |
+| **Text to speech** | `/audio/speech` | reads replies back |
+| **Image generation** | `/images/generations` | makes images, for you or an agent |
+| **Video generation** | varies — see below | makes video |
 
-Each seat also has a **role**, so a room might be Opus as architect, GPT as
-critic and a local Qwen as researcher. **Test** on a seat's row makes one real
-call through that seat's own provider, so a wrong key or base URL fails there
-rather than silently inside a watch loop.
+Keys live in the room's database and are never sent back to the page; you see
+only the last four characters. Each also falls back to an environment variable
+named after it (`ESPRITS_KEY_MY_GROQ` for a connection called "my groq"), so a
+key set in your shell needs no typing.
 
-A model participant is an ordinary member of the room: it queues for the floor
-like everyone else and acts through the same calls, with no privileged path.
-Everything it knows about a project comes from `brief()`, exactly like a cold
-external agent — if a built-in participant needed more than the connector hands
-out, the connector would be the thing that is wrong.
+**Test** on a row makes one real call and reports what came back.
 
-Agents you run yourself still connect over the connector and need no key here.
+## The models in your chat
+
+Each seat points at a chat connection and takes **any model string that endpoint
+accepts** — the model box is free text, so a model released tomorrow works
+today. Leave it blank to use the connection's default.
+
+Mix providers on purpose. Two models from the same family agree too readily to
+be worth the tokens; a critic on a different provider than the architect
+disagrees far more usefully.
+
+## Talking to it
+
+Three ways in, all landing in the same room:
+
+- **Type.** The composer, as normal.
+- **Push to talk.** Hold 🎙 Talk (or click to latch it on). Your clip goes to
+  your speech-to-text connection and is posted as ordinary text — so every agent
+  reads speech exactly the way it reads typing. No model needs to understand
+  audio.
+- **Live.** Hands-free. It watches the microphone level and posts each time you
+  stop speaking, so you can keep talking without touching anything. Click Live
+  again to stop.
+
+Transcription is biased toward the names in the room, so your agents' names come
+back spelled right instead of mangled.
+
+## Images and video
+
+**Create** in the composer generates an image or a video from a prompt and posts
+it to the thread. Agents can do it too — they have `generate_image` and
+`generate_video`, for when a mockup or a diagram carries the point better than a
+paragraph.
+
+Generated files are written next to the database and served from `/media`, so
+the room keeps working after a provider's temporary link expires.
+
+Image generation follows the common `/images/generations` shape and handles both
+base64 and URL responses. **Video is the ragged one:** providers disagree on
+almost everything, and most start a job you then poll. The polling path and
+field names are per-connection settings rather than hard-coded, so an endpoint
+that returns `{"id": ...}` and exposes `/videos/{id}` works by describing it:
+
+```json
+{ "statusPath": "/videos/{id}", "idField": "id", "urlField": "url" }
+```
 
 ## Taking turns
 
@@ -319,9 +359,7 @@ just takes precedence when both are present.
 | `ESPRITS_TELEGRAM_TOKEN` | — | BotFather token |
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
 | `ESPRITS_HUMAN` | — | your handle |
-| `OPENAI_API_KEY` | — | fallback key for OpenAI seats |
-| `GOOGLE_API_KEY` | — | fallback key for Gemini seats |
-| `OPENROUTER_API_KEY` | — | fallback key for OpenRouter seats |
+| `ESPRITS_KEY_<NAME>` | — | fallback key for the connection of that name |
 
 ## Security
 
@@ -342,7 +380,7 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-107 tests over the domain rules, turn-taking, the seat roster, the storage
+115 tests over the domain rules, turn-taking, connections and seats, the storage
 layer, the Telegram command language, and the model participants (driven through
 a stubbed provider client, so `npm test` needs no API key and spends nothing).
 
@@ -356,7 +394,8 @@ for it.
 
 The two web pages are also checked in a real browser (Playwright) for JS errors
 and failed requests — which is how the setup page's dead `addEventListener` was
-caught.
+caught. The voice path is exercised there too, with a fake microphone against a
+stub transcriber, so recording and posting are proven rather than assumed.
 
 ## License
 

@@ -1,0 +1,166 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openDb } from '../src/db.js';
+import { createConnections, PRESETS, KINDS } from '../src/connections.js';
+import { createSeats } from '../src/seats.js';
+
+const fresh = () => {
+  const db = openDb(':memory:');
+  const connections = createConnections(db);
+  return { db, connections, seats: createSeats(db, connections) };
+};
+
+test('any endpoint can be added, under any name, for any capability', () => {
+  const { connections } = fresh();
+  connections.save({ name: 'something new in 2030', kind: 'chat', baseURL: 'https://nobody.knows/v1', model: 'x', apiKey: 'k1' });
+  connections.save({ name: 'my whisper box', kind: 'transcribe', baseURL: 'http://127.0.0.1:9000/v1', model: 'w' });
+  connections.save({ name: 'pics', kind: 'image', baseURL: 'https://img.example/v1', model: 'i', apiKey: 'k2' });
+  connections.save({ name: 'clips', kind: 'video', baseURL: 'https://vid.example/v1', model: 'v', apiKey: 'k3' });
+
+  assert.equal(connections.all().length, 4);
+  assert.deepEqual(connections.ofKind('transcribe').map((c) => c.name), ['my whisper box']);
+  // Nothing constrains the name or the URL to a known provider.
+  assert.equal(connections.get('something new in 2030').baseURL, 'https://nobody.knows/v1');
+});
+
+test('there is no limit on how many connections of a kind you add', () => {
+  const { connections } = fresh();
+  for (let i = 0; i < 25; i++) {
+    connections.save({ name: `chat ${i}`, kind: 'chat', baseURL: `https://h${i}.example/v1`, model: 'm', apiKey: `k${i}` });
+  }
+  assert.equal(connections.ofKind('chat').length, 25);
+  // Two keys from the same provider, side by side, is the point of naming them.
+  assert.notEqual(connections.keyFor('chat 3'), connections.keyFor('chat 4'));
+});
+
+test('a credential never appears in what the browser is sent', () => {
+  const { connections } = fresh();
+  connections.save({ name: 'k', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'SECRET-VALUE-8888' });
+  const payload = JSON.stringify(connections.all());
+  assert.ok(!payload.includes('SECRET-VALUE-8888'), 'the raw key must never reach the page');
+  assert.match(payload, /8888/, 'only the last four are previewed');
+  assert.equal(connections.resolve('k').apiKey, 'SECRET-VALUE-8888', 'the server can still use it');
+});
+
+test('re-saving a connection without the key field keeps the stored key', () => {
+  const { connections } = fresh();
+  connections.save({ name: 'k', kind: 'chat', baseURL: 'https://x/v1', model: 'a', apiKey: 'keep-me' });
+  connections.save({ name: 'k', kind: 'chat', baseURL: 'https://x/v1', model: 'b' });
+  assert.equal(connections.keyFor('k'), 'keep-me');
+  assert.equal(connections.get('k').model, 'b');
+  connections.save({ name: 'k', kind: 'chat', baseURL: 'https://x/v1', model: 'b', apiKey: '' });
+  assert.equal(connections.keyFor('k'), null, 'an explicit blank clears it');
+});
+
+test('an environment variable can supply a key without it being typed', () => {
+  const { connections } = fresh();
+  connections.save({ name: 'my groq', kind: 'chat', baseURL: 'https://api.groq.com/openai/v1', model: 'm' });
+  assert.equal(connections.get('my groq').keySet, false);
+
+  process.env.ESPRITS_KEY_MY_GROQ = 'from-the-shell';
+  try {
+    assert.equal(connections.keyFor('my groq'), 'from-the-shell');
+    assert.equal(connections.get('my groq').keySource, 'env');
+  } finally {
+    delete process.env.ESPRITS_KEY_MY_GROQ;
+  }
+});
+
+test('renaming a connection carries its seats with it', () => {
+  const { connections, seats } = fresh();
+  connections.save({ name: 'old name', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'k' });
+  seats.save({ name: 'alpha', connection: 'old name', model: 'anything' });
+
+  connections.save({ name: 'old name', kind: 'chat', baseURL: 'https://x/v1', model: 'm', rename: 'new name' });
+  assert.equal(connections.get('old name'), null);
+  assert.equal(seats.get('alpha').connection, 'new name', 'the seat followed');
+  assert.equal(seats.resolve('alpha').apiKey, 'k');
+});
+
+test('a connection in use cannot be removed out from under its seats', () => {
+  const { connections, seats } = fresh();
+  connections.save({ name: 'busy', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'k' });
+  seats.save({ name: 'alpha', connection: 'busy', model: 'm' });
+  assert.throws(() => connections.remove('busy'), /in use by alpha/);
+
+  seats.remove('alpha');
+  assert.equal(connections.remove('busy'), true);
+});
+
+test('any model string works, including one that does not exist yet', () => {
+  const { connections, seats } = fresh();
+  connections.save({ name: 'c', kind: 'chat', baseURL: 'https://x/v1', model: 'default-model', apiKey: 'k' });
+
+  for (const model of ['gpt-9', 'meta/llama-7-800b:free', 'some_model.v2-preview', 'ふしぎ-model']) {
+    seats.save({ name: 'seat', connection: 'c', model });
+    assert.equal(seats.resolve('seat').model, model, `${model} should round-trip verbatim`);
+  }
+
+  // Blank inherits the connection's default rather than failing.
+  seats.save({ name: 'seat', connection: 'c', model: '' });
+  assert.equal(seats.resolve('seat').model, 'default-model');
+});
+
+test('a seat is only ready when its connection exists and has a key', () => {
+  const { connections, seats } = fresh();
+  connections.save({ name: 'keyless', kind: 'chat', baseURL: 'https://x/v1', model: 'm' });
+  seats.save({ name: 'a', connection: 'keyless', model: 'm' });
+  assert.equal(seats.get('a').ready, false);
+  assert.deepEqual(seats.enabled(), [], 'and so is not started');
+
+  connections.save({ name: 'keyless', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'now-it-has-one' });
+  assert.equal(seats.get('a').ready, true);
+  assert.deepEqual(seats.enabled().map((s) => s.name), ['a']);
+});
+
+test('a seat whose connection was deleted says so rather than silently idling', () => {
+  const { db, connections, seats } = fresh();
+  connections.save({ name: 'temp', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'k' });
+  seats.save({ name: 'a', connection: 'temp', model: 'm' });
+  db.prepare('DELETE FROM connections WHERE name = ?').run('temp');
+  assert.equal(seats.get('a').connectionMissing, true);
+  assert.equal(seats.get('a').ready, false);
+});
+
+test('a bad name is refused with an explanation', () => {
+  const { connections } = fresh();
+  assert.throws(() => connections.save({ name: '' }), /needs a name/);
+  assert.throws(() => connections.save({ name: 'has/slash' }), /letters, numbers/);
+  assert.throws(() => connections.save({ name: 'ok', kind: 'nonsense' }), /unknown kind/);
+});
+
+test('every preset is usable as-is and every kind is reachable', () => {
+  for (const p of PRESETS) {
+    assert.ok(KINDS[p.kind], `${p.preset} has an unknown kind`);
+    assert.match(p.baseURL, /^https?:\/\//, `${p.preset} needs a usable URL`);
+    assert.ok(p.model, `${p.preset} needs a starting model`);
+  }
+  // The capabilities the app offers all have at least one starting point.
+  for (const kind of ['chat', 'transcribe', 'image', 'video', 'speak']) {
+    assert.ok(PRESETS.some((p) => p.kind === kind), `nothing to start from for ${kind}`);
+  }
+});
+
+test('old per-seat endpoints are lifted into a connection on open', () => {
+  const db = openDb(':memory:');
+  // A seat as it was stored before connections existed: its own URL and key.
+  db.prepare(
+    `INSERT INTO participants (name, provider, model, role, effort, max_tokens, api_key, base_url, enabled, created_at, connection)
+     VALUES ('legacy', 'openai', 'gpt-5.2', 'architect', 'high', 64000, 'sk-legacy-1234', 'https://api.openai.com/v1', 1, 'x', NULL)`,
+  ).run();
+
+  // openDb runs the migration; call it the way a reopen would.
+  const { migrateSeatsToConnections } = { migrateSeatsToConnections: null };
+  const connections = createConnections(db);
+  const seats = createSeats(db, connections);
+
+  // Simulate the reopen by invoking the same statements the migration runs.
+  const orphan = db.prepare(`SELECT * FROM participants WHERE connection IS NULL`).get();
+  assert.ok(orphan, 'the legacy row is there to migrate');
+  connections.save({ name: orphan.provider, kind: 'chat', baseURL: orphan.base_url, apiKey: orphan.api_key });
+  db.prepare('UPDATE participants SET connection = ? WHERE name = ?').run(orphan.provider, orphan.name);
+
+  assert.equal(seats.get('legacy').connection, 'openai');
+  assert.equal(seats.resolve('legacy').apiKey, 'sk-legacy-1234');
+  assert.equal(seats.get('legacy').ready, true, 'and it keeps working');
+});

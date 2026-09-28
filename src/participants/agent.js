@@ -1,5 +1,5 @@
 import { describeRole } from '../roles.js';
-import { providerFor } from './providers/index.js';
+import { chatAdapter } from './chat.js';
 
 /**
  * One model's seat in the room, on whichever provider that seat uses.
@@ -174,6 +174,37 @@ function toolDefs() {
       },
     },
     {
+      name: 'generate_image',
+      description:
+        'Make an image and post it to the room. Use it when a picture carries the point better than ' +
+        'a paragraph — a mockup, a diagram, a layout, a reference. Describe it fully; the generator ' +
+        'sees only this text and nothing of the conversation.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          prompt: { type: 'string', description: 'What to draw, in full.' },
+          caption: { type: 'string', description: 'One line on why you made it.' },
+        },
+        required: ['prompt'],
+      },
+    },
+    {
+      name: 'generate_video',
+      description:
+        'Make a short video and post it to the room. Slow and expensive, so reach for it only when ' +
+        'motion is the point and a still would not do.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          prompt: { type: 'string' },
+          caption: { type: 'string' },
+        },
+        required: ['prompt'],
+      },
+    },
+    {
       name: 'say_nothing',
       description:
         'End your turn without speaking. Use this when the room does not need you — somebody already ' +
@@ -202,22 +233,20 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export function createModelParticipant({
   hub,
   seat,
-  getKey,
+  // Re-read on every turn rather than captured, so a key or model changed on
+  // the setup page takes effect without restarting the seat.
+  resolve,
   log = (m) => process.stdout.write(`${m}\n`),
   // Injectable so the tool-dispatch path can be tested without a live key or a
-  // network call. Production uses each provider's real SDK client.
+  // network call. Production uses the real SDK client.
   createClient = null,
+  // Supplied by the server: { image(prompt), video(prompt) } resolving to a URL.
+  // Absent means the room has no such connection, and the tools say so.
+  media = null,
 }) {
   const name = seat?.name ?? 'model';
   const role = seat?.role ?? 'generalist';
-  const model = seat?.model ?? 'gpt-5.2';
-  const providerId = seat?.provider ?? 'openai';
-  const provider = providerFor(providerId);
-  const maxTokens = Number.isFinite(seat?.maxTokens) ? seat.maxTokens : 64000;
-  const baseURL = seat?.baseURL || provider.baseURL || undefined;
 
-  // A typo would otherwise surface as an opaque 400 on every wake. Fall back to
-  // the documented default instead.
   const configured = String(seat?.effort ?? 'high').toLowerCase();
   const effort = EFFORTS.includes(configured) ? configured : 'high';
   if (effort !== configured) {
@@ -226,26 +255,35 @@ export function createModelParticipant({
 
   let stopped = false;
 
-  const apiKey = () => (getKey ? getKey(name) : null);
-  const usable = () => Boolean(apiKey()) || Boolean(provider.keyOptional);
+  /** The seat's live endpoint, model and credential. */
+  const live = () => (resolve ? resolve(name) : null);
+  const usable = () => {
+    const r = live();
+    return Boolean(r?.baseURL && r?.model && (r.apiKey || /(^|\/\/)(127\.0\.0\.1|localhost)/.test(r.baseURL)));
+  };
 
-  /**
-   * Built per turn so a key changed on the setup page takes effect without a
-   * restart, and so each seat holds its own client rather than a shared one.
-   */
+  /** What this seat is running right now, for the roster and the system prompt. */
+  const currentModel = () => live()?.model ?? seat?.model ?? '(unset)';
+
   const adapter = () => {
-    if (!usable()) {
-      throw new Error(`no API key for ${name} (${provider.label}) — add one on the setup page`);
-    }
-    return provider.adapter({
-      apiKey: apiKey(), model, maxTokens, effort,
-      effortParam: provider.effortParam, baseURL, createClient,
+    const r = live();
+    if (!r) throw new Error(`${name} has no connection — point it at one on the setup page`);
+    if (!r.model) throw new Error(`${name} has no model set`);
+    if (!usable()) throw new Error(`${name} has no API key for "${r.connection}" — add one on the setup page`);
+    return chatAdapter({
+      apiKey: r.apiKey,
+      model: r.model,
+      maxTokens: seat?.maxTokens ?? 64000,
+      effort,
+      effortParam: r.effortParam,
+      baseURL: r.baseURL,
+      createClient,
     });
   };
 
   function join() {
     return hub.join({
-      name, role, kind: 'agent', model,
+      name, role, kind: 'agent', model: currentModel(),
       capabilities: ['discusses', 'proposes', 'scores', 'plans'],
     });
   }
@@ -254,8 +292,8 @@ export function createModelParticipant({
     const charter = describeRole(hub.roles, role);
     return [
       `You are "${name}", the ${role}, in a group chat with a human and several other AI models.`,
-      `You are running on ${model}. The others may be different models with different strengths, and`,
-      `they will disagree with you.`,
+      `You are running on ${currentModel()}. The others may be different models from different`,
+      `providers, with different strengths, and they will disagree with you.`,
       `The human drops half-formed ideas; the room refines them into something buildable and then builds it.`,
       '',
       `## Your charter`,
@@ -334,7 +372,9 @@ export function createModelParticipant({
           const r = await act(call.name, call.input ?? {}, { ideaSlug, replyUrgency });
           out = r.text;
           if (r.ends) finished = true;
-          done.push(call.name);
+          // A tool that reports a failure rather than throwing one is still a
+          // failure; counting it would make the log claim work that never happened.
+          if (!String(out).startsWith('FAILED')) done.push(call.name);
         } catch (err) {
           // Hand the failure back so it can correct itself — the Hub's errors
           // are written to be actionable ("resolve it, or have the human choose").
@@ -380,6 +420,22 @@ export function createModelParticipant({
 
       case 'say_nothing':
         return { text: 'stayed quiet', ends: true };
+
+      case 'generate_image':
+      case 'generate_video': {
+        const what = tool === 'generate_video' ? 'video' : 'image';
+        if (!media?.[what]) {
+          return { text: `FAILED: no ${what} connection is configured in this room`, ends: false };
+        }
+        const url = await media[what](String(input.prompt ?? ''));
+        // Posted as markdown so the feed renders it and the transcript still
+        // reads sensibly anywhere that does not.
+        await speak(
+          `${input.caption?.trim() || input.prompt}\n\n![${what}](${url})`,
+          { idea, urgency: replyUrgency },
+        );
+        return { text: `posted a generated ${what}`, ends: true };
+      }
 
       case 'propose': {
         if (!idea) return { text: 'FAILED: a proposal needs an idea; this is the lobby', ends: false };
@@ -450,10 +506,11 @@ export function createModelParticipant({
    */
   async function run() {
     if (!usable()) {
-      log(`${name}: no API key yet; idle until one is added on the setup page`);
+      log(`${name}: not configured yet; idle until its connection has a model and a key`);
     }
     join();
-    log(`${name} (${role}) joined on ${model} via ${provider.label}`);
+    const r = live();
+    log(`${name} (${role}) joined on ${currentModel()}${r?.connection ? ` via ${r.connection}` : ''}`);
 
     let backoff = 5000;
     while (!stopped) {
@@ -522,6 +579,9 @@ export function createModelParticipant({
     stop: () => { stopped = true; },
     askDirect,
     join,
-    name, role, model, provider: providerId,
+    name,
+    role,
+    get model() { return currentModel(); },
+    get connection() { return live()?.connection ?? null; },
   };
 }

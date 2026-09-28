@@ -98,6 +98,17 @@
   .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
   .toast.on{opacity:1}
   code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 4px;border-radius:4px}
+  .mic{position:relative}
+  .mic.rec{background:var(--bad);border-color:var(--bad);color:#fff}
+  .mic.live{background:var(--good);border-color:var(--good);color:#fff}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  .mic.rec,.mic.live{animation:pulse 1.4s ease-in-out infinite}
+  .vu{height:3px;border-radius:2px;background:var(--line);overflow:hidden;flex:1;min-width:60px;display:none}
+  .vu.on{display:block}
+  .vu i{display:block;height:100%;width:0%;background:var(--good);transition:width .08s linear}
+  .msg .b img,.msg .b video{max-width:100%;border-radius:8px;margin-top:7px;display:block;border:1px solid var(--line)}
+  .msg .b audio{width:100%;margin-top:7px}
+  .voicetag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
   .floor{font-size:12.5px}
   .floor .now{display:flex;gap:7px;align-items:center;padding:5px 8px;background:var(--panel2);border-radius:7px;border-left:3px solid var(--good);margin-bottom:6px}
   .floor .wait{display:flex;gap:7px;align-items:baseline;padding:3px 8px;color:var(--dim)}
@@ -154,6 +165,10 @@
           <option value="question">question</option>
           <option value="status">status</option>
         </select>
+        <button class="mic" id="mic" title="Hold to talk, or click to record. Needs a speech-to-text connection.">🎙 Talk</button>
+        <button id="live" title="Hands-free: keeps listening and posts each time you stop speaking.">Live</button>
+        <button id="gen" title="Generate an image or a video">Create</button>
+        <span class="vu" id="vu"><i></i></span>
         <span id="where" style="color:var(--dim);font-size:12px"></span>
         <button class="primary" id="send" style="margin-left:auto">Send</button>
       </div>
@@ -190,6 +205,24 @@
   </div>
 </dialog>
 
+<dialog id="dlgGen">
+  <h3>Create something</h3>
+  <div class="fields">
+    <div class="row">
+      <select id="genKind" style="width:auto">
+        <option value="image">Image</option>
+        <option value="video">Video</option>
+      </select>
+      <span class="hint" id="genNote" style="color:var(--dim);font-size:12px"></span>
+    </div>
+    <textarea id="genPrompt" rows="4" placeholder="Describe it. The generator sees only this text, not the conversation."></textarea>
+    <div class="row" style="justify-content:flex-end">
+      <button id="genCancel">Cancel</button>
+      <button class="primary" id="genGo">Create</button>
+    </div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -215,6 +248,21 @@ async function api(path, opts) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 const linkMentions = (s) => esc(s).replace(/(^|\s)@([a-zA-Z0-9][\w.-]*)/g, '$1<span class="mention">@$2</span>');
+
+/**
+ * Turn generated-media markdown into real elements. Only /media/ paths are
+ * embedded — this app's own files — so a model cannot make the page load
+ * something arbitrary off the internet by writing an img tag into a message.
+ */
+function renderBody(body) {
+  const withoutMedia = String(body).replace(/!\[[^\]]*\]\((\/media\/[\w.-]+)\)/g, '\u0000$1\u0000');
+  return linkMentions(withoutMedia).replace(/\u0000(\/media\/[\w.-]+)\u0000/g, (_, url) => {
+    if (/\.(png|jpe?g|gif|webp|svg)$/i.test(url)) return `<img src="${url}" alt="generated image" loading="lazy">`;
+    if (/\.(mp4|webm|mov)$/i.test(url)) return `<video src="${url}" controls preload="metadata"></video>`;
+    if (/\.(mp3|wav|ogg|webm)$/i.test(url)) return `<audio src="${url}" controls></audio>`;
+    return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+  });
+}
 const ago = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
   if (s < 60) return 'just now';
@@ -253,7 +301,9 @@ function renderIdeas() {
       ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:10px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
     </div>`).join('') || '<div class="empty">Nobody has joined.</div>';
 
-  $('#where').textContent = state.idea ? `posting to ${state.idea}` : 'posting to the lobby';
+  if (!$('#where').dataset.busy) {
+    $('#where').textContent = state.idea ? `posting to ${state.idea}` : 'posting to the lobby';
+  }
 }
 
 function renderFloor() {
@@ -289,7 +339,7 @@ function renderFeed() {
         ${m.authorKind === 'agent' ? `<span class="acts"><button class="askBtn" data-agent="${esc(m.author)}" data-msg="${m.id}">ask ${esc(m.author)}</button></span>` : ''}
         <span class="when">${ago(m.createdAt)}</span>
       </div>
-      <div class="b">${linkMentions(m.body)}</div>
+      <div class="b">${renderBody(m.body)}</div>
     </div>`;
   }).join('') || '<div class="empty">Nothing said yet.</div>';
   if (near) $('#feed').scrollTop = $('#feed').scrollHeight;
@@ -536,6 +586,184 @@ $('#ideaSave').addEventListener('click', async () => {
     state.idea = i.slug;
     await refresh();
   } catch (e) { toast(e.message); }
+});
+
+// ------------------------------------------------------------------- voice
+
+/**
+ * Speech goes in as ordinary text: the clip is transcribed server-side and
+ * posted as a normal message, so every agent reads it the same way it reads
+ * anything you type. Nothing here needs a model that understands audio.
+ *
+ * Two modes share the same recorder. Push-to-talk cuts the clip when you let
+ * go. Live mode watches the microphone level and cuts a clip each time you stop
+ * speaking, so you can keep talking without touching anything.
+ */
+const voice = {
+  stream: null, recorder: null, chunks: [],
+  ctx: null, analyser: null, meter: null,
+  live: false, speaking: false, quietSince: 0, armed: false,
+};
+
+const SILENCE_MS = 1100;   // how long a pause has to last before a clip is cut
+const SPEECH_LEVEL = 0.02; // RMS above which we treat it as speech, not room noise
+
+async function micStream() {
+  if (voice.stream) return voice.stream;
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('this browser will not give us a microphone');
+  voice.stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+
+  // A level meter, which doubles as the silence detector for live mode.
+  voice.ctx = new AudioContext();
+  const src = voice.ctx.createMediaStreamSource(voice.stream);
+  voice.analyser = voice.ctx.createAnalyser();
+  voice.analyser.fftSize = 1024;
+  src.connect(voice.analyser);
+  const buf = new Float32Array(voice.analyser.fftSize);
+
+  voice.meter = setInterval(() => {
+    voice.analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    $('#vu').classList.toggle('on', Boolean(voice.recorder));
+    $('#vu').firstElementChild.style.width = `${Math.min(100, rms * 600)}%`;
+
+    if (!voice.live || !voice.recorder) return;
+    if (rms > SPEECH_LEVEL) {
+      voice.speaking = true;
+      voice.quietSince = 0;
+    } else if (voice.speaking) {
+      // Only a pause that follows actual speech ends a clip, so silence alone
+      // never sends an empty recording.
+      voice.quietSince = voice.quietSince || Date.now();
+      if (Date.now() - voice.quietSince > SILENCE_MS) {
+        voice.speaking = false;
+        voice.quietSince = 0;
+        voice.recorder.stop(); // onstop sends it and, in live mode, starts the next
+      }
+    }
+  }, 90);
+
+  return voice.stream;
+}
+
+function pickMime() {
+  for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
+    if (window.MediaRecorder?.isTypeSupported?.(t)) return t;
+  }
+  return '';
+}
+
+async function startRecording() {
+  const stream = await micStream();
+  const mimeType = pickMime();
+  voice.chunks = [];
+  voice.recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  voice.recorder.ondataavailable = (e) => { if (e.data.size) voice.chunks.push(e.data); };
+  voice.recorder.onstop = async () => {
+    const blob = new Blob(voice.chunks, { type: mimeType || 'audio/webm' });
+    voice.recorder = null;
+    $('#mic').classList.remove('rec');
+    // Anything this short is a misfire — a stray click, or a cough in live mode.
+    if (blob.size > 1200) await sendClip(blob);
+    if (voice.live) startRecording().catch((e) => toast(e.message));
+    else $('#vu').classList.remove('on');
+  };
+  voice.recorder.start();
+  $('#mic').classList.add('rec');
+}
+
+function stopRecording() {
+  if (voice.recorder && voice.recorder.state !== 'inactive') voice.recorder.stop();
+}
+
+async function sendClip(blob) {
+  if (!requireMe()) return;
+  const q = new URLSearchParams({ as: state.me });
+  if (state.idea) q.set('idea', state.idea);
+  try {
+    say('transcribing…');
+    const res = await fetch(`/api/voice?${q}`, {
+      method: 'POST',
+      headers: { 'content-type': blob.type || 'audio/webm' },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+    say('');
+    await refresh();
+  } catch (e) {
+    toast(e.message);
+    // A failure in live mode would otherwise repeat every few seconds.
+    if (voice.live) toggleLive(false);
+  }
+}
+
+function say(text) {
+  const w = $('#where');
+  if (text) w.dataset.busy = text; else delete w.dataset.busy;
+  w.textContent = text || (state.idea ? `posting to ${state.idea}` : 'posting to the lobby');
+}
+
+// Push to talk: hold the button, or click once to start and again to stop.
+$('#mic').addEventListener('pointerdown', async (e) => {
+  e.preventDefault();
+  if (voice.live) return;
+  if (voice.recorder) { stopRecording(); return; }
+  voice.armed = Date.now();
+  try { await startRecording(); } catch (err) { toast(err.message); }
+});
+$('#mic').addEventListener('pointerup', () => {
+  if (voice.live || !voice.recorder) return;
+  // A quick tap latches on; a genuine hold ends when released.
+  if (Date.now() - voice.armed > 400) stopRecording();
+});
+
+function toggleLive(on) {
+  voice.live = on ?? !voice.live;
+  $('#live').classList.toggle('live', voice.live);
+  $('#live').textContent = voice.live ? 'Live ●' : 'Live';
+  $('#mic').disabled = voice.live;
+  if (voice.live) {
+    startRecording().catch((e) => { toast(e.message); toggleLive(false); });
+    toast('Listening. It posts each time you stop speaking.');
+  } else {
+    stopRecording();
+    $('#vu').classList.remove('on');
+  }
+}
+$('#live').addEventListener('click', () => toggleLive());
+
+// ------------------------------------------------------------- generation
+
+$('#gen').addEventListener('click', () => {
+  if (!requireMe()) return;
+  $('#genNote').textContent = state.idea ? `posts to ${state.idea}` : 'posts to the lobby';
+  $('#dlgGen').showModal();
+});
+$('#genCancel').addEventListener('click', () => $('#dlgGen').close());
+$('#genGo').addEventListener('click', async () => {
+  const prompt = $('#genPrompt').value.trim();
+  if (!prompt) return toast('describe what you want first');
+  const kind = $('#genKind').value;
+  $('#genGo').disabled = true;
+  try {
+    say(kind === 'video' ? 'making a video — this takes a while…' : 'making an image…');
+    await api('/api/generate', { method: 'POST', body: JSON.stringify({
+      kind, prompt, as: state.me, idea: state.idea,
+    }) });
+    $('#genPrompt').value = '';
+    $('#dlgGen').close();
+    await refresh();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    $('#genGo').disabled = false;
+    say('');
+  }
 });
 
 // Live updates: the server tells us the high-water mark moved, we pull the delta.
