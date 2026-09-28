@@ -76,8 +76,8 @@
 </head>
 <body>
 <header>
-  <h1>Dashboard <small>where everything stands</small></h1>
   <nav id="nav"></nav>
+  <h1>Dashboard <small>where everything stands</small></h1>
   <div class="spacer"></div>
   <span class="msg" id="msg"></span>
   <button id="refresh">Refresh</button>
@@ -137,11 +137,13 @@ function tiles(d) {
 function render(d) {
   $('#tiles').innerHTML = tiles(d);
 
+  // The title is what you recognise; the reason is why it is in this list.
+  // "needs you" three times over is a list you learn to ignore.
   const attention = d.needsAttention.length
     ? d.needsAttention.map((a) => `
-        <div class="item attn">
-          <span class="t">${esc(a.what ?? a.reason ?? 'needs you')}</span>
-          ${a.idea ? `<a href="/?idea=${encodeURIComponent(a.idea)}" class="w">${esc(a.idea)}</a>` : ''}
+        <div class="item attn" style="flex-direction:column;align-items:flex-start;gap:2px">
+          <a class="t" style="font-weight:550" href="/?idea=${encodeURIComponent(a.idea)}">${esc(a.title ?? a.idea)}</a>
+          <span class="w" style="white-space:normal">${esc((a.reasons ?? [a.what ?? 'needs you']).join(' · '))}</span>
         </div>`).join('')
     : '<p class="empty">Nothing is waiting on you.</p>';
 

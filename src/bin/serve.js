@@ -964,12 +964,19 @@ app.get('/api/events', (req, res) => {
 });
 
 // Tidier than typing the .html.
-app.get('/setup', (_req, res) => res.redirect('/setup.html'));
-app.get('/design', (_req, res) => res.redirect('/design.html'));
-app.get('/work', (_req, res) => res.redirect('/work.html'));
-app.get('/dashboard', (_req, res) => res.redirect('/dashboard.html'));
-app.get('/plugins', (_req, res) => res.redirect('/plugins.html'));
-app.get('/artifacts', (_req, res) => res.redirect('/artifacts.html'));
+/**
+ * Tidy URLs for the pages.
+ *
+ * The query string comes along. A redirect that drops it silently breaks every
+ * link that carries one — /work?do=new-task arrives as a plain /work.html and
+ * the thing you asked for never happens, with nothing to show you why.
+ */
+for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts']) {
+  app.get(`/${page}`, (req, res) => {
+    const query = req.originalUrl.slice(req.path.length);
+    res.redirect(`/${page}.html${query}`);
+  });
+}
 
 app.use(express.static(join(here, '..', 'web')));
 

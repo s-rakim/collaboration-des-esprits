@@ -34,7 +34,8 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   input,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%}
   main{display:grid;grid-template-columns:300px minmax(0,1fr);height:calc(100vh - 53px)}
-  @media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
+  @media (max-width:1100px){main{grid-template-columns:250px minmax(0,1fr)}}
+  @media (max-width:860px){main{grid-template-columns:1fr;height:auto}}
   aside{border-right:1px solid var(--line);overflow-y:auto;padding:12px}
   .doc{overflow-y:auto;padding:0}
   .item{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:3px}
@@ -67,8 +68,8 @@
 </head>
 <body>
 <header>
-  <h1>Artifacts <small>what the room has produced</small></h1>
   <nav id="nav"></nav>
+  <h1>Artifacts <small>what the room has produced</small></h1>
   <div class="spacer"></div>
   <span class="msg" id="msg"></span>
 </header>

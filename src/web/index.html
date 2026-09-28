@@ -28,7 +28,8 @@
   .stats b{color:var(--text)}
   .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
   main{display:grid;grid-template-columns:230px minmax(0,1fr) 340px;gap:0;height:calc(100vh - 53px)}
-  @media (max-width:1100px){main{grid-template-columns:1fr;height:auto}aside,section{border:0!important}}
+  @media (max-width:1340px){main{grid-template-columns:210px minmax(0,1fr) 290px}}
+  @media (max-width:1080px){main{grid-template-columns:1fr;height:auto}aside,section{border:0!important}}
   aside,.mid,.ctx{overflow-y:auto;padding:14px}
   aside{border-right:1px solid var(--line)}
   .ctx{border-left:1px solid var(--line)}
@@ -151,12 +152,12 @@
 </head>
 <body>
 <header>
-  <h1>Collaboration des Esprits <small>shared memory for your agents</small></h1>
+  <nav id="nav"></nav>
+  <h1 id="title">The lobby <small>cross-cutting chat</small></h1>
   <div class="stats" id="stats"></div>
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
-<nav id="nav"></nav>
     <button class="primary" id="newIdea">Drop an idea</button>
   </div>
 </header>
@@ -166,8 +167,7 @@
     <input id="search" placeholder="Search everything ever said" autocomplete="off"
       style="margin-bottom:10px;font-size:12.5px;padding:6px 9px">
     <div id="results"></div>
-    <h2>Ideas</h2>
-    <div id="ideaList"></div>
+    <div id="context"></div>
     <h2>Speaking</h2>
     <div class="floor" id="floor"></div>
     <h2>In the room</h2>
@@ -291,8 +291,14 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
+import { markIdea, refreshNav } from '/nav.js';
+
 const $ = (s) => document.querySelector(s);
 const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null };
+
+// A thread can be opened by link — from the rail on another page, or a
+// bookmark — so the URL is read before anything is drawn.
+state.idea = new URLSearchParams(location.search).get('idea') || null;
 
 // localStorage is only ever a convenience here (remembering your handle); the
 // room itself lives in SQLite, so a cleared browser loses nothing.
@@ -338,38 +344,30 @@ const ago = (iso) => {
 
 // ------------------------------------------------------------------ rendering
 
+/**
+ * The rail draws the thread list now, so what is left here is the part a rail
+ * has no room for: which thread you are in, and what is true of it.
+ */
 function renderIdeas() {
   const o = state.overview; if (!o) return;
   const attn = new Set(o.needsAttention.map((a) => a.idea));
+  const open = state.idea ? o.ideas.find((i) => i.slug === state.idea) : null;
 
-  const row = (i) => `
-      <div class="idea ${state.idea === i.slug ? 'on' : ''}" data-idea="${esc(i.slug)}">
-        <span class="t">${esc(i.title)}</span>
-        <span class="m"><span class="badge ${esc(i.stage)}">${esc(i.stage)}</span>
-          ${i.openTasks ? ` ${i.openTasks} open` : ''}${attn.has(i.slug) ? ' · needs you' : ''}</span>
-      </div>`;
+  $('#title').innerHTML = open
+    ? `${esc(open.title)} <small>${esc(open.stage)}${open.project ? ` · ${esc(open.project)}` : ''}</small>`
+    : 'The lobby <small>cross-cutting chat</small>';
 
-  // Ideas filed under a project are grouped beneath it; the rest sit loose.
-  const byProject = new Map();
-  const loose = [];
-  for (const i of o.ideas) {
-    if (i.project) {
-      if (!byProject.has(i.project)) byProject.set(i.project, []);
-      byProject.get(i.project).push(i);
-    } else loose.push(i);
-  }
+  // Inside a thread this says where you are; at the lobby the header already
+  // does, and a card repeating it is just furniture.
+  $('#context').innerHTML = open
+    ? `<div class="idea on">
+         <span class="t">${esc(open.title)}</span>
+         <span class="m"><span class="badge ${esc(open.stage)}">${esc(open.stage)}</span>
+           ${open.openTasks ? ` ${open.openTasks} open` : ''}${attn.has(open.slug) ? ' · needs you' : ''}</span>
+       </div>`
+    : '';
 
-  let html = `<div class="idea ${state.idea === null ? 'on' : ''}" data-idea="">
-       <span class="t">Lobby</span><span class="m">cross-cutting chat</span></div>`;
-  for (const [proj, list] of byProject) {
-    html += `<div class="proj">${esc(proj)}</div>` + list.map(row).join('');
-  }
-  if (loose.length) {
-    if (byProject.size) html += '<div class="proj">Unfiled</div>';
-    html += loose.map(row).join('');
-  }
-  if (!o.ideas.length) html += '<div class="empty">No ideas yet. Drop one.</div>';
-  $('#ideaList').innerHTML = html;
+  markIdea(state.idea ?? '');
 
   $('#stats').innerHTML = [
     `<span><b>${o.totals.ideas}</b> ideas</span>`,
@@ -556,11 +554,20 @@ async function refresh() {
 
 // ---------------------------------------------------------------- interaction
 
-$('#ideaList').addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-idea]'); if (!el) return;
-  state.idea = el.dataset.idea || null;
+// The rail says which thread you picked; opening one is still a switch of
+// state rather than a page load, so the feed and the floor stay live.
+window.addEventListener('esprits:idea', async (e) => {
+  state.idea = e.detail.idea || null;
+  const url = new URL(location.href);
+  if (state.idea) url.searchParams.set('idea', state.idea); else url.searchParams.delete('idea');
+  history.replaceState(null, '', url);
   renderIdeas(); renderFeed();
   try { await loadBrief(); } catch (err) { toast(err.message); }
+});
+
+// And Ctrl-K, or the rail's New idea, opens the same dialog the button does.
+window.addEventListener('esprits:action', (e) => {
+  if (e.detail.action === 'new-idea') $('#newIdea').click();
 });
 
 $('#ctx').addEventListener('click', async (e) => {
@@ -685,6 +692,8 @@ $('#ideaSave').addEventListener('click', async () => {
     $('#dlgIdea').close();
     state.idea = i.slug;
     await refresh();
+    // The rail lists the threads, so a new one has to reach it.
+    await refreshNav();
   } catch (e) { toast(e.message); }
 });
 
@@ -1347,6 +1356,12 @@ if (state.me) $('#meLabel').textContent = state.me;
 await refresh();
 await loadVoices();
 listen();
+
+// Arriving from the rail on another page, with "new idea" already clicked.
+if (new URLSearchParams(location.search).get('do') === 'new-idea') {
+  history.replaceState(null, '', location.pathname + (state.idea ? `?idea=${encodeURIComponent(state.idea)}` : ''));
+  $('#newIdea').click();
+}
 </script>
 <script type="module" src="/nav.js"></script>
 </body>

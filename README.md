@@ -345,14 +345,29 @@ that returns `{"id": ...}` and exposes `/videos/{id}` works by describing it:
 { "statusPath": "/videos/{id}", "idField": "id", "urlField": "url" }
 ```
 
-## Chat and Work
+## The rail
 
-Two halves, one toggle in the header. **Chat** is where you and the models talk,
-with what that produces beside it — the thread, the artifacts, the design
-library. **Work** is where jobs get handed over and run without you watching —
-the dashboard, the task board and the swarm, the plugins and skills. Keeping
-every link visible at once made the bar long and the distinction invisible,
-which is the problem the toggle solves.
+Everything the room can do runs down the left-hand side, in one column you read
+top to bottom. A horizontal bar has a budget of about six words before it wraps;
+a rail does not, which is why every app that grows past six features ends up
+with one.
+
+At the top is the toggle. **Chat** is where you and the models talk, with what
+that produces beside it — the thread, the artifacts, the design library.
+**Work** is where jobs get handed over and run without you watching — the
+dashboard, the task board and the swarm, the plugins and skills. Keeping both
+sets visible at once made the list long and the distinction invisible, which is
+what the toggle is for. Under it sits the one thing that *does* something rather
+than going somewhere — New idea, or New task — on `Ctrl`/`Cmd` `K`.
+
+Below the links are the threads, filed the way the room files them: the lobby,
+then each project with its ideas under it, then anything unfiled. A dot means
+that one is waiting on you. Picking one on the chat page switches the thread
+without a page load, so the feed and the floor stay live.
+
+The rail narrows to icons with the button at the top, and remembers that. On a
+phone it is not there at all until you ask for it, and slides back out of the
+way once you have.
 
 ## The / menu
 
@@ -600,11 +615,12 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-192 tests over the domain rules, turn-taking, connections and seats, artifacts
+196 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
-Telegram command language, and the model participants (driven through a stubbed
-provider client, so `npm test` needs no API key and spends nothing).
+Telegram command language, the page routes, and the model participants (driven
+through a stubbed provider client, so `npm test` needs no API key and spends
+nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose
