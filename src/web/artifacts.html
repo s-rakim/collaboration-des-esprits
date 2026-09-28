@@ -68,12 +68,7 @@
 <body>
 <header>
   <h1>Artifacts <small>what the room has produced</small></h1>
-  <nav>
-    <a href="/">Chat</a>
-    <a href="/artifacts" class="on">Artifacts</a>
-    <a href="/design">Design</a>
-    <a href="/setup">Setup</a>
-  </nav>
+  <nav id="nav"></nav>
   <div class="spacer"></div>
   <span class="msg" id="msg"></span>
 </header>
@@ -241,5 +236,6 @@ await load();
 // Deep link: /artifacts#slug opens one directly.
 if (location.hash.slice(1)) await open(decodeURIComponent(location.hash.slice(1))).catch(() => {});
 </script>
+<script type="module" src="/nav.js"></script>
 </body>
 </html>

@@ -79,10 +79,7 @@
 <body>
 <header>
   <h1>Work <small>hand over a job, walk away</small></h1>
-  <nav>
-    <a href="/">Chat</a><a href="/work" class="on">Work</a>
-    <a href="/artifacts">Artifacts</a><a href="/design">Design</a><a href="/setup">Setup</a>
-  </nav>
+  <nav id="nav"></nav>
   <div class="spacer"></div>
   <span class="msg" id="msg"></span>
 </header>
@@ -288,5 +285,6 @@ $('#start').addEventListener('click', async () => {
 
 await refresh();
 </script>
+<script type="module" src="/nav.js"></script>
 </body>
 </html>

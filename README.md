@@ -243,10 +243,21 @@ once rather than in every thread.
 
 ## Files
 
-**＋ File** attaches anything to the thread. Text formats are extracted on the
-way in so agents can read them with `read_file` without each of them fetching
-and parsing the file. Anything not text is kept and linked, and labelled as such
-rather than pretending to be readable.
+**＋ File** attaches anything to the thread. The text is extracted on the way in
+so agents can read it with `read_file` without each of them fetching and parsing
+the file.
+
+Plain text, code and data formats come through as themselves. **PDF, Word,
+Excel and PowerPoint are parsed** — with no dependency and nothing to compile,
+because the Office formats are zipped XML and a PDF is a container of deflated
+streams. A Word document keeps its paragraphs, tabs and tables; a workbook comes
+through one sheet at a time with its columns aligned, so a number stays under its
+heading; a deck arrives one block per slide; a PDF is read through its ToUnicode
+maps, so a subset font reads as words rather than as gibberish.
+
+What it will not do is guess. A scanned PDF has no text in it, and the room is
+told exactly that rather than handed whatever punctuation survived. Anything in
+a format we cannot read is kept and linked, and labelled as such.
 
 ## Scheduled
 
@@ -279,7 +290,39 @@ Three ways in, all landing in the same room:
 Transcription is biased toward the names in the room, so your agents' names come
 back spelled right instead of mangled.
 
-## Images and video
+### The room talking back
+
+**🔊 Listen** is the other half. With it on, every reply that arrives is read
+aloud in the room's voice, in order, and with Live on that makes the whole
+exchange hands-free in both directions.
+
+Two details are load-bearing. Replies are queued rather than played as they
+arrive, because three agents answering at once would otherwise talk over each
+other in a way they do not in the transcript. And the microphone is held shut
+while audio plays — otherwise Live hears the room through your speakers, posts
+it back, and the room starts answering itself.
+
+What gets read is what somebody said: links become "a link", code becomes "some
+code", and joins and status lines are skipped, because bookkeeping read aloud
+mid-conversation is what makes you switch the feature off.
+
+### The voice
+
+The voice is a connection like any other, and it does two jobs: it reads replies
+aloud, and it is what **Create → Audio** makes audio with. One voice to
+configure, so the room sounds like one thing.
+
+Presets ship for OpenAI, ElevenLabs, Deepgram Aura, Groq and a local Kokoro, and
+each names the voices that provider actually has, so the setup page offers a list
+rather than a text box. The providers disagree about everything — where the text
+goes, what the voice field is called, whether the key is a bearer token or its
+own header — so the differences are *described* per connection rather than coded
+for: `keyHeader`, `keyScheme`, `textKey`, `voiceKey`, `modelKey`, `path`. A
+provider that does not exist yet needs no code change, only a description.
+
+Agents have `generate_audio` too, for when hearing it is the point.
+
+## Images, video and audio
 
 **Create** — in the composer or on the Design page — generates an image or a
 video from a prompt and posts it to the thread. Everything generated, by you or
@@ -287,7 +330,7 @@ by an agent, is collected on the **Design** page with the prompt that made it,
 because the prompt is the half you iterate on. Pin the good ones; reuse a prompt
 to make a variation. Agents can do it too — they have `generate_image` and
 `generate_video`, for when a mockup or a diagram carries the point better than a
-paragraph.
+paragraph, and `generate_audio` for when it should be heard.
 
 Generated files are written next to the database and served from `/media`, so
 the room keeps working after a provider's temporary link expires.
@@ -301,6 +344,100 @@ that returns `{"id": ...}` and exposes `/videos/{id}` works by describing it:
 ```json
 { "statusPath": "/videos/{id}", "idField": "id", "urlField": "url" }
 ```
+
+## Chat and Work
+
+Two halves, one toggle in the header. **Chat** is where you and the models talk,
+with what that produces beside it — the thread, the artifacts, the design
+library. **Work** is where jobs get handed over and run without you watching —
+the dashboard, the task board and the swarm, the plugins and skills. Keeping
+every link visible at once made the bar long and the distinction invisible,
+which is the problem the toggle solves.
+
+## The / menu
+
+Type `/` at the start of a line in the composer and everything the room can do
+is one keystroke away: add files, use a skill, open the plugins, hand a job to
+the swarm, search the web and quote a result, make an image, a video or audio,
+switch on read-aloud. Arrow keys and Enter, Escape to dismiss.
+
+It opens only on a slash that starts a line, so a URL or a date typed
+mid-sentence does not throw a menu over what you are writing.
+
+## Skills
+
+The instructions you have already written, uploaded once.
+
+A plugin *does* something. A skill tells a model **how** you want something done
+— your review checklist, your house style, the procedure you keep re-explaining
+— and a model reads it and works that way. So the body is stored and handed over
+verbatim: summarising somebody's standards back at them defeats the point of
+having written them down.
+
+Drop files on the **Plugins** page. A `.md` file is one skill; a `.zip` is a
+skill folder with a `SKILL.md` at its root and whatever files it needs, or
+several of those, or a folder of loose markdown — each read the way that throws
+none of your work away. Front matter `name`, `description` and `roles` are read
+if present; without it the title comes from the first heading and the
+description from the first paragraph.
+
+Skills are *named* in every model's instructions, not pasted into them, so
+twelve skills do not cost twelve pages of prompt on every turn. A model calls
+`use_skill` when it needs one and gets it in full, with the files the folder
+brought. `roles: [reviewer, critic]` limits which seats are told about it.
+
+## Plugins
+
+An HTTP call you describe once, which any agent can then make with `use_plugin`.
+The description matters as much as the URL — it is what a model reads to decide
+whether to reach for the thing, so a vague one gets called at the wrong moments
+or never at all.
+
+The **Plugins** page has three things on it:
+
+- **Built in** — the capabilities that are already part of the room (PDF, Excel,
+  Word, PowerPoint, image, video and audio generation, web search, the swarm),
+  each saying whether it is ready or still needs a connection. These are
+  pointers, not wrappers: following one gets you the working thing.
+- **Ready to add** — public data sources, filled in, needing no key: Crossref
+  and OpenAlex for papers, ECB rates and market quotes, World Bank indicators,
+  IMF macro series, WHO health data, country facts, and SEC company filings and
+  reported figures. Add one and test it in place.
+- **Your own** — anything else, described in the same form.
+
+Every call is logged with its arguments, status and duration, because the plugin
+is the point where the room touches the outside world and that makes it the part
+most worth being able to audit. A URL that resolves to a private address is
+refused before a socket is opened — and *that refusal is logged too*, since a
+model filling a template to point at the machine's own network is the single
+call most worth having a record of.
+
+## The dashboard
+
+Where everything stands, in one page: what is waiting on **you**, the ideas and
+their stages, live swarm runs with their progress, who is in the room and
+whether they are running, what the prefect has flagged, the plugins and skills
+and how much they get used, what has been made lately, and which capabilities
+this room actually has. It follows the room live rather than going stale until
+you reload.
+
+## The prefect
+
+A seat with the `prefect` role, whose job is not to contribute ideas but to
+check the ones that are made. It pulls the statements of fact out of what was
+said — numbers, versions, limits, prices, API shapes, "this is impossible" —
+and checks each one: first against the room's own recorded decisions, facts and
+artifacts with `check_claim`, and where the room cannot settle it, against the
+web. Every check is recorded with its source, because "I verified it" without a
+source is the same failure it exists to catch.
+
+It speaks only when something is wrong or unsupported, and it says
+**unverifiable** when that is the honest answer rather than converting an
+absence of evidence into a verdict either way.
+
+The dashboard's prefect card is deliberately not reassuring when it is empty: no
+prefect seated means nothing is being checked, and it says so rather than
+showing a comfortable zero.
 
 ## Taking turns
 
@@ -391,9 +528,9 @@ converge. Agents talking among themselves never reaches your phone.
 
 ## Roles
 
-Nine presets ship: `architect`, `critic`, `researcher`, `planner`, `backend`,
-`frontend`, `reviewer`, `generalist`, `human`. Each is a charter plus a queue
-filter — `claim_next()` only hands a `backend` agent backend work.
+Ten presets ship: `architect`, `critic`, `researcher`, `planner`, `backend`,
+`frontend`, `reviewer`, `prefect`, `generalist`, `human`. Each is a charter plus
+a queue filter — `claim_next()` only hands a `backend` agent backend work.
 
 The split between **refine-stage** roles (argue about the idea, do not write
 code) and **build-stage** roles (implement the frozen spec, do not reopen the
@@ -450,11 +587,11 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-146 tests over the domain rules, turn-taking, connections and seats, artifacts
+192 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
-library, the storage layer, the Telegram command language, and the model participants (driven
-through a stubbed provider client, so `npm test` needs no API key and spends
-nothing).
+library, the document readers, skills, plugins, the voice, the storage layer, the
+Telegram command language, and the model participants (driven through a stubbed
+provider client, so `npm test` needs no API key and spends nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose
@@ -464,10 +601,17 @@ crashing while holding the floor. Seat credentials are covered too: no view of a
 seat carries a raw key, and re-saving a seat cannot wipe the key already stored
 for it.
 
-The two web pages are also checked in a real browser (Playwright) for JS errors
-and failed requests — which is how the setup page's dead `addEventListener` was
-caught. The voice path is exercised there too, with a fake microphone against a
-stub transcriber, so recording and posting are proven rather than assumed.
+The document readers are tested against real containers — a zip written the way
+the Office tools write one, a PDF with a real cross-reference table — rather than
+against a convenient simplification, including a two-byte ToUnicode map and a
+scanned page that must come back empty instead of inventing text.
+
+Every web page is also checked in a real browser (Playwright) for JS errors and
+failed requests — which is how the setup page's dead `addEventListener` was
+caught. The voice path is exercised there against a stub provider: the read-aloud
+loop is driven end to end and asserted to name the speaker, use the chosen voice,
+skip your own messages and the join notices, strip URLs and code, and fall silent
+when switched off.
 
 ## License
 

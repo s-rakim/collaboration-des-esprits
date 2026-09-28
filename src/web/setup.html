@@ -86,10 +86,7 @@
 </head>
 <body>
 <div class="wrap">
-  <nav style="display:flex;gap:6px;margin-bottom:14px">
-    <a href="/">Chat</a><a href="/artifacts">Artifacts</a><a href="/design">Design</a>
-    <a href="/setup" class="on">Setup</a>
-  </nav>
+  <nav id="nav"></nav>
   <h1>Setup</h1>
   <p class="sub">Every model has its own provider and its own key. Keys are stored in the room's own database on this machine and are never sent back to this page — you'll only ever see the last four characters.</p>
 
@@ -298,26 +295,48 @@ function render() {
 
 let roster = null;
 
-const ROLES = ['architect','critic','researcher','planner','backend','frontend','reviewer','generalist'];
+/** Filled from /api/seats; the fallback only matters if that call ever fails. */
+let ROLES = [{ id: 'generalist', summary: '' }];
 const EFFORTS = ['low','medium','high','xhigh','max'];
 const opts = (list, sel) => list.map((v) => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join('');
 
 // ---------------------------------------------------------------- connections
 
+/**
+ * `extra` is where a provider's differences live — which header carries the key,
+ * where the voice goes, how a search response is shaped. It is carried on the
+ * row and sent back on every save, so editing a URL cannot quietly flatten the
+ * description that makes the endpoint work.
+ */
 function connRow(c, isNew = false) {
   const kinds = Object.entries(roster.kinds)
     .map(([id, k]) => `<option value="${esc(id)}" ${c.kind === id ? 'selected' : ''} title="${esc(k.blurb)}">${esc(k.label)}</option>`)
     .join('');
   const keyPlaceholder = c.keySource === 'env' ? `from ${c.keyEnv}`
     : c.keySet ? 'saved — blank keeps it' : 'paste key';
+  const extra = c.extra ?? {};
 
-  return `<div class="conn" data-conn="${esc(c.name)}" ${isNew ? 'data-new="1"' : ''}>
+  // A voice connection gets a voice picker, because the voice is the setting
+  // you actually change: it is what the room sounds like when it reads a reply
+  // out and what an audio generation is made with.
+  const voices = [...new Set([...(extra.voices ?? []), ...(extra.voice ? [extra.voice] : [])])];
+  const voicePicker = c.kind === 'speak'
+    ? `<select class="cvoice" title="the voice this connection speaks in">
+         ${voices.length
+           ? voices.map((v) => `<option ${v === extra.voice ? 'selected' : ''}>${esc(v)}</option>`).join('')
+           : '<option value="">default voice</option>'}
+       </select>`
+    : '';
+
+  return `<div class="conn" data-conn="${esc(c.name)}" ${isNew ? 'data-new="1"' : ''}
+       data-extra="${esc(JSON.stringify(extra))}">
       <input class="cn" value="${esc(c.name)}" placeholder="a name you choose">
       <select class="ck">${kinds}</select>
       <input class="cu" value="${esc(c.baseURL)}" placeholder="https://api.example.com/v1" spellcheck="false">
       <input class="cm" value="${esc(c.model)}" placeholder="model id" spellcheck="false">
       <input class="cs" type="password" autocomplete="off" placeholder="${esc(keyPlaceholder)}"
         title="${esc(c.keyPreview ?? '')}">
+      ${voicePicker}
       <button class="test" title="make one real call">test</button>
       <button class="del" title="remove">&times;</button>
     </div>`;
@@ -345,6 +364,15 @@ function renderConns() {
   wireConns();
 }
 
+/** The row's saved shape, with the voice picker's current choice folded in. */
+function rowExtra(el) {
+  let extra = {};
+  try { extra = JSON.parse(el.dataset.extra || '{}'); } catch {}
+  const picked = el.querySelector('.cvoice')?.value;
+  if (picked) extra.voice = picked;
+  return extra;
+}
+
 function wireConns() {
   for (const el of document.querySelectorAll('.conn')) {
     const save = async () => {
@@ -362,6 +390,7 @@ function wireConns() {
           kind: el.querySelector('.ck').value,
           baseURL: el.querySelector('.cu').value.trim(),
           model: el.querySelector('.cm').value.trim(),
+          extra: rowExtra(el),
           ...(typedKey ? { apiKey: typedKey } : {}),
         }) });
         await loadAll();
@@ -369,7 +398,7 @@ function wireConns() {
       } catch (e) { say(e.message, 'err'); }
     };
 
-    for (const f of el.querySelectorAll('.ck, .cu, .cm, .cs')) f.addEventListener('change', save);
+    for (const f of el.querySelectorAll('.ck, .cu, .cm, .cs, .cvoice')) f.addEventListener('change', save);
     el.querySelector('.cn').addEventListener('blur', () => {
       const name = el.querySelector('.cn').value.trim();
       if (name && (el.dataset.new || name !== el.dataset.conn)) save();
@@ -402,6 +431,7 @@ function addConnRow(seed) {
   if (!roster.connections.length) $('#conns').innerHTML = '';
   $('#conns').insertAdjacentHTML('beforeend', connRow({
     name: '', kind: 'chat', baseURL: '', model: '', keySet: false, keySource: 'unset', keyPreview: null,
+    extra: {},
     ...seed,
   }, true));
   wireConns();
@@ -433,7 +463,12 @@ $('#body').addEventListener('change', (e) => {
   const taken = new Set(roster.connections.map((c) => c.name));
   let name = pr.preset;
   for (let n = 2; taken.has(name); n++) name = `${pr.preset} ${n}`;
-  addConnRow({ name, kind: pr.kind, baseURL: pr.baseURL, model: pr.model });
+  // The preset's `extra` is the part that makes the endpoint work at all, so it
+  // comes along; `voices` rides with it so the picker has something to offer.
+  addConnRow({
+    name, kind: pr.kind, baseURL: pr.baseURL, model: pr.model,
+    extra: { ...(pr.extra ?? {}), ...(pr.voices ? { voices: pr.voices, voice: pr.extra?.voice ?? pr.voices[0] } : {}) },
+  });
   say(`filled in ${pr.preset} — add the key${pr.keyHint ? ` (${pr.keyHint})` : ''}`, '');
 });
 
@@ -450,7 +485,9 @@ function seatRow(s, isNew = false) {
       <select class="sc">${picker}</select>
       <input class="sm" value="${esc(s.model)}" placeholder="any model id" spellcheck="false"
         title="Free text — whatever this endpoint accepts. Blank uses the connection's default.">
-      <select class="sr">${opts(ROLES, s.role)}</select>
+      <select class="sr">${ROLES.map((r) =>
+        `<option value="${esc(r.id)}" ${r.id === s.role ? 'selected' : ''} title="${esc(r.summary)}">${esc(r.id)}</option>`,
+      ).join('')}</select>
       <select class="se">${opts(EFFORTS, s.effort)}</select>
       <span class="dot ${s.running ? 'on' : ''}" title="${s.running ? 'running' : s.ready ? 'idle' : 'not configured'}"></span>
       <button class="del" title="remove">&times;</button>
@@ -596,6 +633,7 @@ async function loadScheds() {
 
 async function loadAll() {
   roster = await api('/api/seats');
+  if (roster.roles?.length) ROLES = roster.roles;
   renderConns();
   renderSeats();
   await loadScheds();
@@ -628,5 +666,6 @@ $('#save').addEventListener('click', async () => {
 
 await load();
 </script>
+<script type="module" src="/nav.js"></script>
 </body>
 </html>

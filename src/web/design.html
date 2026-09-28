@@ -43,6 +43,10 @@
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
   .card .shot{background:var(--panel2);display:block;width:100%;aspect-ratio:1;object-fit:cover;cursor:zoom-in}
   .card video.shot{cursor:pointer}
+  .card .wave{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    background:linear-gradient(135deg,var(--panel2),var(--panel));color:var(--faint);font-size:11px;
+    text-transform:uppercase;letter-spacing:.08em;padding:12px}
+  .card .wave audio{width:100%}
   .card .meta{padding:10px 11px;display:flex;flex-direction:column;gap:6px;flex:1}
   .card .p{font-size:12.5px;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .card .sub{font-size:11px;color:var(--faint);font-family:var(--mono)}
@@ -68,17 +72,13 @@
 <body>
 <header>
   <h1>Design <small>everything the room has made</small></h1>
-  <nav>
-    <a href="/">Chat</a>
-    <a href="/artifacts">Artifacts</a>
-    <a href="/design" class="on">Design</a>
-    <a href="/setup">Setup</a>
-  </nav>
+  <nav id="nav"></nav>
   <div class="spacer"></div>
   <select id="filter" style="width:auto">
     <option value="">everything</option>
     <option value="image">images</option>
     <option value="video">video</option>
+    <option value="audio">audio</option>
     <option value="pinned">pinned</option>
   </select>
   <span class="msg" id="msg"></span>
@@ -93,6 +93,7 @@
       <select id="kind" style="width:auto">
         <option value="image">Image</option>
         <option value="video">Video</option>
+        <option value="audio">Audio</option>
       </select>
       <select id="size" style="width:auto">
         <option value="">default size</option>
@@ -138,6 +139,7 @@ async function api(path, opts) {
 }
 
 const isVideo = (g) => g.kind === 'video';
+const isAudio = (g) => g.kind === 'audio';
 
 /** Stand-in for a file that is no longer on disk. */
 window.gone = () => {
@@ -149,9 +151,14 @@ window.gone = () => {
 };
 
 function card(g) {
-  const media = isVideo(g)
-    ? `<video class="shot" src="${esc(g.url)}" preload="metadata" muted onerror="this.replaceWith(gone())"></video>`
-    : `<img class="shot" src="${esc(g.url)}" alt="${esc(g.prompt.slice(0, 80))}" loading="lazy" onerror="this.replaceWith(gone())">`;
+  // Audio has no thumbnail, so the card is the player: the point of a voice
+  // line is hearing it, and making that a two-click job hides the library.
+  const media = isAudio(g)
+    ? `<div class="shot wave"><span>${esc(g.size || 'voice')}</span>
+         <audio src="${esc(g.url)}" controls preload="none" onerror="this.replaceWith(gone())"></audio></div>`
+    : isVideo(g)
+      ? `<video class="shot" src="${esc(g.url)}" preload="metadata" muted onerror="this.replaceWith(gone())"></video>`
+      : `<img class="shot" src="${esc(g.url)}" alt="${esc(g.prompt.slice(0, 80))}" loading="lazy" onerror="this.replaceWith(gone())">`;
   return `<div class="card" data-id="${g.id}">
       ${media}
       <div class="meta">
@@ -186,13 +193,18 @@ async function load(reset = true) {
   state.items.push(...d.generations);
   if (d.generations.length < 60) state.done = true;
 
-  $('#warn').innerHTML = (!d.has.image && !d.has.video)
-    ? `<div class="note">No image or video connection is configured yet, so nothing can be made.
+  const kind = $('#kind').value;
+  const missing = { image: 'image', video: 'video', audio: 'voice' }[kind];
+  $('#warn').innerHTML = (!d.has.image && !d.has.video && !d.has.audio)
+    ? `<div class="note">No image, video or voice connection is configured yet, so nothing can be made.
        Add one on the <a href="/setup">setup page</a> — any endpoint with the usual
-       <code>/images/generations</code> shape will do.</div>`
-    : !d.has.video && $('#kind').value === 'video'
-      ? `<div class="note">No video connection is configured — <a href="/setup">add one</a> to use the video option.</div>`
+       <code>/images/generations</code> or <code>/audio/speech</code> shape will do.</div>`
+    : !d.has[kind]
+      ? `<div class="note">No ${missing} connection is configured — <a href="/setup">add one</a> to use that option.</div>`
       : '';
+  // Size is an image idea; for audio the analogous choice is the voice, which
+  // lives on the connection.
+  $('#size').style.display = kind === 'image' ? '' : 'none';
   render();
 }
 
@@ -207,9 +219,9 @@ $('#go').addEventListener('click', async () => {
   const kind = $('#kind').value;
   $('#go').disabled = true;
   try {
-    say(kind === 'video' ? 'making a video — this takes a while…' : 'making an image…');
+    say({ video: 'making a video — this takes a while…', audio: 'recording it…' }[kind] ?? 'making an image…');
     await api('/api/generate', { method: 'POST', body: JSON.stringify({
-      kind, prompt, size: $('#size').value || undefined, as: state.me,
+      kind, prompt, size: kind === 'image' ? ($('#size').value || undefined) : undefined, as: state.me,
     }) });
     $('#prompt').value = '';
     await load(true);
@@ -248,9 +260,11 @@ $('#grid').addEventListener('click', async (e) => {
     }
     // Anything else on the card opens it.
     $('#viewerBody').innerHTML = `
-      ${isVideo(g)
-        ? `<video class="big" src="${esc(g.url)}" controls autoplay></video>`
-        : `<img class="big" src="${esc(g.url)}" alt="">`}
+      ${isAudio(g)
+        ? `<audio class="big" src="${esc(g.url)}" controls autoplay style="width:100%"></audio>`
+        : isVideo(g)
+          ? `<video class="big" src="${esc(g.url)}" controls autoplay></video>`
+          : `<img class="big" src="${esc(g.url)}" alt="">`}
       <div class="cap">
         <div>${esc(g.prompt)}</div>
         <div class="chips">
@@ -274,5 +288,6 @@ $('#grid').addEventListener('click', async (e) => {
 
 await load(true);
 </script>
+<script type="module" src="/nav.js"></script>
 </body>
 </html>

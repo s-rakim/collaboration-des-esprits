@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ee; --dim:#98a0b3; --faint:#6b7488;
+    --accent:#7aa2f7; --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --human:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#dde1e8;
+      --text:#12151b; --dim:#5b6373; --faint:#8b93a5;
+      --accent:#2d5bd7; --good:#3f8f3f; --warn:#96660d; --bad:#c3364f; --human:#6f3fc0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  .spacer{margin-left:auto}
+  a{color:var(--accent)}
+  button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  main{max-width:1180px;margin:0 auto;padding:16px 16px 60px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:0 0 9px;font-weight:600}
+  .msg{font-size:12px;color:var(--faint);min-height:17px}
+  .msg.err{color:var(--bad)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:10px;margin-bottom:16px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 13px}
+  .stat b{display:block;font-size:23px;font-weight:650;letter-spacing:-.02em;line-height:1.2}
+  .stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .stat.warn b{color:var(--warn)} .stat.bad b{color:var(--bad)} .stat.good b{color:var(--good)}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:13px;align-items:start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card.wide{grid-column:1 / -1}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .item{display:flex;gap:9px;align-items:baseline;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+  .item:first-of-type{border-top:0}
+  .item .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .w{color:var(--faint);font-size:11.5px;white-space:nowrap}
+  .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .badge.raw{color:var(--faint)} .badge.refining{color:var(--accent);border-color:var(--accent)}
+  .badge.building{color:var(--warn);border-color:var(--warn)}
+  .badge.shipped,.badge.done,.badge.ready{color:var(--good);border-color:var(--good)}
+  .badge.failed,.badge.contradicted{color:var(--bad);border-color:var(--bad)}
+  .badge.running,.badge.planning,.badge.merging{color:var(--accent);border-color:var(--accent)}
+  .badge.unsupported,.badge.unverifiable{color:var(--warn);border-color:var(--warn)}
+  .badge.on{color:var(--good);border-color:var(--good)}
+  .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:5px;width:100%}
+  .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .bar i.done{background:var(--good)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint);display:inline-block}
+  .dot.on{background:var(--good)} .dot.live{background:var(--accent);animation:pulse 1.3s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .empty{color:var(--faint);font-size:12.5px;padding:8px 0}
+  .caps{display:flex;gap:6px;flex-wrap:wrap}
+  .cap{font-size:11.5px;border:1px solid var(--line);border-radius:7px;padding:4px 9px;color:var(--faint)}
+  .cap.on{color:var(--good);border-color:var(--good)}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
+  .thumbs a{display:block;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .thumbs img,.thumbs video{width:100%;height:100%;object-fit:cover;display:block}
+  .thumbs .sound{display:flex;align-items:center;justify-content:center;height:100%;background:var(--panel2);font-size:18px}
+  .attn{border-left:3px solid var(--warn);padding-left:10px}
+  .claim{font-size:12.5px;padding:8px 0;border-top:1px solid var(--line)}
+  .claim:first-of-type{border-top:0}
+  .claim .c{color:var(--text)}
+  .claim .d{color:var(--faint);font-size:11.5px;margin-top:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dashboard <small>where everything stands</small></h1>
+  <nav id="nav"></nav>
+  <div class="spacer"></div>
+  <span class="msg" id="msg"></span>
+  <button id="refresh">Refresh</button>
+</header>
+
+<main>
+  <div class="tiles" id="tiles"></div>
+  <div class="cols" id="cols"></div>
+</main>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function say(text, cls = '') {
+  const m = $('#msg');
+  m.textContent = text; m.className = `msg ${cls}`;
+}
+
+async function api(path) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' } });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `${res.status} ${res.statusText}`);
+  return out;
+}
+
+const ago = (iso) => {
+  if (!iso) return 'never';
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+/**
+ * The numbers along the top are the ones worth interrupting yourself for. An
+ * open task count is information; a question waiting on you is a queue with you
+ * in it, and it gets the warning colour for that reason.
+ */
+function tiles(d) {
+  const waiting = d.needsAttention.length;
+  const failedChecks = d.checks.problems.length;
+  return [
+    { n: d.totals.ideas ?? 0, label: 'ideas' },
+    { n: d.totals.openTasks ?? 0, label: 'open tasks' },
+    { n: waiting, label: 'waiting on you', cls: waiting ? 'warn' : '' },
+    { n: d.runs.filter((r) => r.live).length, label: 'runs live', cls: d.runs.some((r) => r.live) ? 'good' : '' },
+    { n: failedChecks, label: 'claims flagged', cls: failedChecks ? 'bad' : '' },
+    { n: d.roster.length, label: 'in the room' },
+  ].map((t) => `
+    <div class="stat ${t.cls ?? ''}">
+      <b>${t.n}</b><span>${t.label}</span>
+    </div>`).join('');
+}
+
+function render(d) {
+  $('#tiles').innerHTML = tiles(d);
+
+  const attention = d.needsAttention.length
+    ? d.needsAttention.map((a) => `
+        <div class="item attn">
+          <span class="t">${esc(a.what ?? a.reason ?? 'needs you')}</span>
+          ${a.idea ? `<a href="/?idea=${encodeURIComponent(a.idea)}" class="w">${esc(a.idea)}</a>` : ''}
+        </div>`).join('')
+    : '<p class="empty">Nothing is waiting on you.</p>';
+
+  const ideas = d.ideas.length
+    ? d.ideas.map((i) => `
+        <div class="item">
+          <span class="badge ${esc(i.stage)}">${esc(i.stage)}</span>
+          <span class="t"><a href="/">${esc(i.title)}</a></span>
+          <span class="w">${i.openTasks ? `${i.openTasks} open · ` : ''}${ago(i.updatedAt ?? i.createdAt)}</span>
+        </div>`).join('')
+    : '<p class="empty">No ideas yet. Drop one in the <a href="/">chat</a>.</p>';
+
+  const room = d.roster.length
+    ? d.roster.map((a) => `
+        <div class="item">
+          <span class="dot ${a.running ? 'on' : ''}"></span>
+          <span class="t">${esc(a.name)} <span class="w">${esc(a.role ?? '')}</span></span>
+          <span class="w">${esc(a.model ?? a.kind ?? '')}</span>
+        </div>`).join('')
+    : '<p class="empty">Nobody has joined. Give a model a seat on the <a href="/setup">setup page</a>.</p>';
+
+  const runs = d.runs.length
+    ? d.runs.map((r) => {
+        const total = r.total ?? r.pieces ?? 0;
+        const done = r.done ?? 0;
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        return `
+        <div class="item" style="flex-wrap:wrap">
+          <span class="badge ${esc(r.live ? 'running' : r.status)}">${esc(r.live ? 'running' : r.status)}</span>
+          <span class="t"><a href="/work">${esc(r.goal ?? `run #${r.id}`)}</a></span>
+          <span class="w">${done}/${total} · ${ago(r.createdAt)}</span>
+          <div class="bar"><i class="${done === total && total ? 'done' : ''}" style="width:${pct}%"></i></div>
+        </div>`;
+      }).join('')
+    : '<p class="empty">No runs yet. Hand a job to the swarm on the <a href="/work">tasks page</a>.</p>';
+
+  // The prefect's panel. An empty one is not "all clear" — it means nobody is
+  // checking, and the card says so rather than showing a reassuring zero.
+  const seated = d.prefect ?? [];
+  const prefect = !seated.length
+    ? `<p class="empty">No prefect is seated, so nothing is being checked. Give a seat the
+       <b>prefect</b> role on the <a href="/setup">setup page</a> and it will verify what the room
+       asserts and flag what it cannot support.</p>`
+    : `<div class="row" style="margin-bottom:8px">
+         ${seated.map((p) => `<span class="badge ${p.running ? 'on' : ''}">
+            <span class="dot ${p.running ? 'live' : ''}"></span> ${esc(p.name)} · ${esc(p.model)}
+            ${p.running ? '' : p.ready ? ' · idle' : ' · needs a key'}</span>`).join('')}
+         <span class="w">${d.checks.total} claim${d.checks.total === 1 ? '' : 's'} checked</span>
+       </div>
+       ${d.checks.problems.length
+         ? d.checks.problems.map((c) => `
+             <div class="claim">
+               <div class="row" style="gap:7px">
+                 <span class="badge ${esc(c.verdict)}">${esc(c.verdict)}</span>
+                 <span class="c" style="flex:1;min-width:0">${esc(c.claim)}</span>
+               </div>
+               <div class="d">${esc(c.detail ?? '')}${c.source ? ` — <a href="${esc(c.source)}" target="_blank" rel="noopener">source</a>` : ''}
+                 · ${esc(c.checkedBy)} ${ago(c.createdAt)}</div>
+             </div>`).join('')
+         : '<p class="empty">Nothing flagged. Every claim it checked held up.</p>'}`;
+
+  const caps = [
+    ['chat', 'chat models', d.capabilities.chat],
+    ['search', 'web search', d.capabilities.search],
+    ['transcribe', 'speech to text', d.capabilities.transcribe],
+    ['speak', 'voice', d.capabilities.speak],
+    ['image', 'images', d.capabilities.image],
+    ['video', 'video', d.capabilities.video],
+  ].map(([, label, n]) => `<span class="cap ${n ? 'on' : ''}">${label}${n > 1 ? ` ×${n}` : ''}</span>`).join('');
+
+  const media = d.generations.length
+    ? `<div class="thumbs">${d.generations.map((g) => `
+        <a href="/design" title="${esc(g.prompt.slice(0, 120))}">
+          ${g.kind === 'video' ? `<video src="${esc(g.url)}" muted preload="metadata"></video>`
+            : g.kind === 'audio' ? '<div class="sound">🔊</div>'
+            : `<img src="${esc(g.url)}" alt="" loading="lazy">`}
+        </a>`).join('')}</div>`
+    : '<p class="empty">Nothing made yet. The <a href="/design">design page</a> is where it lands.</p>';
+
+  const artifacts = d.artifacts.length
+    ? d.artifacts.map((a) => `
+        <div class="item">
+          <span class="t"><a href="/artifacts">${esc(a.title)}</a></span>
+          <span class="w">v${a.version} · ${ago(a.updatedAt ?? a.createdAt)}</span>
+        </div>`).join('')
+    : '<p class="empty">No artifacts yet.</p>';
+
+  const schedules = d.schedules.length
+    ? d.schedules.map((z) => `
+        <div class="item">
+          <span class="dot ${z.enabled ? 'on' : ''}"></span>
+          <span class="t">${esc(z.name)}</span>
+          <span class="w">${z.nextRunAt ? `next ${ago(z.nextRunAt)}` : 'not scheduled'}</span>
+        </div>`).join('')
+    : '<p class="empty">No schedules. Set one on the <a href="/setup">setup page</a>.</p>';
+
+  const tools = `
+    <div class="row" style="margin-bottom:8px">
+      <span class="w">${d.plugins.filter((p) => p.enabled).length}/${d.plugins.length} endpoints ·
+        ${d.skills.filter((k) => k.enabled).length}/${d.skills.length} skills</span>
+      <a href="/plugins" style="margin-left:auto;font-size:12.5px">manage</a>
+    </div>
+    ${d.plugins.length || d.skills.length ? `
+      ${d.plugins.map((p) => `
+        <div class="item"><span class="t"><code>${esc(p.name)}</code></span>
+          <span class="w">${p.enabled ? `used ${ago(p.lastUsed)}` : 'off'}</span></div>`).join('')}
+      ${d.skills.map((k) => `
+        <div class="item"><span class="t">📘 ${esc(k.title || k.name)}</span>
+          <span class="w">${k.enabled ? `${k.used}× used` : 'off'}</span></div>`).join('')}`
+      : '<p class="empty">Nothing connected. The <a href="/plugins">plugins page</a> has ready-made ones.</p>'}`;
+
+  $('#cols').innerHTML = `
+    <div class="card"><h2>Waiting on you</h2>${attention}</div>
+    <div class="card"><h2>Ideas</h2>${ideas}</div>
+    <div class="card wide"><h2>The prefect</h2>${prefect}</div>
+    <div class="card"><h2>Swarm runs</h2>${runs}</div>
+    <div class="card"><h2>In the room</h2>${room}</div>
+    <div class="card"><h2>Plugins and skills</h2>${tools}</div>
+    <div class="card"><h2>Artifacts</h2>${artifacts}</div>
+    <div class="card"><h2>Made lately</h2>${media}</div>
+    <div class="card"><h2>Schedules</h2>${schedules}</div>
+    <div class="card wide"><h2>What this room can do</h2><div class="caps">${caps}</div>
+      <p class="empty" style="margin-top:8px">Anything greyed out just needs a connection on the
+        <a href="/setup">setup page</a>.</p></div>`;
+}
+
+async function load() {
+  try {
+    say('');
+    render(await api('/api/dashboard'));
+  } catch (e) {
+    say(e.message, 'err');
+  }
+}
+
+$('#refresh').addEventListener('click', load);
+await load();
+
+// The dashboard is a page you leave open, so it follows the room rather than
+// going stale until you reload it.
+const es = new EventSource('/api/events');
+es.addEventListener('messages', () => load());
+es.onerror = () => { /* the browser reconnects; a dashboard need not fuss */ };
+</script>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>

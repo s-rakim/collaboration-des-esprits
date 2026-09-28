@@ -108,11 +108,28 @@
   .mic.live{background:var(--good);border-color:var(--good);color:#fff}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
   .mic.rec,.mic.live{animation:pulse 1.4s ease-in-out infinite}
+  #hear.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  #hear.talking{animation:pulse 1.4s ease-in-out infinite}
+  .msg.saying{box-shadow:inset 3px 0 0 var(--accent)}
   .vu{height:3px;border-radius:2px;background:var(--line);overflow:hidden;flex:1;min-width:60px;display:none}
   .vu.on{display:block}
   .vu i{display:block;height:100%;width:0%;background:var(--good);transition:width .08s linear}
   .msg .b img,.msg .b video{max-width:100%;border-radius:8px;margin-top:7px;display:block;border:1px solid var(--line)}
   .msg .b audio{width:100%;margin-top:7px}
+  .slashwrap{position:relative}
+  .slash{position:absolute;bottom:calc(100% + 6px);left:0;right:0;max-height:266px;overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:5px;z-index:20;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .slash .opt{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer}
+  .slash .opt.on{background:var(--panel2)}
+  .slash .opt .ic{font-size:16px;width:20px;text-align:center;flex:none}
+  .slash .opt .t{font-size:13px;font-weight:550}
+  .slash .opt .d{font-size:11.5px;color:var(--faint);margin-left:auto;text-align:right}
+  .slash .head{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:7px 10px 3px}
+  .hit{padding:8px 9px;border-radius:8px;border:1px solid var(--line);margin-bottom:6px;cursor:pointer}
+  .hit:hover{border-color:var(--accent)}
+  .hit b{font-size:12.5px;display:block}
+  .hit span{font-size:11.5px;color:var(--faint);word-break:break-all}
   .voicetag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
   .floor{font-size:12.5px}
   .floor .now{display:flex;gap:7px;align-items:center;padding:5px 8px;background:var(--panel2);border-radius:7px;border-left:3px solid var(--good);margin-bottom:6px}
@@ -139,9 +156,7 @@
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
-    <a class="headlink" href="/artifacts">Artifacts</a>
-    <a class="headlink" href="/design">Design</a>
-    <a class="headlink" href="/setup">Setup</a>
+<nav id="nav"></nav>
     <button class="primary" id="newIdea">Drop an idea</button>
   </div>
 </header>
@@ -168,18 +183,23 @@
           <button id="targetClear" title="cancel">&times;</button>
         </div>
       </div>
-      <textarea id="body" placeholder="Say something. @mention an agent by name, or @all for everyone."></textarea>
+      <div class="slashwrap">
+        <div class="slash" id="slash" hidden></div>
+        <textarea id="body" placeholder="Say something. @mention an agent by name, @all for everyone, / for what else you can do."></textarea>
+      </div>
       <div class="row">
         <select id="kind" style="width:auto">
           <option value="message">message</option>
           <option value="question">question</option>
           <option value="status">status</option>
         </select>
-        <button id="attach" title="Attach a file. Text files are readable by the agents.">＋ File</button>
+        <button id="attach" title="Attach a file. PDF, Word, Excel, PowerPoint and anything textual are read, not just linked.">＋ File</button>
         <input type="file" id="file" style="display:none" multiple>
         <button class="mic" id="mic" title="Hold to talk, or click to record. Needs a speech-to-text connection.">🎙 Talk</button>
         <button id="live" title="Hands-free: keeps listening and posts each time you stop speaking.">Live</button>
-        <button id="gen" title="Generate an image or a video">Create</button>
+        <button id="hear" title="Read replies aloud as they arrive.">🔊 Listen</button>
+        <select id="voiceSel" style="width:auto;display:none" title="Which voice the room speaks with"></select>
+        <button id="gen" title="Generate an image, a video or a voice line">Create</button>
         <span class="vu" id="vu"><i></i></span>
         <span id="where" style="color:var(--dim);font-size:12px"></span>
         <button class="primary" id="send" style="margin-left:auto">Send</button>
@@ -217,6 +237,37 @@
   </div>
 </dialog>
 
+<dialog id="dlgSearch">
+  <h3>Search the web</h3>
+  <div class="fields">
+    <input id="searchQ" placeholder="What to look up" autocomplete="off">
+    <div id="searchOut" style="max-height:300px;overflow:auto"></div>
+    <div class="row" style="justify-content:flex-end">
+      <span id="searchMsg" style="color:var(--dim);font-size:12px;flex:1"></span>
+      <button id="searchClose">Close</button>
+      <button class="primary" id="searchGo">Search</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlgSwarm">
+  <h3>Hand it to the swarm</h3>
+  <div class="fields">
+    <textarea id="swarmGoal" rows="3" placeholder="The whole job. It gets split into pieces and run in parallel."></textarea>
+    <div class="row">
+      <label style="color:var(--dim);font-size:12px;display:flex;gap:7px;align-items:center;margin:0">
+        pieces <input id="swarmN" type="number" min="2" max="8" value="4" style="width:64px">
+      </label>
+      <select id="swarmSeat" style="width:auto"></select>
+      <span id="swarmMsg" style="color:var(--dim);font-size:12px;flex:1"></span>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button id="swarmCancel">Cancel</button>
+      <button class="primary" id="swarmGo">Run it</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="dlgGen">
   <h3>Create something</h3>
   <div class="fields">
@@ -224,10 +275,12 @@
       <select id="genKind" style="width:auto">
         <option value="image">Image</option>
         <option value="video">Video</option>
+        <option value="audio">Audio</option>
       </select>
       <span class="hint" id="genNote" style="color:var(--dim);font-size:12px"></span>
     </div>
     <textarea id="genPrompt" rows="4" placeholder="Describe it. The generator sees only this text, not the conversation."></textarea>
+    <p class="hint" id="genHint" style="color:var(--dim);font-size:12px;margin:0"></p>
     <div class="row" style="justify-content:flex-end">
       <button id="genCancel">Cancel</button>
       <button class="primary" id="genGo">Create</button>
@@ -488,6 +541,7 @@ async function loadFeed(reset) {
   }
   if (state.msgs.length > 2000) state.msgs = state.msgs.slice(-1500);
   renderFeed();
+  queueForSpeech(state.msgs);
 }
 
 async function loadFloor() {
@@ -588,8 +642,22 @@ async function send() {
 }
 $('#send').addEventListener('click', send);
 $('#body').addEventListener('keydown', (e) => {
+  // The menu owns the arrows and Enter while it is open, and Escape closes it.
+  if (slash.open) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      slash.index = (slash.index + (e.key === 'ArrowDown' ? 1 : slash.items.length - 1)) % slash.items.length;
+      for (const [n, el] of [...$('#slash').querySelectorAll('.opt')].entries()) {
+        el.classList.toggle('on', n === slash.index);
+      }
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return runSlash(slash.items[slash.index]); }
+    if (e.key === 'Escape') { e.preventDefault(); return closeSlash(); }
+  }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
 });
+$('#body').addEventListener('blur', () => setTimeout(() => { if (slash.open) closeSlash(); }, 150));
 
 $('#setMe').addEventListener('click', () => { $('#meName').value = state.me ?? ''; $('#dlgMe').showModal(); });
 $('#meCancel').addEventListener('click', () => $('#dlgMe').close());
@@ -679,6 +747,8 @@ const voice = {
   stream: null, recorder: null, chunks: [],
   ctx: null, analyser: null, meter: null,
   live: false, speaking: false, quietSince: 0, armed: false,
+  // Held shut while the room reads a reply aloud, so live mode does not hear it.
+  muted: false,
 };
 
 const SILENCE_MS = 1100;   // how long a pause has to last before a clip is cut
@@ -745,7 +815,9 @@ async function startRecording() {
     $('#mic').classList.remove('rec');
     // Anything this short is a misfire — a stray click, or a cough in live mode.
     if (blob.size > 1200) await sendClip(blob);
-    if (voice.live) startRecording().catch((e) => toast(e.message));
+    // `muted` is set while a reply is being read aloud. Re-arming then would
+    // record the answer coming out of the speakers and post it straight back.
+    if (voice.live && !voice.muted) startRecording().catch((e) => toast(e.message));
     else $('#vu').classList.remove('on');
   };
   voice.recorder.start();
@@ -807,11 +879,384 @@ function toggleLive(on) {
     startRecording().catch((e) => { toast(e.message); toggleLive(false); });
     toast('Listening. It posts each time you stop speaking.');
   } else {
+    voice.muted = false;
     stopRecording();
     $('#vu').classList.remove('on');
   }
 }
 $('#live').addEventListener('click', () => toggleLive());
+
+// ------------------------------------------------------------- the / menu
+
+/**
+ * Everything this room can do, reachable from the composer.
+ *
+ * The features were all there before this; what was missing was any way to find
+ * them without knowing which page they were on. Typing "/" is the shortest
+ * distance between "I want to search the web" and searching the web.
+ *
+ * It opens only on a "/" that starts a line, so a URL or a date typed
+ * mid-sentence does not pop a menu over what you are writing.
+ */
+const slash = { open: false, at: 0, index: 0, items: [] };
+
+const SLASH_ITEMS = [
+  { key: 'files', icon: '📎', title: 'Add files', hint: 'PDF, Word, Excel, code',
+    run: () => $('#attach').click() },
+  { key: 'skills', icon: '📘', title: 'Use a skill', hint: 'follow written instructions',
+    run: () => pickSkill() },
+  { key: 'plugins', icon: '🔌', title: 'Plugins', hint: 'connected endpoints',
+    run: () => { location.href = '/plugins'; } },
+  { key: 'swarm', icon: '🐝', title: 'Swarm', hint: 'split a job across models',
+    run: () => openSwarm() },
+  { key: 'search', icon: '🌐', title: 'Search the web', hint: 'and quote what you find',
+    run: () => openSearch() },
+  { key: 'image', icon: '🎨', title: 'Make an image', hint: 'from a description',
+    run: () => openGen('image') },
+  { key: 'video', icon: '🎬', title: 'Make a video', hint: 'slow, but real',
+    run: () => openGen('video') },
+  { key: 'audio', icon: '🔊', title: 'Make audio', hint: "the room's voice",
+    run: () => openGen('audio') },
+  { key: 'listen', icon: '🎧', title: 'Read replies aloud', hint: 'live voice chat',
+    run: () => toggleHear(true) },
+  { key: 'artifacts', icon: '📄', title: 'Artifacts', hint: 'what the room has written',
+    run: () => { location.href = '/artifacts'; } },
+];
+
+function renderSlash(filter) {
+  const q = filter.toLowerCase();
+  slash.items = SLASH_ITEMS.filter((i) => !q || i.title.toLowerCase().includes(q) || i.key.startsWith(q));
+  if (!slash.items.length) return closeSlash();
+  slash.index = Math.min(slash.index, slash.items.length - 1);
+
+  $('#slash').innerHTML = '<div class="head">what else you can do</div>' + slash.items.map((i, n) => `
+    <div class="opt ${n === slash.index ? 'on' : ''}" data-key="${i.key}">
+      <span class="ic">${i.icon}</span>
+      <span class="t">${esc(i.title)}</span>
+      <span class="d">${esc(i.hint)}</span>
+    </div>`).join('');
+  $('#slash').hidden = false;
+  slash.open = true;
+}
+
+function closeSlash() {
+  slash.open = false;
+  slash.index = 0;
+  $('#slash').hidden = true;
+}
+
+function runSlash(item) {
+  if (!item) return;
+  // The "/word" that summoned the menu is not part of the message.
+  const box = $('#body');
+  const before = box.value.slice(0, slash.at);
+  const after = box.value.slice(box.selectionStart);
+  box.value = before + after;
+  closeSlash();
+  item.run();
+}
+
+$('#body').addEventListener('input', () => {
+  const box = $('#body');
+  const upto = box.value.slice(0, box.selectionStart);
+  // A "/" at the very start, or at the start of a line, with no space after it.
+  const m = upto.match(/(?:^|\n)\/([a-z]*)$/i);
+  if (!m) return closeSlash();
+  slash.at = box.selectionStart - m[1].length - 1;
+  renderSlash(m[1]);
+});
+
+$('#slash').addEventListener('mousedown', (e) => {
+  // mousedown, not click: the textarea would lose focus first and close this.
+  e.preventDefault();
+  const opt = e.target.closest('[data-key]');
+  if (opt) runSlash(slash.items.find((i) => i.key === opt.dataset.key));
+});
+
+// --------------------------------------------------------------- skill picker
+
+/** Pick a skill and tell the room to follow it — the agents read it themselves. */
+async function pickSkill() {
+  let list = [];
+  try { ({ skills: list } = await api('/api/skills')); } catch (e) { return toast(e.message); }
+  const usable = list.filter((k) => k.enabled);
+  if (!usable.length) {
+    return toast('No skills yet — upload one on the plugins page and the agents will follow it.');
+  }
+
+  slash.items = usable.map((k) => ({
+    key: k.name, icon: '📘', title: k.title || k.name, hint: k.description.slice(0, 48),
+    run: () => {
+      const box = $('#body');
+      const sep = box.value.trim() ? `${box.value.replace(/\s+$/, '')}\n\n` : '';
+      box.value = `${sep}Follow the "${k.name}" skill for this.`;
+      box.focus();
+    },
+  }));
+  slash.index = 0;
+  $('#slash').innerHTML = '<div class="head">skills the room has</div>' + slash.items.map((i, n) => `
+    <div class="opt ${n === slash.index ? 'on' : ''}" data-key="${esc(i.key)}">
+      <span class="ic">${i.icon}</span><span class="t">${esc(i.title)}</span>
+      <span class="d">${esc(i.hint)}</span>
+    </div>`).join('');
+  $('#slash').hidden = false;
+  slash.open = true;
+  $('#body').focus();
+}
+
+// ------------------------------------------------------------------ web search
+
+function openSearch() {
+  $('#searchQ').value = $('#body').value.trim().slice(0, 120);
+  $('#searchOut').innerHTML = '';
+  $('#searchMsg').textContent = '';
+  $('#dlgSearch').showModal();
+  $('#searchQ').focus();
+}
+$('#searchClose').addEventListener('click', () => $('#dlgSearch').close());
+$('#searchQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#searchGo').click(); } });
+
+$('#searchGo').addEventListener('click', async () => {
+  const q = $('#searchQ').value.trim();
+  if (!q) return;
+  $('#searchGo').disabled = true;
+  $('#searchMsg').textContent = 'searching…';
+  try {
+    const { results } = await api(`/api/web/search?q=${encodeURIComponent(q)}&limit=8`);
+    $('#searchMsg').textContent = `${results.length} result${results.length === 1 ? '' : 's'} — click one to quote it`;
+    $('#searchOut').innerHTML = results.map((r, i) => `
+      <div class="hit" data-i="${i}">
+        <b>${esc(r.title || r.url)}</b>
+        <span>${esc(r.url)}</span>
+        ${r.snippet ? `<span style="color:var(--dim);display:block;margin-top:3px">${esc(r.snippet.slice(0, 180))}</span>` : ''}
+      </div>`).join('') || '<p style="color:var(--faint);font-size:12.5px">Nothing came back.</p>';
+    $('#searchOut').onclick = (e) => {
+      const hit = e.target.closest('[data-i]');
+      if (!hit) return;
+      const r = results[Number(hit.dataset.i)];
+      const box = $('#body');
+      const sep = box.value.trim() ? `${box.value.replace(/\s+$/, '')}\n` : '';
+      box.value = `${sep}${r.title || 'source'} — ${r.url}`;
+      $('#dlgSearch').close();
+      box.focus();
+    };
+  } catch (e) {
+    $('#searchMsg').textContent = e.message;
+  } finally {
+    $('#searchGo').disabled = false;
+  }
+});
+
+// ----------------------------------------------------------------- the swarm
+
+async function openSwarm() {
+  if (!requireMe()) return;
+  $('#swarmGoal').value = $('#body').value.trim();
+  $('#swarmMsg').textContent = '';
+  try {
+    const { seats } = await api('/api/swarms');
+    $('#swarmSeat').innerHTML = seats.length
+      ? seats.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${esc(s.model)}</option>`).join('')
+      : '<option value="">no model is ready</option>';
+    $('#swarmGo').disabled = !seats.length;
+    if (!seats.length) $('#swarmMsg').textContent = 'add a model with a key on the setup page first';
+  } catch (e) {
+    $('#swarmMsg').textContent = e.message;
+  }
+  $('#dlgSwarm').showModal();
+  $('#swarmGoal').focus();
+}
+$('#swarmCancel').addEventListener('click', () => $('#dlgSwarm').close());
+
+$('#swarmGo').addEventListener('click', async () => {
+  const goal = $('#swarmGoal').value.trim();
+  if (!goal) return void ($('#swarmMsg').textContent = 'say what the job is');
+  $('#swarmGo').disabled = true;
+  $('#swarmMsg').textContent = 'planning…';
+  try {
+    await api('/api/swarms', { method: 'POST', body: JSON.stringify({
+      goal, workers: Number($('#swarmN').value) || 4, seat: $('#swarmSeat').value || undefined,
+      idea: state.idea, as: state.me,
+    }) });
+    $('#dlgSwarm').close();
+    $('#body').value = '';
+    toast('Running. Watch it on the tasks page.');
+  } catch (e) {
+    $('#swarmMsg').textContent = e.message;
+  } finally {
+    $('#swarmGo').disabled = false;
+  }
+});
+
+// ------------------------------------------------------ the room talking back
+
+/**
+ * The other half of voice. Speaking to the room was only ever half a
+ * conversation: without this you talk and then read, which is not a
+ * conversation at all. With it on, every reply that arrives is fetched as audio
+ * from the voice connection and played in order, and live mode becomes
+ * hands-free in both directions.
+ *
+ * Two details matter more than they look. Replies are queued rather than played
+ * as they arrive, because three agents answering at once would otherwise talk
+ * over each other exactly as they do not in the room itself. And the microphone
+ * is held shut while audio plays, because live mode listening to the speakers
+ * hears the room say something, posts it back, and the room answers itself.
+ */
+const hear = {
+  on: false,
+  from: 0,          // only read what arrived after you switched it on
+  queue: [],
+  playing: null,
+  said: new Set(),
+  connection: null,
+  voice: null,
+  failed: 0,
+};
+
+try {
+  const saved = JSON.parse(localStorage.getItem('esprits.voice') || 'null');
+  if (saved) { hear.connection = saved.connection ?? null; hear.voice = saved.voice ?? null; }
+} catch {}
+
+function rememberVoice() {
+  try { localStorage.setItem('esprits.voice', JSON.stringify({ connection: hear.connection, voice: hear.voice })); } catch {}
+}
+
+/** What is left once the things that do not survive being read out are removed. */
+function speakable(body) {
+  return String(body)
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')      // links and embeds: keep the words
+    .replace(/https?:\/\/\S+/g, 'a link')
+    .replace(/`{1,3}[^`]*`{1,3}/g, ' some code ')      // reading code aloud helps nobody
+    .replace(/[*_#>|]/g, ' ')
+    .replace(/@(\w)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 900);
+}
+
+/** Load the voices on offer; hide the picker when there is nothing to pick. */
+async function loadVoices() {
+  let list = [];
+  try { ({ voices: list } = await api('/api/voices')); } catch { list = []; }
+  hear.available = list;
+
+  const sel = $('#voiceSel');
+  const options = list.flatMap((c) =>
+    (c.options.length ? c.options : [null]).map((v) => ({
+      connection: c.connection, voice: v,
+      label: list.length > 1 ? `${c.connection}${v ? ` · ${v}` : ''}` : (v ?? c.connection),
+    })),
+  );
+
+  if (!options.length) {
+    sel.style.display = 'none';
+    $('#hear').disabled = true;
+    $('#hear').title = 'Add a voice connection at /setup to have replies read aloud.';
+    return;
+  }
+  $('#hear').disabled = false;
+  $('#hear').title = 'Read replies aloud as they arrive.';
+
+  // Keep what was chosen before if it still exists; otherwise take the first.
+  const match = options.find((o) => o.connection === hear.connection && o.voice === hear.voice)
+    ?? options.find((o) => o.connection === hear.connection)
+    ?? options[0];
+  hear.connection = match.connection;
+  hear.voice = match.voice;
+
+  sel.innerHTML = options
+    .map((o, i) => `<option value="${i}"${o === match ? ' selected' : ''}>${esc(o.label)}</option>`)
+    .join('');
+  sel.style.display = options.length > 1 ? '' : 'none';
+  sel.onchange = () => {
+    const picked = options[Number(sel.value)];
+    hear.connection = picked.connection;
+    hear.voice = picked.voice;
+    rememberVoice();
+  };
+}
+
+/** Queue anything new that somebody else said. */
+function queueForSpeech(messages) {
+  if (!hear.on) return;
+  for (const m of messages) {
+    if (m.id <= hear.from) continue;
+    if (m.author === state.me) continue;       // you do not need reading back to you
+    // Bookkeeping is not conversation. "X joined as architect" read aloud in the
+    // middle of a spoken exchange is the kind of thing that makes you switch the
+    // feature off, so only what somebody actually said gets said.
+    if (m.authorKind === 'system' || m.kind === 'system' || m.kind === 'status') continue;
+    if (hear.said.has(m.id)) continue;
+    const text = speakable(m.body);
+    if (!text) continue;
+    hear.said.add(m.id);
+    hear.queue.push({ id: m.id, author: m.author, text });
+  }
+  drainSpeech();
+}
+
+async function drainSpeech() {
+  if (hear.playing || !hear.queue.length || !hear.on) return;
+  const next = hear.queue.shift();
+  hear.playing = next;
+  $('#hear').classList.add('talking');
+
+  // Live mode must not hear this: the mic goes shut for as long as it plays.
+  const wasLive = voice.live;
+  if (wasLive) { voice.muted = true; stopRecording(); }
+
+  const mark = document.querySelector(`.msg[data-id="${next.id}"]`);
+  mark?.classList.add('saying');
+
+  try {
+    const out = await api('/api/speak', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: `${next.author} says. ${next.text}`,
+        connection: hear.connection ?? undefined,
+        voice: hear.voice ?? undefined,
+      }),
+    });
+    hear.failed = 0;
+    await new Promise((resolve) => {
+      const audio = new Audio(out.url);
+      hear.audio = audio;
+      audio.onended = resolve;
+      audio.onerror = resolve;
+      audio.play().catch(resolve);
+    });
+  } catch (e) {
+    // One bad reply should not silence the feature; a broken voice should.
+    hear.failed += 1;
+    if (hear.failed >= 3) { toast(`voice off: ${e.message}`); toggleHear(false); }
+  } finally {
+    hear.audio = null;
+    mark?.classList.remove('saying');
+    hear.playing = null;
+    $('#hear').classList.toggle('talking', hear.queue.length > 0);
+    if (wasLive && voice.live) { voice.muted = false; startRecording().catch(() => {}); }
+    drainSpeech();
+  }
+}
+
+function toggleHear(on) {
+  hear.on = on ?? !hear.on;
+  $('#hear').classList.toggle('on', hear.on);
+  $('#hear').textContent = hear.on ? '🔊 Listening' : '🔊 Listen';
+  if (hear.on) {
+    // Start from now. Switching it on should not read out an hour of backlog.
+    hear.from = state.msgs.length ? state.msgs[state.msgs.length - 1].id : 0;
+    hear.failed = 0;
+    toast(hear.voice ? `Replies will be read in ${hear.voice}.` : 'Replies will be read aloud.');
+  } else {
+    hear.queue = [];
+    if (hear.audio) { hear.audio.pause(); hear.audio = null; }
+    $('#hear').classList.remove('talking');
+  }
+}
+$('#hear').addEventListener('click', () => toggleHear());
 
 // ----------------------------------------------------------- attachments
 
@@ -846,11 +1291,27 @@ $('#file').addEventListener('change', async () => {
 
 // ------------------------------------------------------------- generation
 
-$('#gen').addEventListener('click', () => {
+const GEN_HINT = {
+  image: 'Describe the picture. The generator sees only this text, not the conversation.',
+  video: 'Describe the shot. Video is slow and expensive — expect to wait.',
+  audio: 'Type the words to be said, exactly. They are read in the room\'s voice and kept in the library.',
+};
+function genHint() {
+  const kind = $('#genKind').value;
+  $('#genHint').textContent = GEN_HINT[kind];
+  $('#genPrompt').placeholder = GEN_HINT[kind];
+}
+$('#genKind').addEventListener('change', genHint);
+
+function openGen(kind) {
   if (!requireMe()) return;
+  if (kind) $('#genKind').value = kind;
   $('#genNote').textContent = state.idea ? `posts to ${state.idea}` : 'posts to the lobby';
+  genHint();
   $('#dlgGen').showModal();
-});
+  $('#genPrompt').focus();
+}
+$('#gen').addEventListener('click', () => openGen());
 $('#genCancel').addEventListener('click', () => $('#dlgGen').close());
 $('#genGo').addEventListener('click', async () => {
   const prompt = $('#genPrompt').value.trim();
@@ -858,9 +1319,11 @@ $('#genGo').addEventListener('click', async () => {
   const kind = $('#genKind').value;
   $('#genGo').disabled = true;
   try {
-    say(kind === 'video' ? 'making a video — this takes a while…' : 'making an image…');
+    say({ video: 'making a video — this takes a while…', audio: 'recording it…' }[kind] ?? 'making an image…');
     await api('/api/generate', { method: 'POST', body: JSON.stringify({
       kind, prompt, as: state.me, idea: state.idea,
+      // Audio is made with whichever voice the room is currently set to speak in.
+      ...(kind === 'audio' ? { connection: hear.connection ?? undefined, voice: hear.voice ?? undefined } : {}),
     }) });
     $('#genPrompt').value = '';
     $('#dlgGen').close();
@@ -882,7 +1345,9 @@ function listen() {
 
 if (state.me) $('#meLabel').textContent = state.me;
 await refresh();
+await loadVoices();
 listen();
 </script>
+<script type="module" src="/nav.js"></script>
 </body>
 </html>

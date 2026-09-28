@@ -16,18 +16,23 @@ export const KINDS = {
   },
   transcribe: {
     label: 'Speech to text',
-    blurb: 'Turns what you say into text in the chat.',
+    blurb: 'Turns what you say into a message every agent can read.',
     path: '/audio/transcriptions',
   },
   speak: {
-    label: 'Text to speech',
-    blurb: 'Reads replies back to you.',
+    label: 'Voice',
+    blurb: 'Reads the room aloud in live chat, and makes the audio you generate.',
     path: '/audio/speech',
   },
   image: {
     label: 'Image generation',
     blurb: 'Makes images, for you or for an agent.',
     path: '/images/generations',
+  },
+  search: {
+    label: 'Web search',
+    blurb: 'Lets agents look things up, so claims can rest on something.',
+    path: '/search',
   },
   video: {
     label: 'Video generation',
@@ -72,14 +77,42 @@ export const PRESETS = [
     keyHint: 'no key needed', keyOptional: true },
 
   // ---- text to speech ----
+  // The voice is the room's speaking voice: it reads replies aloud in live chat
+  // and it is what an audio generation is made with. So each preset names the
+  // voices that provider actually has, and the setup page offers them.
   { preset: 'OpenAI speech', kind: 'speak', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini-tts',
-    keyHint: 'platform.openai.com', extra: { voice: 'alloy' } },
+    keyHint: 'platform.openai.com', extra: { voice: 'alloy' },
+    voices: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse'] },
+  { preset: 'ElevenLabs', kind: 'speak', baseURL: 'https://api.elevenlabs.io/v1', model: 'eleven_turbo_v2_5',
+    keyHint: 'elevenlabs.io — the most natural of the lot',
+    // Its own header, the voice in the path, and `model_id` rather than `model`.
+    extra: { keyHeader: 'xi-api-key', path: '/text-to-speech/{voice}', textKey: 'text', modelKey: 'model_id',
+             voiceKey: null, formatKey: null, voice: '21m00Tcm4TlvDq8ikWAM' },
+    voices: ['21m00Tcm4TlvDq8ikWAM', 'AZnzlk1XvdvUeBnXmlld', 'EXAVITQu4vr4xnSDxMaL', 'ErXwobaYiN019PkySvjV', 'MF3mGyEYCl7XYWbV9V6O'] },
+  { preset: 'Deepgram Aura', kind: 'speak', baseURL: 'https://api.deepgram.com/v1', model: 'aura-2-thalia-en',
+    keyHint: 'console.deepgram.com — fast and cheap',
+    extra: { keyScheme: 'Token', path: '/speak?model=aura-2-thalia-en', textKey: 'text',
+             modelKey: null, voiceKey: null, formatKey: null } },
+  { preset: 'Groq speech', kind: 'speak', baseURL: 'https://api.groq.com/openai/v1', model: 'playai-tts',
+    keyHint: 'console.groq.com', extra: { voice: 'Fritz-PlayAI' },
+    voices: ['Fritz-PlayAI', 'Arista-PlayAI', 'Atlas-PlayAI', 'Basil-PlayAI', 'Briggs-PlayAI', 'Celeste-PlayAI', 'Quinn-PlayAI'] },
+  { preset: 'Kokoro (local)', kind: 'speak', baseURL: 'http://127.0.0.1:8880/v1', model: 'kokoro',
+    keyHint: 'no key needed — runs on your machine', keyOptional: true, extra: { voice: 'af_bella' },
+    voices: ['af_bella', 'af_sarah', 'af_nicole', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] },
 
   // ---- images ----
   { preset: 'OpenAI images', kind: 'image', baseURL: 'https://api.openai.com/v1', model: 'gpt-image-1',
     keyHint: 'platform.openai.com' },
   { preset: 'Google Imagen', kind: 'image', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'imagen-4',
     keyHint: 'aistudio.google.com' },
+
+  // ---- web search ----
+  { preset: 'Brave Search', kind: 'search', baseURL: 'https://api.search.brave.com/res/v1/web', model: 'search',
+    keyHint: 'brave.com/search/api', extra: { headerName: 'X-Subscription-Token', query: 'q', resultsPath: 'web.results' } },
+  { preset: 'Tavily', kind: 'search', baseURL: 'https://api.tavily.com', model: 'search',
+    keyHint: 'tavily.com', extra: { method: 'POST', path: '/search', bodyKey: 'query', resultsPath: 'results' } },
+  { preset: 'SearXNG (local)', kind: 'search', baseURL: 'http://127.0.0.1:8888', model: 'search',
+    keyHint: 'no key needed', keyOptional: true, extra: { path: '/search', query: 'q', format: 'json', resultsPath: 'results' } },
 
   // ---- video ----
   { preset: 'OpenAI video', kind: 'video', baseURL: 'https://api.openai.com/v1', model: 'sora-2',

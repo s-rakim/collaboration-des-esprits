@@ -2042,6 +2042,93 @@ export class Hub {
     return { schedule: this.getSchedule(s.id), message };
   }
 
+  // -------------------------------------------------------------- checking
+
+  /**
+   * Record that a claim was checked, and what it rests on.
+   *
+   * The source is required for a supported verdict. "I verified it" with
+   * nothing behind it is the same failure the checking exists to catch, so the
+   * record refuses to hold one.
+   */
+  recordCheck({ messageId = null, claim, verdict, source = '', detail = '', by }) {
+    const checker = this.#agent(by).name;
+    if (!claim || !String(claim).trim()) throw new Invalid('a check needs the claim it is about');
+    const allowed = ['supported', 'unsupported', 'contradicted', 'unverifiable'];
+    if (!allowed.includes(verdict)) throw new Invalid(`verdict must be one of ${allowed.join(', ')}`);
+    if (verdict === 'supported' && !String(source).trim()) {
+      throw new Invalid('a supported verdict needs a source — where did you check it?');
+    }
+    if (verdict === 'contradicted' && !String(source).trim()) {
+      throw new Invalid('a contradicted verdict needs a source — what contradicts it?');
+    }
+
+    const info = this.db
+      .prepare(
+        `INSERT INTO citations (message_id, claim, verdict, source, detail, checked_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(messageId ?? null, String(claim).slice(0, 2000), verdict,
+           String(source).slice(0, 500), String(detail).slice(0, 4000), checker, now());
+    return this.getCheck(Number(info.lastInsertRowid));
+  }
+
+  getCheck(id) {
+    const c = this.db.prepare('SELECT * FROM citations WHERE id = ?').get(Number(id));
+    if (!c) throw new NotFound(`no check #${id}`);
+    return {
+      id: c.id, message: c.message_id ?? null, claim: c.claim, verdict: c.verdict,
+      source: c.source || undefined, detail: c.detail || undefined,
+      checkedBy: c.checked_by, createdAt: c.created_at,
+    };
+  }
+
+  checks({ messageId = undefined, verdict = undefined, limit = 100 } = {}) {
+    const where = [];
+    const params = [];
+    if (messageId !== undefined && messageId !== null) { where.push('message_id = ?'); params.push(Number(messageId)); }
+    if (verdict) { where.push('verdict = ?'); params.push(verdict); }
+    return this.db
+      .prepare(`SELECT id FROM citations ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`)
+      .all(...params, limit)
+      .map((r) => this.getCheck(r.id));
+  }
+
+  /**
+   * Everything the room has recorded that bears on a claim. This is what the
+   * prefect checks against before it goes looking outside: if the room already
+   * settled something, that is the answer.
+   */
+  lookUp({ claim, idea = undefined, limit = 8 }) {
+    const q = String(claim ?? '').trim();
+    if (!q) throw new Invalid('nothing to look up');
+    const words = q.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+    const like = `%${q.slice(0, 60)}%`;
+
+    const decisions = this.decisions({ idea, includeRetired: false })
+      .filter((d) => words.some((w) => `${d.choice} ${d.rationale}`.toLowerCase().includes(w)))
+      .slice(0, limit);
+    const facts = this.recall({ idea })
+      .filter((f) => words.some((w) => `${f.key} ${f.value}`.toLowerCase().includes(w)))
+      .slice(0, limit);
+    const artifacts = this.db
+      .prepare(`SELECT slug, title FROM artifacts WHERE content LIKE ? OR title LIKE ? ORDER BY updated_at DESC LIMIT ?`)
+      .all(like, like, limit);
+    const said = this.search({ query: q, idea, limit });
+
+    return {
+      claim: q,
+      decisions: decisions.map((d) => ({ ref: `decision#${d.id}`, choice: d.choice, rationale: d.rationale })),
+      facts: facts.map((f) => ({ ref: `fact:${f.key}`, value: f.value, source: f.source })),
+      artifacts: artifacts.map((a) => ({ ref: `artifact:${a.slug}`, title: a.title })),
+      said: said.map((m) => ({ ref: `message#${m.id}`, author: m.author, body: m.body.slice(0, 300) })),
+      // Said plainly, so a model does not read an empty result as a refutation.
+      note: (decisions.length || facts.length || artifacts.length || said.length)
+        ? 'The room has something on this. Read it before looking outside.'
+        : 'The room has nothing on this. That is not evidence either way — check outside or mark it unverifiable.',
+    };
+  }
+
   // ---------------------------------------------------------------- swarm
 
   /**

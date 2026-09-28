@@ -251,6 +251,115 @@ function toolDefs() {
       },
     },
     {
+      name: 'generate_audio',
+      description:
+        'Speak something aloud in the room\'s voice and post it. For the moments where hearing it is ' +
+        'the point — a line of narration, a spoken summary, a read-through of a script you are ' +
+        'proposing. Write the words exactly as they should be said; nothing is added.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          prompt: { type: 'string', description: 'The words to say, verbatim.' },
+          caption: { type: 'string', description: 'One line on why you made it.' },
+        },
+        required: ['prompt'],
+      },
+    },
+    {
+      name: 'web_search',
+      description:
+        'Search the web. Use it before asserting anything about the outside world you are not certain ' +
+        'of — versions, limits, prices, whether something exists. An unchecked claim about the world ' +
+        'is a guess in a confident voice.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          query: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 10 },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'web_fetch',
+      description:
+        'Read one page as text. Follow a search result to the source rather than trusting a snippet.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { url: { type: 'string' } },
+        required: ['url'],
+      },
+    },
+    {
+      name: 'check_claim',
+      description:
+        'Search what the room has already recorded about a claim — decisions, established facts, ' +
+        'artifacts and history. Check here BEFORE looking outside: if the room settled it, that is ' +
+        'the answer, and contradicting a recorded decision by accident is the worst failure available.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { claim: { type: 'string', description: 'The statement to check, in full.' } },
+        required: ['claim'],
+      },
+    },
+    {
+      name: 'record_check',
+      description:
+        'Record that you checked a claim, and what it rests on. A supported or contradicted verdict ' +
+        'requires a source — "I verified it" with nothing behind it is the failure you are meant to ' +
+        'be catching. Use unverifiable honestly; absence of evidence is not a verdict either way.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          claim: { type: 'string' },
+          verdict: { type: 'string', enum: ['supported', 'unsupported', 'contradicted', 'unverifiable'] },
+          source: { type: 'string', description: 'decision#3, fact:runtime, artifact:spec, or a URL.' },
+          detail: { type: 'string', description: 'What you actually found.' },
+          message: { type: 'integer', description: 'The message the claim came from, if you know it.' },
+        },
+        required: ['claim', 'verdict'],
+      },
+    },
+    {
+      name: 'use_plugin',
+      description:
+        'Call one of the tools the human has connected. list_plugins shows what exists and what each ' +
+        'one expects.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string' },
+          args: { type: 'object', additionalProperties: true, description: 'Whatever that plugin expects.' },
+        },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'list_plugins',
+      description: 'What connected tools are available, and what each expects.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    {
+      name: 'use_skill',
+      description:
+        'Read one of the skills the room has been given and work the way it says. A skill is written ' +
+        'instructions — a review checklist, a house style, a procedure — and it is the answer to "how ' +
+        'is this done here". Read the relevant one before doing that kind of work, and follow it as ' +
+        'written rather than approximating it.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { name: { type: 'string', description: 'The skill\'s name, as listed.' } },
+        required: ['name'],
+      },
+    },
+    {
       name: 'say_nothing',
       description:
         'End your turn without speaking. Use this when the room does not need you — somebody already ' +
@@ -289,6 +398,13 @@ export function createModelParticipant({
   // Supplied by the server: { image(prompt), video(prompt) } resolving to a URL.
   // Absent means the room has no such connection, and the tools say so.
   media = null,
+  // { search(q), fetchPage(url) } — the web bridge, when one is configured.
+  web = null,
+  // The user's connected HTTP tools.
+  plugins = null,
+  // The room's skills. Named in the system prompt so a model knows what it can
+  // reach for; read in full only when it asks for one.
+  skills = null,
   // The human's standing instructions, read fresh so an edit takes effect on
   // the next turn rather than needing a restart.
   custom = () => ({ houseStyle: '', aboutMe: '' }),
@@ -366,6 +482,16 @@ export function createModelParticipant({
       `- If somebody already made your point, say_nothing. A room where every agent restates the same`,
       `  observation is worse than a quiet one.`,
       '',
+      // Named, not pasted: the whole point of use_skill is that a model reads
+      // the instructions when it needs them, so twelve skills do not cost twelve
+      // pages of prompt on every turn.
+      ...(() => {
+        const menu = skills?.menu?.({ role }) ?? [];
+        if (!menu.length) return [];
+        return ['', '## Skills the human has written for this room',
+                'Read one with use_skill before doing work it covers, and follow it as written.',
+                ...menu.map((k) => `- ${k.name}: ${k.description || k.title}`)];
+      })(),
       ...(aboutMe?.trim() ? ['', '## Who you are working for', aboutMe.trim()] : []),
       ...(houseStyle?.trim()
         ? ['', '## Standing instructions from the human', houseStyle.trim(),
@@ -510,17 +636,87 @@ export function createModelParticipant({
         return { text: `# ${full.filename}\n\n${full.text.slice(0, 60_000)}`, ends: false };
       }
 
+      case 'web_search': {
+        if (!web?.available?.()) return { text: 'FAILED: no web search connection is configured in this room', ends: false };
+        const hits = await web.search({ query: String(input.query ?? ''), limit: input.limit ?? 6 });
+        if (!hits.length) return { text: 'No results. That is not evidence the thing is false.', ends: false };
+        return {
+          text: hits.map((h, i) => `${i + 1}. ${h.title}\n   ${h.url}\n   ${h.snippet}`).join('\n\n'),
+          ends: false,
+        };
+      }
+
+      case 'web_fetch': {
+        if (!web) return { text: 'FAILED: the web bridge is not available', ends: false };
+        const page = await web.fetchPage({ url: String(input.url ?? '') });
+        return {
+          text: `# ${page.title}\n${page.url}\n\n${page.text}${page.truncated ? '\n\n[…truncated]' : ''}`,
+          ends: false,
+        };
+      }
+
+      case 'check_claim': {
+        const found = hub.lookUp({ claim: String(input.claim ?? ''), idea });
+        const lines = [found.note, ''];
+        for (const d of found.decisions) lines.push(`${d.ref}: ${d.choice}${d.rationale ? ` — ${d.rationale}` : ''}`);
+        for (const f of found.facts) lines.push(`${f.ref} = ${f.value}`);
+        for (const a of found.artifacts) lines.push(`${a.ref}: ${a.title}`);
+        for (const m of found.said) lines.push(`${m.ref} ${m.author}: ${m.body}`);
+        return { text: lines.join('\n'), ends: false };
+      }
+
+      case 'record_check': {
+        const c = hub.recordCheck({
+          messageId: input.message ?? null,
+          claim: input.claim, verdict: input.verdict,
+          source: input.source ?? '', detail: input.detail ?? '', by: name,
+        });
+        return { text: `recorded: "${c.claim.slice(0, 60)}" is ${c.verdict}${c.source ? ` (${c.source})` : ''}`, ends: false };
+      }
+
+      case 'list_plugins': {
+        const list = plugins?.enabled?.() ?? [];
+        if (!list.length) return { text: 'No plugins are connected.', ends: false };
+        return {
+          text: list.map((pl) => `- ${pl.name}: ${pl.description || '(no description)'}\n  expects ${JSON.stringify(pl.params)}`).join('\n'),
+          ends: false,
+        };
+      }
+
+      case 'use_plugin': {
+        if (!plugins) return { text: 'FAILED: no plugins are connected', ends: false };
+        const out = await plugins.call({ name: String(input.name ?? ''), args: input.args ?? {}, agent: name });
+        return { text: String(out).slice(0, 20_000), ends: false };
+      }
+
+      case 'use_skill': {
+        if (!skills) return { text: 'FAILED: this room has no skills loaded', ends: false };
+        let skill;
+        try {
+          skill = skills.use(String(input.name ?? ''), { by: name });
+        } catch (err) {
+          return { text: `FAILED: ${err.message}`, ends: false };
+        }
+        // Handed over as written. The point of a skill is the author's own words;
+        // a summary of them is a different instruction.
+        const brought = skill.attached.map((f) => `\n\n--- ${f.path} ---\n${f.text.slice(0, 8000)}`).join('');
+        return { text: `${skill.title}\n\n${skill.body}${brought}`, ends: false };
+      }
+
       case 'generate_image':
-      case 'generate_video': {
-        const what = tool === 'generate_video' ? 'video' : 'image';
+      case 'generate_video':
+      case 'generate_audio': {
+        const what = tool.slice('generate_'.length);
         if (!media?.[what]) {
           return { text: `FAILED: no ${what} connection is configured in this room`, ends: false };
         }
         const url = await media[what](String(input.prompt ?? ''));
         // Posted as markdown so the feed renders it and the transcript still
-        // reads sensibly anywhere that does not.
+        // reads sensibly anywhere that does not. Audio is a link rather than an
+        // embed, because `![]()` on a sound file renders as a broken picture.
+        const embed = what === 'audio' ? `[audio](${url})` : `![${what}](${url})`;
         await speak(
-          `${input.caption?.trim() || input.prompt}\n\n![${what}](${url})`,
+          `${input.caption?.trim() || input.prompt}\n\n${embed}`,
           { idea, urgency: replyUrgency },
         );
         return { text: `posted a generated ${what}`, ends: true };

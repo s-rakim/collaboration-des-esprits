@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugins — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ee; --dim:#98a0b3; --faint:#6b7488;
+    --accent:#7aa2f7; --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --human:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#dde1e8;
+      --text:#12151b; --dim:#5b6373; --faint:#8b93a5;
+      --accent:#2d5bd7; --good:#3f8f3f; --warn:#96660d; --bad:#c3364f; --human:#6f3fc0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  .spacer{margin-left:auto}
+  button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger:hover{border-color:var(--bad);color:var(--bad)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,textarea,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%}
+  textarea{resize:vertical;min-height:64px;font-family:var(--mono);font-size:12.5px}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  main{max-width:1120px;margin:0 auto;padding:18px 16px 60px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:26px 0 10px;font-weight:600;display:flex;align-items:center;gap:9px}
+  h2:first-of-type{margin-top:4px}
+  h2 .count{color:var(--faint);font-weight:400;letter-spacing:0;text-transform:none}
+  .lede{color:var(--dim);font-size:13px;margin:0 0 4px;max-width:70ch}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:11px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 14px;display:flex;flex-direction:column;gap:6px}
+  .tile .top{display:flex;align-items:center;gap:9px}
+  .tile .ic{font-size:19px;line-height:1}
+  .tile .nm{font-weight:600;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile .bl{color:var(--dim);font-size:12.5px;margin:0}
+  .tile .dt{color:var(--faint);font-size:11.5px;margin:0}
+  .tile .acts{display:flex;gap:6px;margin-top:auto;padding-top:7px;flex-wrap:wrap}
+  .tile.on{border-color:var(--good)}
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--faint);white-space:nowrap}
+  .tag.ready{color:var(--good);border-color:var(--good)}
+  .tag.needs{color:var(--warn);border-color:var(--warn)}
+  .tag.off{color:var(--faint)}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:11px}
+  .fields{display:grid;gap:9px}
+  .fields label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);display:block;margin-bottom:3px}
+  .note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--dim);margin-bottom:11px}
+  .msg{font-size:12px;color:var(--faint);min-height:17px}
+  .msg.ok{color:var(--good)} .msg.err{color:var(--bad)}
+  .drop{border:1.5px dashed var(--line);border-radius:11px;padding:22px 16px;text-align:center;color:var(--dim);font-size:13px;background:var(--panel)}
+  .drop.over{border-color:var(--accent);background:var(--panel2);color:var(--text)}
+  .drop b{color:var(--text)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--faint);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 9px 6px 0}
+  td{padding:5px 9px 5px 0;border-top:1px solid var(--line);vertical-align:top}
+  td.mono{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  .ok-dot{color:var(--good)} .bad-dot{color:var(--bad)}
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:13px;padding:18px;max-width:640px;width:calc(100% - 32px)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog h3{margin:0 0 12px;font-size:14px}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:280px;font-size:11.5px;margin:0}
+  .empty{color:var(--faint);font-size:13px;padding:14px 0}
+  details summary{cursor:pointer;color:var(--dim);font-size:12.5px}
+  .skill .bd{font-size:12.5px;color:var(--dim);white-space:pre-wrap;max-height:120px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Plugins <small>what the room can reach for</small></h1>
+  <nav id="nav"></nav>
+  <div class="spacer"></div>
+  <span class="msg" id="msg"></span>
+</header>
+
+<main>
+  <h2>Built in <span class="count" id="builtinCount"></span></h2>
+  <p class="lede">
+    These are not plugins — they are already part of the room. Listed so you know they are there,
+    and so you can see which ones still need a connection before they will work.
+  </p>
+  <div class="grid" id="builtIn"></div>
+
+  <h2>Skills <span class="count" id="skillCount"></span></h2>
+  <p class="lede">
+    Instructions you have written, uploaded once. A skill tells a model <em>how</em> you want something
+    done — a review checklist, a house style, a procedure — and it is handed over in your words, not
+    summarised. Upload a <code>.md</code> file, or a <code>.zip</code> of a skill folder with a
+    <code>SKILL.md</code> in it.
+  </p>
+  <div class="drop" id="drop">
+    <b>Drop skill files here</b>, or <button id="pick" style="vertical-align:baseline">choose files</button>
+    <input type="file" id="file" multiple accept=".md,.markdown,.txt,.zip" style="display:none">
+    <div style="font-size:11.5px;color:var(--faint);margin-top:6px">
+      Front matter <code>name</code>, <code>description</code> and <code>roles</code> are read if present.
+    </div>
+  </div>
+  <div class="grid" id="skills" style="margin-top:11px"></div>
+
+  <h2>Endpoints <span class="count" id="pluginCount"></span>
+    <button id="addBlank" style="margin-left:auto">＋ Add your own</button>
+  </h2>
+  <p class="lede">
+    An HTTP call you describe once, which any agent can then make. The description is what a model reads
+    to decide whether to reach for it, so vague ones get called at the wrong moments.
+  </p>
+  <div id="plugins"></div>
+
+  <h2>Ready to add</h2>
+  <p class="lede">Public data sources, filled in and needing no key. Add one and test it in place.</p>
+  <div class="grid" id="presets"></div>
+
+  <h2>Recent calls</h2>
+  <div class="card" id="calls"></div>
+</main>
+
+<dialog id="dlg">
+  <h3 id="dlgTitle">Plugin</h3>
+  <div class="fields">
+    <div class="row">
+      <div style="flex:1;min-width:150px">
+        <label for="fName">Name the model calls it by</label>
+        <input id="fName" spellcheck="false" placeholder="world_bank">
+      </div>
+      <div style="width:110px">
+        <label for="fMethod">Method</label>
+        <select id="fMethod">
+          <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label for="fDesc">What it does, and when to use it</label>
+      <textarea id="fDesc" rows="3" style="font-family:inherit;font-size:13px"></textarea>
+    </div>
+    <div>
+      <label for="fUrl">URL — <code>{{field}}</code> is filled from the model's arguments</label>
+      <input id="fUrl" spellcheck="false" placeholder="https://api.example.com/v1/thing?q={{query}}">
+    </div>
+    <div>
+      <label for="fHeaders">Headers (JSON)</label>
+      <textarea id="fHeaders" rows="2">{}</textarea>
+    </div>
+    <div>
+      <label for="fBody">Body template — leave blank for GET</label>
+      <textarea id="fBody" rows="2"></textarea>
+    </div>
+    <div>
+      <label for="fParams">Arguments the model may pass (JSON Schema)</label>
+      <textarea id="fParams" rows="5"></textarea>
+    </div>
+    <div class="row">
+      <label style="text-transform:none;letter-spacing:0;color:var(--dim);font-size:12.5px;display:flex;gap:7px;align-items:center;margin:0">
+        <input type="checkbox" id="fEnabled" checked style="width:auto"> switched on
+      </label>
+      <span class="msg" id="dlgMsg" style="flex:1"></span>
+      <button id="dlgCancel">Cancel</button>
+      <button class="primary" id="dlgSave">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlgTest">
+  <h3>Test <span id="testName"></span></h3>
+  <div class="fields">
+    <div>
+      <label for="testArgs">Arguments (JSON)</label>
+      <textarea id="testArgs" rows="4">{}</textarea>
+    </div>
+    <div class="row">
+      <span class="msg" id="testMsg" style="flex:1"></span>
+      <button id="testCancel">Close</button>
+      <button class="primary" id="testGo">Call it</button>
+    </div>
+    <pre id="testOut" style="display:none"></pre>
+  </div>
+</dialog>
+
+<dialog id="dlgSkill">
+  <h3 id="skillTitle">Skill</h3>
+  <div class="fields">
+    <div id="skillMeta" style="font-size:12.5px;color:var(--dim)"></div>
+    <pre id="skillBody"></pre>
+    <div class="row" style="justify-content:flex-end">
+      <button id="skillClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+let data = { plugins: [], calls: [], presets: [], builtIn: [] };
+let skills = [];
+let me = null;
+try { me = localStorage.getItem('esprits.me'); } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function say(text, cls = '') {
+  const m = $('#msg');
+  m.textContent = text; m.className = `msg ${cls}`;
+  if (text) { clearTimeout(say.t); say.t = setTimeout(() => { m.textContent = ''; }, 5000); }
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `${res.status} ${res.statusText}`);
+  return out;
+}
+
+const ago = (iso) => {
+  if (!iso) return 'never';
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+// ------------------------------------------------------------------ built in
+
+function renderBuiltIn() {
+  $('#builtinCount').textContent = `${data.builtIn.filter((b) => b.ready).length} of ${data.builtIn.length} ready`;
+  $('#builtIn').innerHTML = data.builtIn.map((b) => `
+    <div class="tile ${b.ready ? 'on' : ''}">
+      <div class="top">
+        <span class="ic">${b.icon}</span>
+        <span class="nm">${esc(b.name)}</span>
+        <span class="tag ${b.ready ? 'ready' : 'needs'}">${b.ready ? 'ready' : 'needs a connection'}</span>
+      </div>
+      <p class="bl">${esc(b.blurb)}</p>
+      <p class="dt">${esc(b.detail)}</p>
+      <div class="acts">
+        <a href="${esc(b.where)}"><button>${b.ready ? 'Open' : 'Set it up'}</button></a>
+      </div>
+    </div>`).join('');
+}
+
+// -------------------------------------------------------------------- skills
+
+function renderSkills() {
+  $('#skillCount').textContent = skills.length
+    ? `${skills.filter((k) => k.enabled).length} of ${skills.length} switched on`
+    : '';
+  $('#skills').innerHTML = skills.length ? skills.map((k) => `
+    <div class="tile skill ${k.enabled ? 'on' : ''}" data-skill="${esc(k.name)}">
+      <div class="top">
+        <span class="ic">📘</span>
+        <span class="nm" title="${esc(k.name)}">${esc(k.title || k.name)}</span>
+        <span class="tag ${k.enabled ? 'ready' : 'off'}">${k.enabled ? 'on' : 'off'}</span>
+      </div>
+      <p class="bl">${esc(k.description) || '<em>no description</em>'}</p>
+      <p class="dt">
+        ${esc(k.name)}${k.roles.length ? ` · ${esc(k.roles.join(', '))}` : ' · anyone'}
+        ${k.files?.length ? ` · ${k.files.length} file${k.files.length === 1 ? '' : 's'}` : ''}
+        · used ${k.used}×${k.used ? ` (${ago(k.lastUsed)})` : ''}
+      </p>
+      <div class="acts">
+        <button class="read">Read</button>
+        <button class="toggle">${k.enabled ? 'Switch off' : 'Switch on'}</button>
+        <button class="danger drop">Remove</button>
+      </div>
+    </div>`).join('')
+    : '<p class="empty">No skills yet. Upload one above and every agent can follow it.</p>';
+}
+
+$('#skills').addEventListener('click', async (e) => {
+  const tile = e.target.closest('[data-skill]');
+  if (!tile) return;
+  const name = tile.dataset.skill;
+  try {
+    if (e.target.closest('.read')) {
+      const k = await api(`/api/skills/${encodeURIComponent(name)}`);
+      $('#skillTitle').textContent = k.title || k.name;
+      $('#skillMeta').innerHTML = `<code>${esc(k.name)}</code> · ${k.roles.length ? esc(k.roles.join(', ')) : 'anyone'}
+        · from ${esc(k.source || 'the setup page')}
+        ${k.files?.length ? `<br>brings: ${k.files.map((f) => `<code>${esc(f.path)}</code>`).join(' ')}` : ''}`;
+      $('#skillBody').textContent = k.body;
+      $('#dlgSkill').showModal();
+      return;
+    }
+    if (e.target.closest('.toggle')) {
+      const k = skills.find((x) => x.name === name);
+      await api(`/api/skills/${encodeURIComponent(name)}/enabled`, {
+        method: 'POST', body: JSON.stringify({ enabled: !k.enabled }),
+      });
+      say(`${name} ${k.enabled ? 'switched off' : 'switched on'}`, 'ok');
+      return loadSkills();
+    }
+    if (e.target.closest('.drop')) {
+      if (!confirm(`Remove the skill "${name}"? The agents will stop being told about it.`)) return;
+      await api(`/api/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      say(`${name} removed`, 'ok');
+      return loadSkills();
+    }
+  } catch (err) { say(err.message, 'err'); }
+});
+$('#skillClose').addEventListener('click', () => $('#dlgSkill').close());
+
+// Upload: drag and drop, or the file picker. Both go the same way.
+async function upload(files) {
+  for (const f of files) {
+    if (f.size > 10 * 1024 * 1024) { say(`${f.name} is over 10 MB`, 'err'); continue; }
+    try {
+      say(`reading ${f.name}…`);
+      const q = new URLSearchParams({ filename: f.name });
+      if (me) q.set('as', me);
+      const out = await api(`/api/skills/upload?${q}`, {
+        method: 'POST',
+        headers: { 'content-type': f.type || 'application/octet-stream' },
+        body: await f.arrayBuffer(),
+      });
+      say(`added ${out.skills.map((k) => k.name).join(', ')}`, 'ok');
+    } catch (err) {
+      say(`${f.name}: ${err.message}`, 'err');
+    }
+  }
+  await loadSkills();
+}
+
+$('#pick').addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', async () => {
+  const files = [...$('#file').files];
+  $('#file').value = '';
+  await upload(files);
+});
+for (const type of ['dragenter', 'dragover']) {
+  $('#drop').addEventListener(type, (e) => { e.preventDefault(); $('#drop').classList.add('over'); });
+}
+for (const type of ['dragleave', 'drop']) {
+  $('#drop').addEventListener(type, (e) => { e.preventDefault(); $('#drop').classList.remove('over'); });
+}
+$('#drop').addEventListener('drop', (e) => upload([...(e.dataTransfer?.files ?? [])]));
+
+// ------------------------------------------------------------------ endpoints
+
+function renderPlugins() {
+  $('#pluginCount').textContent = data.plugins.length
+    ? `${data.plugins.filter((p) => p.enabled).length} of ${data.plugins.length} switched on`
+    : '';
+  $('#plugins').innerHTML = data.plugins.length ? data.plugins.map((p) => `
+    <div class="card" data-plugin="${esc(p.name)}">
+      <div class="row">
+        <code style="font-size:13px;font-weight:600">${esc(p.name)}</code>
+        <span class="tag ${p.enabled ? 'ready' : 'off'}">${p.enabled ? 'on' : 'off'}</span>
+        <span class="tag">${esc(p.method)}</span>
+        <span class="msg" style="flex:1;text-align:right">last used ${ago(p.lastUsed)}</span>
+      </div>
+      <p class="bl" style="color:var(--dim);font-size:12.5px;margin:7px 0 4px">${esc(p.description) || '<em>no description — a model will not know when to use this</em>'}</p>
+      <div class="mono" style="font-family:var(--mono);font-size:11.5px;color:var(--faint);word-break:break-all">${esc(p.url)}</div>
+      <div class="row" style="margin-top:9px">
+        <button class="test">Test</button>
+        <button class="edit">Edit</button>
+        <button class="toggle">${p.enabled ? 'Switch off' : 'Switch on'}</button>
+        <button class="danger del">Remove</button>
+      </div>
+    </div>`).join('')
+    : '<p class="empty">Nothing connected yet. Add one of the ready-made ones below, or describe your own.</p>';
+}
+
+function renderPresets() {
+  const have = new Set(data.plugins.map((p) => p.name));
+  const groups = new Map();
+  for (const pr of data.presets) {
+    if (!groups.has(pr.group)) groups.set(pr.group, []);
+    groups.get(pr.group).push(pr);
+  }
+  $('#presets').innerHTML = [...groups].map(([group, list]) => list.map((pr) => `
+    <div class="tile" data-preset="${esc(pr.name)}">
+      <div class="top">
+        <span class="nm">${esc(pr.label)}</span>
+        ${have.has(pr.name) ? '<span class="tag ready">added</span>' : '<span class="tag">no key needed</span>'}
+      </div>
+      <p class="dt" style="text-transform:uppercase;letter-spacing:.06em;font-size:10px">${esc(group)}</p>
+      <p class="bl">${esc(pr.description)}</p>
+      ${pr.needsEdit ? `<p class="dt" style="color:var(--warn)">${esc(pr.needsEdit)}</p>` : ''}
+      <div class="acts">
+        <button class="add">${have.has(pr.name) ? 'Re-add' : 'Add'}</button>
+        <button class="review">Look first</button>
+      </div>
+    </div>`).join('')).join('');
+}
+
+$('#presets').addEventListener('click', async (e) => {
+  const tile = e.target.closest('[data-preset]');
+  if (!tile) return;
+  const pr = data.presets.find((x) => x.name === tile.dataset.preset);
+  if (!pr) return;
+  if (e.target.closest('.review')) return openDialog(toPlugin(pr));
+  try {
+    say(`adding ${pr.label}…`);
+    await api('/api/plugins', { method: 'POST', body: JSON.stringify(toPlugin(pr)) });
+    say(`${pr.label} added${pr.needsEdit ? ' — read the note on it' : ''}`, 'ok');
+    await load();
+  } catch (err) { say(err.message, 'err'); }
+});
+
+const toPlugin = (pr) => ({
+  name: pr.name, description: pr.description, method: pr.method ?? 'GET', url: pr.url,
+  headers: pr.headers ?? {}, body: pr.body ?? '', params: pr.params ?? { type: 'object', properties: {} },
+  enabled: true,
+});
+
+// -------------------------------------------------------------- the edit form
+
+let editing = null;
+
+function openDialog(p) {
+  editing = p?.name ?? null;
+  $('#dlgTitle').textContent = p?.name ? `Edit ${p.name}` : 'Add an endpoint';
+  $('#fName').value = p?.name ?? '';
+  $('#fDesc').value = p?.description ?? '';
+  $('#fMethod').value = p?.method ?? 'GET';
+  $('#fUrl').value = p?.url ?? '';
+  $('#fHeaders').value = JSON.stringify(p?.headers ?? {}, null, 2);
+  $('#fBody').value = p?.body ?? '';
+  $('#fParams').value = JSON.stringify(p?.params ?? { type: 'object', properties: {} }, null, 2);
+  $('#fEnabled').checked = p?.enabled !== false;
+  $('#dlgMsg').textContent = '';
+  $('#dlg').showModal();
+}
+
+$('#addBlank').addEventListener('click', () => openDialog(null));
+$('#dlgCancel').addEventListener('click', () => $('#dlg').close());
+
+$('#dlgSave').addEventListener('click', async () => {
+  const parse = (raw, what, fallback) => {
+    if (!raw.trim()) return fallback;
+    try { return JSON.parse(raw); } catch { throw new Error(`${what} is not valid JSON`); }
+  };
+  try {
+    const payload = {
+      name: $('#fName').value.trim(),
+      description: $('#fDesc').value.trim(),
+      method: $('#fMethod').value,
+      url: $('#fUrl').value.trim(),
+      headers: parse($('#fHeaders').value, 'Headers', {}),
+      body: $('#fBody').value,
+      params: parse($('#fParams').value, 'Arguments', { type: 'object', properties: {} }),
+      enabled: $('#fEnabled').checked,
+      ...(editing && editing !== $('#fName').value.trim() ? { name: editing, rename: $('#fName').value.trim() } : {}),
+    };
+    $('#dlgMsg').textContent = 'saving…';
+    await api('/api/plugins', { method: 'POST', body: JSON.stringify(payload) });
+    $('#dlg').close();
+    say('saved', 'ok');
+    await load();
+  } catch (err) {
+    $('#dlgMsg').textContent = err.message;
+    $('#dlgMsg').className = 'msg err';
+  }
+});
+
+$('#plugins').addEventListener('click', async (e) => {
+  const card = e.target.closest('[data-plugin]');
+  if (!card) return;
+  const p = data.plugins.find((x) => x.name === card.dataset.plugin);
+  if (!p) return;
+  try {
+    if (e.target.closest('.edit')) return openDialog(p);
+    if (e.target.closest('.test')) {
+      $('#testName').textContent = p.name;
+      // Prefill the arguments with the shape it expects, so testing is one edit.
+      const props = p.params?.properties ?? {};
+      const seed = Object.fromEntries(Object.keys(props).map((k) => [k, props[k].type === 'integer' ? 5 : '']));
+      $('#testArgs').value = JSON.stringify(seed, null, 2);
+      $('#testOut').style.display = 'none';
+      $('#testMsg').textContent = Object.keys(props).length ? 'fill the values in' : 'takes no arguments';
+      $('#testMsg').className = 'msg';
+      $('#dlgTest').dataset.name = p.name;
+      $('#dlgTest').showModal();
+      return;
+    }
+    if (e.target.closest('.toggle')) {
+      await api('/api/plugins', { method: 'POST', body: JSON.stringify({ ...p, enabled: !p.enabled }) });
+      say(`${p.name} ${p.enabled ? 'switched off' : 'switched on'}`, 'ok');
+      return load();
+    }
+    if (e.target.closest('.del')) {
+      if (!confirm(`Remove "${p.name}"? Agents will no longer be able to call it.`)) return;
+      await api(`/api/plugins/${encodeURIComponent(p.name)}`, { method: 'DELETE' });
+      say(`${p.name} removed`, 'ok');
+      return load();
+    }
+  } catch (err) { say(err.message, 'err'); }
+});
+
+$('#testCancel').addEventListener('click', () => $('#dlgTest').close());
+$('#testGo').addEventListener('click', async () => {
+  const name = $('#dlgTest').dataset.name;
+  let args;
+  try { args = JSON.parse($('#testArgs').value || '{}'); }
+  catch { $('#testMsg').textContent = 'the arguments are not valid JSON'; $('#testMsg').className = 'msg err'; return; }
+  $('#testGo').disabled = true;
+  $('#testMsg').textContent = 'calling…';
+  $('#testMsg').className = 'msg';
+  try {
+    const out = await api(`/api/plugins/${encodeURIComponent(name)}/test`, {
+      method: 'POST', body: JSON.stringify({ args }),
+    });
+    $('#testMsg').textContent = 'it answered';
+    $('#testMsg').className = 'msg ok';
+    $('#testOut').textContent = out.preview;
+    $('#testOut').style.display = '';
+    await load();
+  } catch (err) {
+    $('#testMsg').textContent = err.message;
+    $('#testMsg').className = 'msg err';
+    $('#testOut').style.display = 'none';
+  } finally {
+    $('#testGo').disabled = false;
+  }
+});
+
+// --------------------------------------------------------------------- calls
+
+function renderCalls() {
+  $('#calls').innerHTML = data.calls.length ? `
+    <table>
+      <thead><tr><th></th><th>plugin</th><th>by</th><th>arguments</th><th>ms</th><th>when</th></tr></thead>
+      <tbody>${data.calls.map((c) => `
+        <tr>
+          <td class="${c.ok ? 'ok-dot' : 'bad-dot'}">${c.ok ? '●' : '●'}</td>
+          <td><code>${esc(c.plugin)}</code></td>
+          <td>${esc(c.agent)}</td>
+          <td class="mono">${esc(JSON.stringify(c.args).slice(0, 80))}</td>
+          <td>${c.ms}</td>
+          <td>${ago(c.createdAt)}${c.error ? ` · <span class="bad-dot">${esc(c.error)}</span>` : ''}</td>
+        </tr>`).join('')}</tbody>
+    </table>`
+    : '<p class="empty">Nothing has been called yet.</p>';
+}
+
+// ----------------------------------------------------------------------- load
+
+async function loadSkills() {
+  ({ skills } = await api('/api/skills'));
+  renderSkills();
+}
+
+async function load() {
+  data = await api('/api/plugins');
+  renderBuiltIn(); renderPlugins(); renderPresets(); renderCalls();
+}
+
+try {
+  await load();
+  await loadSkills();
+} catch (e) {
+  say(e.message, 'err');
+}
+</script>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>

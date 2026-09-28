@@ -25,21 +25,33 @@ export function mediaDir(dbPath) {
 
 const joinUrl = (base, path) => `${String(base).replace(/\/+$/, '')}${path}`;
 
-/** Headers for a connection, including any the user added in `extra`. */
+/**
+ * Headers for a connection, including any the user added in `extra`.
+ *
+ * Most providers take a bearer token. Enough of them do not — ElevenLabs wants
+ * `xi-api-key`, Deepgram wants `Token` rather than `Bearer` — that the two
+ * escape hatches are worth having: `extra.keyHeader` puts the credential in a
+ * header of your choosing, `extra.keyScheme` changes the word in front of it.
+ */
 function headers(conn, extra = {}) {
   const h = { ...extra, ...(conn.extra?.headers ?? {}) };
   if (conn.apiKey) {
-    // Most providers take a bearer token; a few want their own header, which
-    // `extra.headers` can supply instead.
-    if (!Object.keys(h).some((k) => k.toLowerCase() === 'authorization')) {
-      h.Authorization = `Bearer ${conn.apiKey}`;
+    const named = conn.extra?.keyHeader;
+    if (named) {
+      if (!Object.keys(h).some((k) => k.toLowerCase() === String(named).toLowerCase())) {
+        h[named] = conn.apiKey;
+      }
+    } else if (!Object.keys(h).some((k) => k.toLowerCase() === 'authorization')) {
+      h.Authorization = `${conn.extra?.keyScheme ?? 'Bearer'} ${conn.apiKey}`;
     }
   }
   return h;
 }
 
-async function call(conn, path, { body, json = true, method = 'POST', accept } = {}) {
-  const url = joinUrl(conn.baseURL, conn.extra?.path ?? path);
+async function call(conn, path, { body, json = true, method = 'POST', accept, exact = false } = {}) {
+  // `exact` means the caller already worked the path out, placeholders and all,
+  // so a connection-level override must not be applied a second time.
+  const url = joinUrl(conn.baseURL, exact ? path : (conn.extra?.path ?? path));
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
@@ -94,18 +106,68 @@ export async function transcribe({ conn, audio, filename = 'clip.webm', mimeType
 
 // ------------------------------------------------------------- text to speech
 
-export async function speak({ conn, text, dir }) {
+/** File extension for the audio format asked for. */
+const AUDIO_EXT = { mp3: 'mp3', opus: 'opus', aac: 'aac', flac: 'flac', wav: 'wav', pcm: 'wav', mp4: 'mp4', ogg: 'ogg' };
+
+/** Some providers hand back JSON with the audio inside it rather than bytes. */
+function audioFromJson(out) {
+  const found = out?.audio ?? out?.audioContent ?? out?.b64_json ?? out?.data?.[0]?.b64_json
+    ?? out?.data?.[0]?.audio ?? (typeof out?.data === 'string' ? out.data : undefined);
+  return typeof found === 'string' ? Buffer.from(found, 'base64') : null;
+}
+
+/**
+ * Read text aloud.
+ *
+ * The voice matters more than any other setting here — it is the one the room
+ * speaks with in live chat, and the one that makes an audio generation worth
+ * keeping — so it is overridable per call, not just per connection. Everything
+ * about the request shape can be redescribed in `extra`, because the providers
+ * worth using disagree about all of it: where the text goes, what the voice
+ * field is called, whether the model id is `model` or `model_id`.
+ */
+export async function speak({ conn, text, voice, speed, format, dir }) {
   if (!conn) throw new Error('no text-to-speech connection is configured');
-  const bytes = await call(conn, '/audio/speech', {
-    body: {
-      model: conn.model || 'gpt-4o-mini-tts',
-      voice: conn.extra?.voice ?? 'alloy',
-      input: String(text).slice(0, 4000),
-      response_format: 'mp3',
-    },
-    accept: 'buffer',
-  });
-  return store(dir, bytes, 'mp3');
+  const body = String(text ?? '').trim();
+  if (!body) throw new Error('there is nothing to read out');
+
+  const ex = conn.extra ?? {};
+  const chosen = voice || ex.voice || 'alloy';
+  const fmt = String(format || ex.format || 'mp3').toLowerCase();
+  const rate = Number(speed ?? ex.speed ?? 0);
+
+  // A key set to null means "this provider does not take that field" — Deepgram
+  // puts the model in the query string, ElevenLabs puts the voice in the path.
+  const payload = {
+    ...(ex.modelKey === null ? {} : { [ex.modelKey ?? 'model']: conn.model || 'gpt-4o-mini-tts' }),
+    [ex.textKey ?? 'input']: body.slice(0, 4000),
+    // voiceKey: null is how a provider says "the voice is in the URL, not the body".
+    ...(ex.voiceKey === null ? {} : { [ex.voiceKey ?? 'voice']: chosen }),
+    ...(rate ? { [ex.speedKey ?? 'speed']: rate } : {}),
+    ...(ex.formatKey === null ? {} : { [ex.formatKey ?? 'response_format']: fmt }),
+    ...(ex.body ?? {}),
+  };
+
+  const path = String(ex.path ?? '/audio/speech').replace('{voice}', encodeURIComponent(chosen));
+  const bytes = await call(conn, path, { body: payload, accept: 'buffer', exact: true });
+
+  // Audio starts with ID3, 0xFF, RIFF or OggS — never with a brace. A brace
+  // means JSON: either the audio wrapped in base64, or an error dressed as a
+  // 200, and both are better handled than written to disk as a silent file.
+  if (/^\s*[{[]/.test(bytes.subarray(0, 8).toString('utf8'))) {
+    let parsed;
+    try { parsed = JSON.parse(bytes.toString('utf8')); } catch { parsed = null; }
+    const decoded = parsed && audioFromJson(parsed);
+    if (!decoded) throw new Error(`${conn.name} returned no audio: ${bytes.toString('utf8').slice(0, 200)}`);
+    return { url: store(dir, decoded, AUDIO_EXT[fmt] ?? 'mp3'), voice: chosen, format: fmt, bytes: decoded.length };
+  }
+
+  return {
+    url: store(dir, bytes, AUDIO_EXT[fmt] ?? 'mp3'),
+    voice: chosen,
+    format: fmt,
+    bytes: bytes.length,
+  };
 }
 
 // -------------------------------------------------------------------- images

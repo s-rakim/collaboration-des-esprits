@@ -317,6 +317,100 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments(message_id);
 
+-- ------------------------------------------------------------------ plugins
+
+-- User-defined HTTP tools the agents can call. A plugin is a name, a request
+-- shape and a description; the description is what the model reads to decide
+-- whether to reach for it, so it matters as much as the URL.
+-- Skills: instructions you have written once and want a model to follow again.
+--
+-- A skill is not a tool. A tool does something; a skill tells a model how to do
+-- something, in your words, and the model reads it and works that way. Which is
+-- why the body is stored whole and handed over verbatim: paraphrasing somebody's
+-- house style defeats the purpose of having written it down.
+CREATE TABLE IF NOT EXISTS skills (
+  name        TEXT PRIMARY KEY,
+  title       TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  -- The instructions themselves, as written.
+  body        TEXT NOT NULL,
+  -- Where it came from, so a re-upload can be recognised as the same skill.
+  source      TEXT NOT NULL DEFAULT '',
+  -- Which roles it applies to, as a JSON array; empty means anyone.
+  roles       TEXT NOT NULL DEFAULT '[]',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  used        INTEGER NOT NULL DEFAULT 0,
+  last_used   TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+-- A skill folder may bring files with it — a checklist, a template, a schema.
+CREATE TABLE IF NOT EXISTS skill_files (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  skill      TEXT NOT NULL REFERENCES skills(name) ON DELETE CASCADE ON UPDATE CASCADE,
+  path       TEXT NOT NULL,
+  -- Text where we could read it; a URL under /media either way.
+  text       TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL DEFAULT '',
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (skill, path)
+);
+
+CREATE INDEX IF NOT EXISTS skill_files_by_skill ON skill_files (skill);
+
+CREATE TABLE IF NOT EXISTS plugins (
+  name        TEXT PRIMARY KEY,
+  description TEXT NOT NULL DEFAULT '',
+  method      TEXT NOT NULL DEFAULT 'GET',
+  url         TEXT NOT NULL,
+  -- JSON: extra headers, and a body template where {{field}} is substituted
+  -- from the model's arguments.
+  headers     TEXT NOT NULL DEFAULT '{}',
+  body        TEXT NOT NULL DEFAULT '',
+  -- JSON Schema for what the model may pass, so a plugin cannot be called with
+  -- arbitrary shapes and the model knows what is expected.
+  params      TEXT NOT NULL DEFAULT '{"type":"object","properties":{}}',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  last_used   TEXT,
+  created_at  TEXT NOT NULL
+);
+
+-- Every call, kept: a plugin reaching the outside world is the part most worth
+-- being able to audit after the fact.
+CREATE TABLE IF NOT EXISTS plugin_calls (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plugin      TEXT NOT NULL,
+  agent       TEXT NOT NULL,
+  args        TEXT NOT NULL DEFAULT '{}',
+  status      INTEGER,
+  ok          INTEGER NOT NULL DEFAULT 0,
+  response    TEXT NOT NULL DEFAULT '',
+  error       TEXT NOT NULL DEFAULT '',
+  ms          INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_calls ON plugin_calls(plugin, id DESC);
+
+-- ---------------------------------------------------------------- citations
+
+-- What a claim rests on. The prefect writes these when it verifies something,
+-- so "this was checked" is a record rather than an assertion.
+CREATE TABLE IF NOT EXISTS citations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id  INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  claim       TEXT NOT NULL,
+  -- supported | unsupported | contradicted | unverifiable
+  verdict     TEXT NOT NULL,
+  -- Where the support came from: decision#3, artifact:spec, fact:runtime, url
+  source      TEXT NOT NULL DEFAULT '',
+  detail      TEXT NOT NULL DEFAULT '',
+  checked_by  TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_msg ON citations(message_id);
+CREATE INDEX IF NOT EXISTS idx_citations_verdict ON citations(verdict, id DESC);
+
 -- --------------------------------------------------------------------- swarm
 
 -- A swarm run: one goal, split into many pieces, worked in parallel.

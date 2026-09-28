@@ -11,9 +11,14 @@ import { createSeats } from '../seats.js';
 import { createConnections, PRESETS, KINDS } from '../connections.js';
 import { chatAdapter } from '../participants/chat.js';
 import { createSwarmRunner } from '../swarm.js';
+import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
+import { createWebBridge } from '../web.js';
+import { readDocument, READABLE } from '../documents.js';
+import { createSkills } from '../skills.js';
 import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
 import { writeFileSync } from 'node:fs';
 import { createModelParticipant } from '../participants/agent.js';
+import { BUILTIN_ROLES } from '../roles.js';
 import { createRouter } from '../bridges/commands.js';
 import { createTelegram } from '../bridges/telegram.js';
 
@@ -45,6 +50,18 @@ const seats = createSeats(hub.db, connections);
 seats.seedIfEmpty();
 const MEDIA = mediaDir(hub.db.name);
 const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`${m}\n`) });
+const plugins = createPlugins(hub.db, { log: (m) => process.stdout.write(`${m}\n`) });
+const web = createWebBridge({ connections, log: (m) => process.stdout.write(`${m}\n`) });
+// A skill's binary files are kept next to the generated media, so a skill that
+// carries a diagram can still point at it.
+const skills = createSkills(hub.db, {
+  store: (path, data) => {
+    const ext = path.match(/\.([A-Za-z0-9]{1,8})$/)?.[1] ?? 'bin';
+    const file = `${randomUUID()}.${ext}`;
+    writeFileSync(join(MEDIA, file), data);
+    return `/media/${file}`;
+  },
+});
 
 /**
  * Optional in-process participants. Assigned during startup below; the routes
@@ -229,6 +246,147 @@ app.post('/api/ask', (req, res) =>
   }),
 );
 
+// ------------------------------------------------------------------- plugins
+
+app.get('/api/plugins', (_req, res) =>
+  send(res, () => ({
+    plugins: plugins.all(),
+    calls: plugins.calls({ limit: 25 }),
+    presets: PLUGIN_PRESETS,
+    // The capabilities that are not plugins at all, with whether each is
+    // actually usable right now — a catalogue that lists things you cannot use
+    // without saying so is how a page ends up full of dead entries.
+    builtIn: BUILT_IN.map((b) => {
+      const kind = b.how.startsWith('connection:') ? b.how.slice('connection:'.length) : null;
+      return { ...b, ready: kind ? connections.ofKind(kind).length > 0 : true, needs: kind };
+    }),
+  })),
+);
+app.post('/api/plugins', (req, res) => send(res, () => plugins.save(req.body ?? {})));
+app.delete('/api/plugins/:name', (req, res) => send(res, () => ({ removed: plugins.remove(req.params.name) })));
+
+/** Call one by hand, which is how you check a plugin before an agent relies on it. */
+app.post('/api/plugins/:name/test', async (req, res) => {
+  try {
+    const out = await plugins.call({ name: req.params.name, args: req.body?.args ?? {}, agent: 'you' });
+    res.json({ ok: true, preview: String(out).slice(0, 2000) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------- skills
+
+app.get('/api/skills', (_req, res) =>
+  send(res, () => ({ skills: skills.all(), roles: Object.keys(BUILTIN_ROLES).filter((r) => r !== 'human') })),
+);
+
+app.get('/api/skills/:name', (req, res) =>
+  send(res, () => {
+    const skill = skills.get(req.params.name);
+    if (!skill) throw new NotFound(`no skill named "${req.params.name}"`);
+    return skill;
+  }),
+);
+
+app.post('/api/skills', (req, res) => send(res, () => skills.save(req.body ?? {})));
+
+/**
+ * Upload. A markdown file is one skill; a zip is a folder of them, or several.
+ * Raw bytes rather than multipart, because the browser has the file already and
+ * a boundary-encoded body would only have to be taken apart again.
+ */
+app.post('/api/skills/upload', express.raw({ type: '*/*', limit: '10mb' }), (req, res) =>
+  send(res, () => {
+    const filename = String(req.query.filename ?? 'skill.md').replace(/[/\\]/g, '_').slice(0, 200);
+    if (!req.body?.length) throw new Invalid('no file received');
+    const saved = skills.upload({ filename, bytes: req.body });
+
+    // Say so in the room. A skill everyone can use is worth announcing, and it
+    // puts the list in the transcript where the agents will read it.
+    if (req.query.as) {
+      const lines = saved.map((k) => `- **${k.name}** — ${k.description || k.title}`).join('\n');
+      hub.post({
+        idea: req.query.idea || null,
+        by: req.query.as,
+        kind: 'status',
+        body: `Added ${saved.length === 1 ? 'a skill' : `${saved.length} skills`} from ${filename}:\n${lines}`,
+      });
+    }
+    return { skills: saved.map((k) => ({ ...k, body: undefined })) };
+  }),
+);
+
+app.post('/api/skills/:name/enabled', (req, res) =>
+  send(res, () => skills.setEnabled(req.params.name, req.body?.enabled !== false)),
+);
+
+app.delete('/api/skills/:name', (req, res) => send(res, () => ({ removed: skills.remove(req.params.name) })));
+
+// ------------------------------------------------------------------ the web
+
+app.get('/api/web/search', async (req, res) => {
+  try {
+    res.json({ results: await web.search({ query: req.query.q, limit: Number(req.query.limit ?? 6) }) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/web/fetch', async (req, res) => {
+  try {
+    res.json(await web.fetchPage({ url: req.body?.url }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------- what was checked
+
+app.get('/api/checks', (req, res) =>
+  send(res, () => ({ checks: hub.checks({ verdict: req.query.verdict, limit: Number(req.query.limit ?? 100) }) })),
+);
+
+// ----------------------------------------------------------------- dashboard
+
+/** One call for the overview page, so it is not six round trips. */
+app.get('/api/dashboard', (_req, res) =>
+  send(res, () => {
+    const o = hub.overview();
+    const runs = hub.swarms({ limit: 6 });
+    const checks = hub.checks({ limit: 40 });
+    return {
+      totals: o.totals,
+      needsAttention: o.needsAttention,
+      roster: o.roster,
+      ideas: o.ideas.slice(0, 8),
+      runs: runs.map((r) => ({ ...r, live: swarm.isRunning(r.id) })),
+      artifacts: hub.artifacts({ limit: 6 }),
+      generations: hub.generations({ limit: 8 }),
+      schedules: hub.schedules().slice(0, 6),
+      plugins: plugins.all().map((p) => ({ name: p.name, enabled: p.enabled, lastUsed: p.lastUsed })),
+      skills: skills.all().map((k) => ({ name: k.name, title: k.title, enabled: k.enabled, used: k.used })),
+      // The prefect's record: what has been checked, and what failed a check.
+      checks: {
+        total: checks.length,
+        problems: checks.filter((c) => c.verdict !== 'supported').slice(0, 10),
+      },
+      capabilities: {
+        chat: connections.ofKind('chat').length,
+        search: connections.ofKind('search').length,
+        image: connections.ofKind('image').length,
+        video: connections.ofKind('video').length,
+        transcribe: connections.ofKind('transcribe').length,
+        speak: connections.ofKind('speak').length,
+      },
+      // Whether anybody is actually watching for invention, and who.
+      prefect: seats.all()
+        .filter((s) => s.role === 'prefect')
+        .map((s) => ({ name: s.name, model: s.model, running: models.has(s.name), ready: s.ready })),
+    };
+  }),
+);
+
 // --------------------------------------------------------------------- swarm
 
 app.get('/api/swarms', (_req, res) =>
@@ -292,18 +450,33 @@ app.post('/api/attach', express.raw({ type: '*/*', limit: '30mb' }), (req, res) 
     const stored = `${randomUUID()}.${ext}`;
     writeFileSync(join(MEDIA, stored), req.body);
 
-    // Extract text where we sensibly can. Deliberately limited to formats that
-    // are text underneath — guessing at binary formats produces garbage that is
-    // worse than an honest "not readable".
+    // Extract text where we sensibly can. Plain text is itself; PDF and the
+    // Office formats are parsed, because a room you cannot hand a contract or a
+    // spreadsheet to is a room that only reads what you retype into it. What is
+    // never done is guessing at a format: an honest "not readable" beats a page
+    // of mojibake for an agent to reason over.
     const TEXTUAL = /^(text\/|application\/(json|xml|x-yaml|yaml|javascript|typescript|sql|toml))/;
     const TEXT_EXT = /^(txt|md|markdown|json|csv|tsv|ya?ml|xml|html?|css|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|c|h|cpp|sh|sql|toml|ini|env|log)$/;
     let text = '';
+    let note = ' — not a format we can read, so the agents get the link only';
     if (TEXTUAL.test(mime) || TEXT_EXT.test(ext)) {
       const decoded = req.body.toString('utf8');
       // A binary file with a text-ish extension decodes to replacement chars;
       // storing that would poison every brief that includes it.
       if (!/\uFFFD/.test(decoded.slice(0, 2000))) text = decoded;
+    } else {
+      const extracted = readDocument(req.body, filename);
+      if (extracted === null) {
+        // Not one of ours.
+      } else if (extracted) {
+        text = extracted;
+      } else {
+        // We know the format and found nothing: a scanned page, or a file with
+        // no text in it. Which of those it is, the room should be told.
+        note = ' — we can read this format but found no text in it (scanned, or empty)';
+      }
     }
+    if (text) note = '';
 
     const url = `/media/${stored}`;
     const readable = req.body.length < 1024
@@ -311,8 +484,7 @@ app.post('/api/attach', express.raw({ type: '*/*', limit: '30mb' }), (req, res) 
       : req.body.length < 1024 * 1024
         ? `${(req.body.length / 1024).toFixed(0)} KB`
         : `${(req.body.length / 1024 / 1024).toFixed(1)} MB`;
-    const body = `Attached **${filename}** (${readable})` +
-      (text ? '' : ' — not a text format, so the agents get the link only') +
+    const body = `Attached **${filename}** (${readable})${note}` +
       `\n\n[${filename}](${url})`;
 
     const message = hub.post({ idea: req.query.idea || null, body, by: req.query.as, kind: 'message' });
@@ -353,7 +525,11 @@ app.get('/api/generations', (req, res) =>
       limit: Math.min(200, Number(req.query.limit ?? 60)),
     }),
     // Which capabilities are actually available, so the page can say so.
-    has: { image: connections.ofKind('image').length > 0, video: connections.ofKind('video').length > 0 },
+    has: {
+      image: connections.ofKind('image').length > 0,
+      video: connections.ofKind('video').length > 0,
+      audio: connections.ofKind('speak').length > 0,
+    },
   })),
 );
 
@@ -475,6 +651,11 @@ app.get('/api/seats', (_req, res) =>
     connections: connections.all(),
     kinds: KINDS,
     presets: PRESETS,
+    // The roles a seat can be given, from the same table the agents read their
+    // charter from — so a role added there appears here without a second edit.
+    roles: Object.entries(BUILTIN_ROLES)
+      .filter(([id]) => id !== 'human')
+      .map(([id, r]) => ({ id, summary: r.summary })),
   })),
 );
 
@@ -601,19 +782,41 @@ app.post('/api/voice', express.raw({ type: 'audio/*', limit: '25mb' }), async (r
   }
 });
 
+/**
+ * Make something and put it in the library.
+ *
+ * Audio belongs here rather than in a plugin of its own: generating a voice
+ * line is the same act as generating a picture, and it runs through the same
+ * connection that reads the room aloud, so there is one voice to configure.
+ */
+const MEDIA_KINDS = new Set(['image', 'video', 'audio']);
+const CONNECTION_FOR = { image: 'image', video: 'video', audio: 'speak' };
+
 app.post('/api/generate', async (req, res) => {
-  const kind = req.body?.kind === 'video' ? 'video' : 'image';
-  const which = req.body?.connection || connections.ofKind(kind)[0]?.name;
+  const kind = MEDIA_KINDS.has(req.body?.kind) ? req.body.kind : 'image';
+  const needs = CONNECTION_FOR[kind];
+  const which = req.body?.connection || connections.ofKind(needs)[0]?.name;
   const conn = which ? connections.resolve(which) : null;
-  if (!conn) return res.status(400).json({ error: `no ${kind} connection is configured — add one at /setup` });
+  if (!conn) {
+    return res.status(400).json({ error: `no ${KINDS[needs].label.toLowerCase()} connection is configured — add one at /setup` });
+  }
 
   const prompt = String(req.body?.prompt ?? '').trim();
   if (!prompt) return res.status(400).json({ error: 'a prompt is required' });
 
   try {
-    const url = kind === 'video'
-      ? await generateVideo({ conn, prompt, dir: MEDIA })
-      : await generateImage({ conn, prompt, size: req.body?.size, dir: MEDIA });
+    let url;
+    let voice;
+    if (kind === 'video') {
+      url = await generateVideo({ conn, prompt, dir: MEDIA });
+    } else if (kind === 'audio') {
+      ({ url, voice } = await speak({
+        conn, text: prompt, dir: MEDIA,
+        voice: req.body?.voice, speed: req.body?.speed, format: req.body?.format,
+      }));
+    } else {
+      url = await generateImage({ conn, prompt, size: req.body?.size, dir: MEDIA });
+    }
 
     let generation = null;
     if (req.body?.as) {
@@ -621,19 +824,66 @@ app.post('/api/generate', async (req, res) => {
         idea: req.body.idea ?? null,
         by: req.body.as,
         kind: 'message',
-        body: `${prompt}\n\n![${kind}](${url})`,
+        // An audio file is a link, not an embed: the page turns it into a player.
+        body: kind === 'audio' ? `${prompt}\n\n[audio](${url})` : `${prompt}\n\n![${kind}](${url})`,
       });
       generation = hub.recordGeneration({
         kind, prompt, url, model: conn.model, connection: conn.name,
-        size: req.body?.size ?? '', idea: req.body.idea ?? null,
+        size: kind === 'audio' ? (voice ?? '') : (req.body?.size ?? ''),
+        idea: req.body.idea ?? null,
         parent: req.body?.parent ?? null, by: req.body.as,
       });
     }
-    res.json({ url, kind, model: conn.model, generation });
+    res.json({ url, kind, model: conn.model, voice, generation });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
 });
+
+/**
+ * Read a line of text aloud and hand back the file.
+ *
+ * This is the other half of live voice chat. Deliberately it neither posts nor
+ * indexes: it is called once per reply as the room talks back, and a library
+ * filling up with every sentence anybody said would be worse than useless.
+ * Generating audio to keep goes through /api/generate.
+ */
+app.post('/api/speak', async (req, res) => {
+  const which = req.body?.connection || connections.ofKind('speak')[0]?.name;
+  const conn = which ? connections.resolve(which) : null;
+  if (!conn) return res.status(400).json({ error: 'no voice is configured — add one at /setup' });
+
+  const text = String(req.body?.text ?? '').trim();
+  if (!text) return res.status(400).json({ error: 'text is required' });
+
+  try {
+    const out = await speak({
+      conn, text, dir: MEDIA,
+      voice: req.body?.voice, speed: req.body?.speed, format: req.body?.format,
+    });
+    res.json({ ...out, connection: conn.name, model: conn.model });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+/** Which voices are on offer, so the page can show a list rather than a text box. */
+app.get('/api/voices', (_req, res) =>
+  send(res, () => ({
+    voices: connections.ofKind('speak').map((c) => ({
+      connection: c.name,
+      model: c.model,
+      ready: c.keySet || /^https?:\/\/(127\.|localhost|\[::1\])/.test(c.baseURL),
+      selected: c.extra?.voice ?? null,
+      // What the preset knew about, plus anything the user added by hand.
+      options: [...new Set([
+        ...(Array.isArray(c.extra?.voices) ? c.extra.voices : []),
+        ...(PRESETS.find((p) => p.kind === 'speak' && p.baseURL === c.baseURL)?.voices ?? []),
+        ...(c.extra?.voice ? [c.extra.voice] : []),
+      ])],
+    })),
+  })),
+);
 
 // ------------------------------------------------------- talking to a model
 
@@ -717,6 +967,8 @@ app.get('/api/events', (req, res) => {
 app.get('/setup', (_req, res) => res.redirect('/setup.html'));
 app.get('/design', (_req, res) => res.redirect('/design.html'));
 app.get('/work', (_req, res) => res.redirect('/work.html'));
+app.get('/dashboard', (_req, res) => res.redirect('/dashboard.html'));
+app.get('/plugins', (_req, res) => res.redirect('/plugins.html'));
 app.get('/artifacts', (_req, res) => res.redirect('/artifacts.html'));
 
 app.use(express.static(join(here, '..', 'web')));
@@ -749,13 +1001,16 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
  * library the same way anything the human makes does.
  */
 async function makeMedia(kind, prompt, by, idea = null) {
-  const conn = connections.resolve(connections.ofKind(kind)[0]?.name);
-  if (!conn) throw new Error(`no ${kind} connection is configured`);
-  const url = kind === 'video'
-    ? await generateVideo({ conn, prompt, dir: MEDIA })
-    : await generateImage({ conn, prompt, dir: MEDIA });
+  const needs = CONNECTION_FOR[kind] ?? kind;
+  const conn = connections.resolve(connections.ofKind(needs)[0]?.name);
+  if (!conn) throw new Error(`no ${KINDS[needs]?.label.toLowerCase() ?? needs} connection is configured`);
+  let url;
+  let voice;
+  if (kind === 'video') url = await generateVideo({ conn, prompt, dir: MEDIA });
+  else if (kind === 'audio') ({ url, voice } = await speak({ conn, text: prompt, dir: MEDIA }));
+  else url = await generateImage({ conn, prompt, dir: MEDIA });
   try {
-    hub.recordGeneration({ kind, prompt, url, model: conn.model, connection: conn.name, idea, by });
+    hub.recordGeneration({ kind, prompt, url, model: conn.model, connection: conn.name, size: voice ?? '', idea, by });
   } catch {
     // Failing to index it must not lose the image itself.
   }
@@ -788,7 +1043,11 @@ function syncSeats() {
       media: {
         image: (prompt) => makeMedia('image', prompt, seat.name),
         video: (prompt) => makeMedia('video', prompt, seat.name),
+        audio: (prompt) => makeMedia('audio', prompt, seat.name),
       },
+      web,
+      plugins,
+      skills,
     });
     models.set(seat.name, p);
     // One model failing must not take the others, or the server, down.
