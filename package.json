@@ -18,7 +18,8 @@
     "start": "node --disable-warning=ExperimentalWarning src/bin/serve.js",
     "stdio": "node --disable-warning=ExperimentalWarning src/bin/stdio.js",
     "telegram": "node --disable-warning=ExperimentalWarning src/bin/telegram.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
+    "check:presets": "node --disable-warning=ExperimentalWarning scripts/check-presets.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

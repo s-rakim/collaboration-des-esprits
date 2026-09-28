@@ -283,6 +283,18 @@ function fill(template, args, { encode = 'none' } = {}) {
 
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 
+/**
+ * What the server said, not just the number it said it with.
+ *
+ * "HTTP 403" leaves an agent with nowhere to go. "HTTP 403: Host not in
+ * allowlist: api.example.com" names the thing to fix, and the agent can say so
+ * to the human instead of retrying a call that will never work.
+ */
+export function formatFailure(status, body) {
+  const why = String(body ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return why ? `HTTP ${status}: ${why}` : `HTTP ${status}`;
+}
+
 export function createPlugins(db, { log = () => {} } = {}) {
   const view = (r) => ({
     name: r.name,
@@ -383,7 +395,7 @@ export function createPlugins(db, { log = () => {} } = {}) {
         status = res.status;
         ok = res.ok;
         out = (await res.text()).slice(0, 40_000);
-        if (!res.ok) error = `HTTP ${res.status}`;
+        if (!res.ok) error = formatFailure(res.status, out);
       } catch (err) {
         error = err.name === 'AbortError' ? `timed out after ${TIMEOUT_MS / 1000}s` : err.message;
       } finally {

@@ -126,3 +126,33 @@ test('what is built in is described as built in, and points somewhere real', () 
   const names = BUILT_IN.map((b) => b.name);
   for (const want of ['PDF', 'Excel', 'Word', 'PowerPoint']) assert.ok(names.includes(want), want);
 });
+
+test('a failed call reports what the server said, not just the number', async () => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(403, { 'content-type': 'text/html' });
+    res.end('<html><body><p>Host not in allowlist: api.example.com.</p></body></html>');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+
+  // Saved past the guard the way a real row is, then called against the stub.
+  const db = openDb(':memory:');
+  const plugins = createPlugins(db);
+  db.prepare(
+    `INSERT INTO plugins (name, description, method, url, headers, body, params, enabled, created_at)
+     VALUES ('t', '', 'GET', ?, '{}', '', '{}', 1, '2026-01-01')`,
+  ).run(`http://127.0.0.1:${server.address().port}/x`);
+
+  // The loopback guard fires first here, which is itself the right answer — so
+  // the message check is made where a real call would land: on the log of a
+  // remote failure, through the same formatting path.
+  await assert.rejects(plugins.call({ name: 't' }), /private address/);
+  server.close();
+
+  const { formatFailure } = await import('../src/plugins.js').then((m) => ({ formatFailure: m.formatFailure }));
+  assert.equal(
+    formatFailure(403, '<html><body><p>Host not in allowlist: api.example.com.</p></body></html>'),
+    'HTTP 403: Host not in allowlist: api.example.com.',
+  );
+  assert.equal(formatFailure(500, '   '), 'HTTP 500');
+  assert.equal(formatFailure(404, 'x'.repeat(400)).length, 'HTTP 404: '.length + 200);
+});

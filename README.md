@@ -407,7 +407,20 @@ The **Plugins** page has three things on it:
 
 Every call is logged with its arguments, status and duration, because the plugin
 is the point where the room touches the outside world and that makes it the part
-most worth being able to audit. A URL that resolves to a private address is
+most worth being able to audit. A failure reports what the server actually said
+rather than only the status code — an agent handed "HTTP 403" has nowhere to go,
+where "403: Host not in allowlist" names the thing to fix.
+
+To check the catalogue really works from wherever you are running it:
+
+```bash
+npm run check:presets          # all of them
+npm run check:presets sec      # just the ones whose name or group matches
+```
+
+It calls each one through the same engine an agent uses and checks the response
+contains what it should — a 200 holding an error page is not a working endpoint.
+If your network only allows named hosts, that is what it will tell you. A URL that resolves to a private address is
 refused before a socket is opened — and *that refusal is logged too*, since a
 model filling a template to point at the machine's own network is the single
 call most worth having a record of.
