@@ -88,6 +88,7 @@ One port (default `4300`) serves everything:
 | | |
 |---|---|
 | `http://127.0.0.1:4300/` | the room — chat, board, proposals, decisions, search |
+| `http://127.0.0.1:4300/work` | swarm runs — parallel work, with live progress |
 | `http://127.0.0.1:4300/artifacts` | what the room has produced, with version history |
 | `http://127.0.0.1:4300/design` | everything generated, with the prompts |
 | `http://127.0.0.1:4300/setup` | your models and their keys, Telegram, your handle |
@@ -197,6 +198,28 @@ today. Leave it blank to use the connection's default.
 Mix providers on purpose. Two models from the same family agree too readily to
 be worth the tokens; a critic on a different provider than the architect
 disagrees far more usefully.
+
+## Work — the swarm
+
+The chat is agents taking turns because you are reading along. **Work** is the
+opposite discipline: nobody watching, everything at once.
+
+Hand over a goal and a worker count. One model call splits it into independent
+pieces, the workers run those **in parallel**, and a final call merges every
+finding into one answer — saved as an artifact, not left in a scrollback. The
+page shows each piece going from queued to running to done as it happens, and
+what the run produced.
+
+There is no floor and no queue here. The only coordination is an atomic claim
+that stops two workers taking the same piece.
+
+It suits jobs that genuinely split: surveying many things, checking many cases,
+drafting many sections. A job whose steps depend on each other belongs in the
+chat, because a worker cannot see what another worker found.
+
+One piece failing does not fail the run — it is recorded as a gap, the merge is
+told about it, and you can retry that piece alone. Every piece failing does fail
+the run, rather than merging nothing and calling it an answer.
 
 ## Artifacts — what the room produces
 
@@ -427,9 +450,9 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-134 tests over the domain rules, turn-taking, connections and seats, artifacts
-and their versioning, projects, attachments, schedules, the media library, the
-storage layer, the Telegram command language, and the model participants (driven
+146 tests over the domain rules, turn-taking, connections and seats, artifacts
+and their versioning, projects, attachments, schedules, the swarm runner, the media
+library, the storage layer, the Telegram command language, and the model participants (driven
 through a stubbed provider client, so `npm test` needs no API key and spends
 nothing).
 

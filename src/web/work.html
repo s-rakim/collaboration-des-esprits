@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Work — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ee; --dim:#98a0b3; --faint:#6b7488;
+    --accent:#7aa2f7; --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --human:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#dde1e8;
+      --text:#12151b; --dim:#5b6373; --faint:#8b93a5;
+      --accent:#2d5bd7; --good:#3f8f3f; --warn:#96660d; --bad:#c3364f; --human:#6f3fc0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  nav{display:flex;gap:6px;margin-left:8px}
+  nav a{color:var(--dim);text-decoration:none;font-size:12.5px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
+  nav a:hover{border-color:var(--line);color:var(--text)}
+  nav a.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+  .spacer{margin-left:auto}
+  button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,textarea,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%}
+  textarea{resize:vertical;min-height:74px;font-family:inherit}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  main{display:grid;grid-template-columns:270px minmax(0,1fr) 300px;height:calc(100vh - 53px)}
+  @media (max-width:1100px){main{grid-template-columns:1fr;height:auto}}
+  aside,.mid,.rail{overflow-y:auto;padding:14px}
+  aside{border-right:1px solid var(--line)}
+  .rail{border-left:1px solid var(--line)}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .run{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:4px}
+  .run:hover{background:var(--panel2)}
+  .run.on{background:var(--panel2);border-color:var(--accent)}
+  .run .g{font-size:13px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .run .s{font-size:11px;color:var(--faint);margin-top:3px;font-family:var(--mono)}
+  .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .badge.running,.badge.planning,.badge.merging{color:var(--accent);border-color:var(--accent)}
+  .badge.done{color:var(--good);border-color:var(--good)}
+  .badge.failed{color:var(--bad);border-color:var(--bad)}
+  .badge.cancelled{color:var(--faint)}
+  .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .bar i.done{background:var(--good)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:14px}
+  .piece{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:var(--panel)}
+  .piece .h{display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:5px}
+  .piece .h b{font-weight:600}
+  .piece .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint)}
+  .piece .dot.running{background:var(--accent);animation:pulse 1.3s ease-in-out infinite}
+  .piece .dot.done{background:var(--good)} .piece .dot.failed{background:var(--bad)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .piece .r{font-size:12.5px;color:var(--dim);white-space:pre-wrap;max-height:130px;overflow:auto}
+  .piece .e{font-size:12.5px;color:var(--bad)}
+  .answer{white-space:pre-wrap;font-size:14px;line-height:1.65}
+  .empty{color:var(--faint);padding:40px 16px;text-align:center}
+  .msg{font-size:13px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .out{display:flex;gap:8px;align-items:center;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .out:last-child{border:0}
+  .out a{color:var(--accent);text-decoration:none}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Work <small>hand over a job, walk away</small></h1>
+  <nav>
+    <a href="/">Chat</a><a href="/work" class="on">Work</a>
+    <a href="/artifacts">Artifacts</a><a href="/design">Design</a><a href="/setup">Setup</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="msg" id="msg"></span>
+</header>
+
+<main>
+  <aside>
+    <button class="primary" id="new" style="width:100%">＋ New task</button>
+    <h2>Runs</h2>
+    <div id="runs"></div>
+  </aside>
+
+  <div class="mid" id="mid">
+    <div class="empty">Pick a run, or start one.</div>
+  </div>
+
+  <div class="rail" id="rail"></div>
+</main>
+
+<dialog id="dlg" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(560px,94vw)">
+  <h3 style="margin:0 0 12px;font-size:15px">New task</h3>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <textarea id="goal" rows="4" placeholder="The whole job. It gets split into independent pieces and worked in parallel."></textarea>
+    <div class="row">
+      <label style="font-size:12.5px;color:var(--dim)">Workers</label>
+      <input id="workers" type="number" min="1" max="32" value="4" style="width:80px">
+      <label style="font-size:12.5px;color:var(--dim)">Model</label>
+      <select id="seat" style="width:auto;flex:1"></select>
+    </div>
+    <p class="msg" style="margin:0">Pieces run at the same time, so this is for jobs that split — surveying many
+      things, checking many cases, drafting many sections. A job whose steps depend on each other belongs in the chat.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button id="cancel">Cancel</button>
+      <button class="primary" id="start">Start</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const state = { me: null, runs: [], seats: [], current: null, timer: null };
+try { state.me = localStorage.getItem('esprits.me'); } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const ago = (iso) => {
+  if (!iso) return '';
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+function say(t, cls = '') { $('#msg').textContent = t; $('#msg').className = `msg ${cls}`; }
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `${res.status} ${res.statusText}`);
+  return d;
+}
+
+function renderRuns() {
+  $('#runs').innerHTML = state.runs.length
+    ? state.runs.map((r) => {
+        const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+        return `<div class="run ${state.current?.id === r.id ? 'on' : ''}" data-id="${r.id}">
+          <span class="g">${esc(r.goal)}</span>
+          <span class="s"><span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+            ${r.total ? ` ${r.done}/${r.total}` : ''} · ${ago(r.createdAt)}</span>
+          ${r.total ? `<div class="bar"><i class="${r.status === 'done' ? 'done' : ''}" style="width:${pct}%"></i></div>` : ''}
+        </div>`;
+      }).join('')
+    : '<div class="empty" style="padding:20px 0">No runs yet.</div>';
+}
+
+function renderRun() {
+  const r = state.current;
+  if (!r) return;
+  const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+
+  $('#mid').innerHTML = `
+    <div class="card">
+      <div class="row" style="margin-bottom:8px">
+        <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+        <span class="msg">${r.total ? `${r.done} of ${r.total} pieces` : 'planning…'} · ${r.workers} workers · ${esc(r.seat)}</span>
+        <span class="spacer"></span>
+        ${['running','planning','merging'].includes(r.status) ? '<button id="stop">Stop</button>' : ''}
+      </div>
+      <div style="font-size:15px;line-height:1.5">${esc(r.goal)}</div>
+      ${r.total ? `<div class="bar"><i class="${r.status === 'done' ? 'done' : ''}" style="width:${pct}%"></i></div>` : ''}
+      ${r.error ? `<div class="msg err" style="margin-top:9px">${esc(r.error)}</div>` : ''}
+    </div>
+
+    ${r.synthesis ? `<h2>The answer</h2><div class="card answer">${esc(r.synthesis)}</div>` : ''}
+
+    <h2>Pieces</h2>
+    ${(r.tasks ?? []).map((t) => `
+      <div class="piece">
+        <div class="h">
+          <span class="dot ${esc(t.status)}"></span>
+          <b>${esc(t.title || `Piece ${t.seq + 1}`)}</b>
+          <span class="spacer"></span>
+          <span class="msg">${esc(t.status)}</span>
+          ${t.status === 'failed' ? `<button class="retry" data-task="${t.id}" style="font-size:11px;padding:3px 8px">retry</button>` : ''}
+        </div>
+        <div class="msg" style="font-size:12px;margin-bottom:5px">${esc(t.prompt)}</div>
+        ${t.result ? `<div class="r">${esc(t.result)}</div>` : ''}
+        ${t.error ? `<div class="e">${esc(t.error)}</div>` : ''}
+      </div>`).join('') || '<div class="empty" style="padding:20px 0">Waiting for the plan…</div>'}`;
+
+  $('#stop')?.addEventListener('click', async () => {
+    try { await api(`/api/swarms/${r.id}/cancel`, { method: 'POST', body: '{}' }); await refresh(); }
+    catch (e) { say(e.message, 'err'); }
+  });
+  for (const b of document.querySelectorAll('.retry')) {
+    b.addEventListener('click', async () => {
+      try {
+        await api(`/api/swarms/${r.id}/retry`, { method: 'POST', body: JSON.stringify({ taskId: Number(b.dataset.task) }) });
+        say('retrying', 'ok'); await refresh();
+      } catch (e) { say(e.message, 'err'); }
+    });
+  }
+
+  // The rail: what the run produced, and what it is working from.
+  $('#rail').innerHTML = `
+    <h2>Progress</h2>
+    <div class="card" style="padding:11px">
+      ${(r.tasks ?? []).map((t) => `
+        <div class="row" style="gap:7px;padding:3px 0;font-size:12.5px">
+          <span class="dot ${esc(t.status)}" style="width:8px;height:8px;border-radius:50%;background:var(--${t.status === 'done' ? 'good' : t.status === 'failed' ? 'bad' : t.status === 'running' ? 'accent' : 'faint'})"></span>
+          <span style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--faint)' : ''}">${esc(t.title || `Piece ${t.seq + 1}`)}</span>
+        </div>`).join('') || '<span class="msg">Not planned yet.</span>'}
+    </div>
+
+    <h2>Outputs</h2>
+    <div class="card" style="padding:11px">
+      ${r.artifact
+        ? `<div class="out"><span>📄</span><a href="/artifacts#${esc(r.artifact)}">${esc(r.artifact)}</a></div>`
+        : '<span class="msg">Nothing written yet. The answer is saved as an artifact when the run merges.</span>'}
+    </div>
+
+    <h2>Context</h2>
+    <div class="card" style="padding:11px">
+      <div class="out"><span class="msg">Model</span><span class="spacer"></span><code>${esc(r.seat)}</code></div>
+      <div class="out"><span class="msg">Workers</span><span class="spacer"></span><code>${r.workers}</code></div>
+      ${r.idea ? `<div class="out"><span class="msg">Thread</span><span class="spacer"></span><a href="/">${esc(r.idea)}</a></div>` : ''}
+      <div class="out"><span class="msg">Started</span><span class="spacer"></span><span>${ago(r.createdAt)}</span></div>
+    </div>`;
+}
+
+async function refresh() {
+  const d = await api('/api/swarms');
+  state.runs = d.swarms;
+  state.seats = d.seats;
+  if (state.current) {
+    try { state.current = await api(`/api/swarms/${state.current.id}`); } catch { state.current = null; }
+  }
+  renderRuns();
+  if (state.current) renderRun();
+
+  // Poll only while something is actually moving, and poll quickly early on:
+  // planning takes a second or two, and staring at an empty panel until the
+  // first slow tick makes a working run look like a broken one.
+  const live = state.runs.some((r) => ['running', 'planning', 'merging'].includes(r.status));
+  clearTimeout(state.timer);
+  if (live) {
+    const planning = state.current && !state.current.total;
+    state.timer = setTimeout(() => refresh().catch(() => {}), planning ? 400 : 1200);
+  }
+}
+
+$('#runs').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-id]');
+  if (!el) return;
+  try {
+    state.current = await api(`/api/swarms/${el.dataset.id}`);
+    renderRuns(); renderRun();
+  } catch (x) { say(x.message, 'err'); }
+});
+
+$('#new').addEventListener('click', () => {
+  if (!state.me) return say('open the chat once to set your handle', 'err');
+  if (!state.seats.length) return say('no model is configured — add one at /setup', 'err');
+  $('#seat').innerHTML = state.seats.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${esc(s.model)}</option>`).join('');
+  $('#dlg').showModal();
+});
+$('#cancel').addEventListener('click', () => $('#dlg').close());
+$('#start').addEventListener('click', async () => {
+  const goal = $('#goal').value.trim();
+  if (!goal) return say('describe the job first', 'err');
+  $('#start').disabled = true;
+  try {
+    const run = await api('/api/swarms', { method: 'POST', body: JSON.stringify({
+      goal, workers: Number($('#workers').value) || 4, seat: $('#seat').value, as: state.me,
+    }) });
+    $('#goal').value = '';
+    $('#dlg').close();
+    state.current = run;
+    await refresh();
+    say('started — pieces run in parallel', 'ok');
+  } catch (e) { say(e.message, 'err'); }
+  finally { $('#start').disabled = false; }
+});
+
+await refresh();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ import { createConfig } from '../settings.js';
 import { createSeats } from '../seats.js';
 import { createConnections, PRESETS, KINDS } from '../connections.js';
 import { chatAdapter } from '../participants/chat.js';
+import { createSwarmRunner } from '../swarm.js';
 import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
 import { writeFileSync } from 'node:fs';
 import { createModelParticipant } from '../participants/agent.js';
@@ -43,6 +44,7 @@ const connections = createConnections(hub.db);
 const seats = createSeats(hub.db, connections);
 seats.seedIfEmpty();
 const MEDIA = mediaDir(hub.db.name);
+const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`${m}\n`) });
 
 /**
  * Optional in-process participants. Assigned during startup below; the routes
@@ -224,6 +226,52 @@ app.post('/api/ask', (req, res) =>
       return { ...q, nudged: audience };
     }
     return q;
+  }),
+);
+
+// --------------------------------------------------------------------- swarm
+
+app.get('/api/swarms', (_req, res) =>
+  send(res, () => ({
+    swarms: hub.swarms().map((s) => ({ ...s, live: swarm.isRunning(s.id) })),
+    // Only seats that can actually make a call are offerable as the worker pool.
+    seats: seats.all().filter((s) => s.ready).map((s) => ({ name: s.name, model: s.model })),
+  })),
+);
+
+app.get('/api/swarms/:id', (req, res) =>
+  send(res, () => ({ ...hub.getSwarm(req.params.id), live: swarm.isRunning(req.params.id) })),
+);
+
+/**
+ * Start one. The run is deliberately not awaited: planning, fanning out and
+ * merging take minutes, and the page follows progress by polling rather than
+ * holding a request open for the duration.
+ */
+app.post('/api/swarms', (req, res) =>
+  send(res, () => {
+    const seat = String(req.body?.seat ?? '') || seats.enabled()[0]?.name;
+    if (!seat) throw new Invalid('no model is configured to run the workers — add one at /setup');
+    const run = hub.createSwarm({
+      goal: req.body?.goal,
+      seat,
+      workers: req.body?.workers ?? 4,
+      idea: req.body?.idea ?? null,
+      by: req.body?.as,
+    });
+    swarm.run({ id: run.id }).catch((err) => process.stderr.write(`swarm ${run.id}: ${err.message}\n`));
+    return run;
+  }),
+);
+
+app.post('/api/swarms/:id/cancel', (req, res) => send(res, () => swarm.cancel(Number(req.params.id))));
+
+app.post('/api/swarms/:id/retry', (req, res) =>
+  send(res, () => {
+    hub.retrySwarmTask({ taskId: req.body?.taskId });
+    // Re-enter the loop so the retried piece is actually picked up.
+    swarm.run({ id: Number(req.params.id) }).catch(() => {});
+    return hub.getSwarm(req.params.id);
   }),
 );
 
@@ -668,6 +716,7 @@ app.get('/api/events', (req, res) => {
 // Tidier than typing the .html.
 app.get('/setup', (_req, res) => res.redirect('/setup.html'));
 app.get('/design', (_req, res) => res.redirect('/design.html'));
+app.get('/work', (_req, res) => res.redirect('/work.html'));
 app.get('/artifacts', (_req, res) => res.redirect('/artifacts.html'));
 
 app.use(express.static(join(here, '..', 'web')));

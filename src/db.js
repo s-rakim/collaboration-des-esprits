@@ -317,6 +317,49 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments(message_id);
 
+-- --------------------------------------------------------------------- swarm
+
+-- A swarm run: one goal, split into many pieces, worked in parallel.
+--
+-- This is the opposite discipline to the room's floor. In the chat, agents take
+-- turns because the human is reading. A swarm is nobody watching and everything
+-- at once: dozens of pieces, each small enough to hand to a worker, merged at
+-- the end. Kept in its own tables because a swarm task has a lifecycle the
+-- board's tasks do not — assigned, running, retried, failed with a reason.
+CREATE TABLE IF NOT EXISTS swarm_runs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  goal         TEXT NOT NULL,
+  -- planning | running | merging | done | failed | cancelled
+  status       TEXT NOT NULL DEFAULT 'planning',
+  -- The seat whose connection the workers run on.
+  seat         TEXT NOT NULL DEFAULT '',
+  workers      INTEGER NOT NULL DEFAULT 4,
+  synthesis    TEXT NOT NULL DEFAULT '',
+  error        TEXT NOT NULL DEFAULT '',
+  idea_id      INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  artifact_id  INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
+  created_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_swarm_recent ON swarm_runs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS swarm_tasks (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id       INTEGER NOT NULL REFERENCES swarm_runs(id) ON DELETE CASCADE,
+  seq          INTEGER NOT NULL,
+  title        TEXT NOT NULL DEFAULT '',
+  prompt       TEXT NOT NULL,
+  -- queued | running | done | failed
+  status       TEXT NOT NULL DEFAULT 'queued',
+  result       TEXT NOT NULL DEFAULT '',
+  error        TEXT NOT NULL DEFAULT '',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT,
+  finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_swarm_tasks ON swarm_tasks(run_id, seq);
+
 -- ---------------------------------------------------------------- generations
 
 -- Everything the image and video models have made, with the prompt that made

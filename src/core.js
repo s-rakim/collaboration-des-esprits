@@ -2042,6 +2042,152 @@ export class Hub {
     return { schedule: this.getSchedule(s.id), message };
   }
 
+  // ---------------------------------------------------------------- swarm
+
+  /**
+   * Start a swarm run. The pieces are supplied by whoever planned them — the
+   * runner asks a model to split the goal, but a caller can hand in its own
+   * split, which is what makes the mechanism testable without a model.
+   */
+  createSwarm({ goal, seat = '', workers = 4, idea = null, tasks = [], by }) {
+    const author = this.#agent(by).name;
+    if (!goal || !String(goal).trim()) throw new Invalid('a swarm needs a goal');
+    const ideaId = idea === null || idea === undefined || idea === '' ? null : this.#ideaId(idea);
+    const ts = now();
+
+    let id;
+    const tx = this.db.transaction(() => {
+      const info = this.db
+        .prepare(
+          `INSERT INTO swarm_runs (goal, status, seat, workers, idea_id, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(String(goal).trim(), tasks.length ? 'running' : 'planning',
+             seat, Math.max(1, Math.min(32, Number(workers) || 4)), ideaId, author, ts);
+      id = Number(info.lastInsertRowid);
+      tasks.forEach((t, i) => this.#addSwarmTask(id, i, t));
+    });
+    tx();
+    return this.getSwarm(id);
+  }
+
+  #addSwarmTask(runId, seq, t) {
+    this.db
+      .prepare('INSERT INTO swarm_tasks (run_id, seq, title, prompt) VALUES (?, ?, ?, ?)')
+      .run(runId, seq, String(t.title ?? '').slice(0, 200), String(t.prompt ?? t));
+  }
+
+  /** Attach the plan once a planner has produced it. */
+  planSwarm({ id, tasks }) {
+    const run = this.getSwarm(id);
+    if (!Array.isArray(tasks) || !tasks.length) throw new Invalid('a swarm needs at least one piece of work');
+    const tx = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM swarm_tasks WHERE run_id = ?').run(run.id);
+      tasks.forEach((t, i) => this.#addSwarmTask(run.id, i, t));
+      this.db.prepare(`UPDATE swarm_runs SET status = 'running' WHERE id = ?`).run(run.id);
+    });
+    tx();
+    return this.getSwarm(run.id);
+  }
+
+  getSwarm(id) {
+    const r = this.db
+      .prepare('SELECT s.*, i.slug AS idea_slug, a.slug AS artifact_slug FROM swarm_runs s LEFT JOIN ideas i ON i.id = s.idea_id LEFT JOIN artifacts a ON a.id = s.artifact_id WHERE s.id = ?')
+      .get(Number(id));
+    if (!r) throw new NotFound(`no swarm run #${id}`);
+    const tasks = this.db
+      .prepare(`SELECT id, seq, title, prompt, status, result, error, attempts, started_at AS startedAt, finished_at AS finishedAt
+                FROM swarm_tasks WHERE run_id = ? ORDER BY seq`)
+      .all(r.id);
+    const counts = tasks.reduce((acc, t) => ({ ...acc, [t.status]: (acc[t.status] ?? 0) + 1 }), {});
+    return {
+      id: r.id, goal: r.goal, status: r.status, seat: r.seat, workers: r.workers,
+      synthesis: r.synthesis, error: r.error || undefined,
+      idea: r.idea_slug ?? null, artifact: r.artifact_slug ?? null,
+      createdBy: r.created_by, createdAt: r.created_at, finishedAt: r.finished_at ?? null,
+      tasks, counts,
+      // Progress is worth precomputing: it is what the page polls for.
+      done: (counts.done ?? 0) + (counts.failed ?? 0),
+      total: tasks.length,
+    };
+  }
+
+  swarms({ limit = 30 } = {}) {
+    return this.db
+      .prepare('SELECT id FROM swarm_runs ORDER BY id DESC LIMIT ?')
+      .all(limit)
+      .map((r) => {
+        // The list omits per-task prompts and results, which are the bulk.
+        const { tasks, ...rest } = this.getSwarm(r.id);
+        return rest;
+      });
+  }
+
+  /** Claim the next queued piece, atomically, so two workers cannot take one. */
+  claimSwarmTask({ runId }) {
+    const ts = now();
+    const tx = this.db.transaction(() => {
+      const next = this.db
+        .prepare(`SELECT id FROM swarm_tasks WHERE run_id = ? AND status = 'queued' ORDER BY seq LIMIT 1`)
+        .get(runId);
+      if (!next) return null;
+      const info = this.db
+        .prepare(`UPDATE swarm_tasks SET status = 'running', started_at = ?, attempts = attempts + 1
+                  WHERE id = ? AND status = 'queued'`)
+        .run(ts, next.id);
+      return info.changes ? next.id : null;
+    });
+    const id = tx();
+    if (!id) return null;
+    return this.db.prepare('SELECT * FROM swarm_tasks WHERE id = ?').get(id);
+  }
+
+  finishSwarmTask({ taskId, result = '', error = '' }) {
+    this.db
+      .prepare(`UPDATE swarm_tasks SET status = ?, result = ?, error = ?, finished_at = ? WHERE id = ?`)
+      .run(error ? 'failed' : 'done', String(result).slice(0, 100_000), String(error).slice(0, 2000), now(), Number(taskId));
+    return this.db.prepare('SELECT run_id FROM swarm_tasks WHERE id = ?').get(Number(taskId))?.run_id;
+  }
+
+  /** Put a failed piece back in the queue, for a retry. */
+  retrySwarmTask({ taskId }) {
+    const info = this.db
+      .prepare(`UPDATE swarm_tasks SET status = 'queued', error = '', finished_at = NULL WHERE id = ? AND status = 'failed'`)
+      .run(Number(taskId));
+    if (!info.changes) throw new Invalid('only a failed piece can be retried');
+    const runId = this.db.prepare('SELECT run_id FROM swarm_tasks WHERE id = ?').get(Number(taskId)).run_id;
+    this.db.prepare(`UPDATE swarm_runs SET status = 'running', finished_at = NULL WHERE id = ?`).run(runId);
+    return this.getSwarm(runId);
+  }
+
+  finishSwarm({ id, synthesis = '', error = '', artifactSlug = null, status = null }) {
+    const run = this.getSwarm(id);
+    const failed = run.tasks.filter((t) => t.status === 'failed').length;
+    const finalStatus = status ?? (error ? 'failed' : 'done');
+    const artifactId = artifactSlug
+      ? this.db.prepare('SELECT id FROM artifacts WHERE slug = ?').get(artifactSlug)?.id ?? null
+      : null;
+    this.db
+      .prepare(`UPDATE swarm_runs SET status = ?, synthesis = ?, error = ?, artifact_id = ?, finished_at = ? WHERE id = ?`)
+      .run(finalStatus, String(synthesis), String(error), artifactId, now(), run.id);
+
+    if (run.idea) {
+      this.#systemPost(
+        this.#ideaId(run.idea),
+        `Swarm "${run.goal.slice(0, 80)}" ${finalStatus}: ${run.total - failed}/${run.total} pieces finished` +
+          (artifactSlug ? `, written up as artifact \`${artifactSlug}\`` : ''),
+      );
+    }
+    return this.getSwarm(run.id);
+  }
+
+  cancelSwarm({ id }) {
+    const run = this.getSwarm(id);
+    this.db.prepare(`UPDATE swarm_tasks SET status = 'failed', error = 'cancelled' WHERE run_id = ? AND status IN ('queued','running')`).run(run.id);
+    this.db.prepare(`UPDATE swarm_runs SET status = 'cancelled', finished_at = ? WHERE id = ?`).run(now(), run.id);
+    return this.getSwarm(run.id);
+  }
+
   // ----------------------------------------------------------- generations
 
   /**
