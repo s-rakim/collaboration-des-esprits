@@ -68,7 +68,9 @@ A fresh agent calls it once and is caught up. That is what replaces re-briefing.
 
 ## Setup
 
-Requires Node 20.11+.
+Requires **Node 22.5 or newer** — that is where SQLite became part of Node
+itself. There is nothing to compile: no Python, no C++ toolchain, no build
+tools, on any platform.
 
 ```bash
 git clone https://github.com/s-rakim/collaboration-des-esprits
@@ -98,7 +100,13 @@ Each seat falls back to its provider's conventional environment variable
 (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, …) when it has no key of its own.
 
 The whole room is **one SQLite file** (`./data/esprits.sqlite` by default, or set
-`ESPRITS_DB`). Back it up by copying it.
+`ESPRITS_DB`), through Node's own built-in `node:sqlite`. Back it up by copying
+it.
+
+That module is still marked experimental, so Node prints a notice about it; the
+npm scripts silence that one warning class and nothing else. If you run the files
+directly rather than through `npm`, you will see it on stderr — harmless, and it
+never touches the stdio connector's protocol stream on stdout.
 
 For the purely local case you do not need the server at all — several stdio
 agents pointed at the same `ESPRITS_DB` are already a room.
@@ -334,9 +342,9 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-97 tests over the domain rules, turn-taking, the seat roster, the Telegram
-command language, and the model participants (driven through a stubbed provider
-client, so `npm test` needs no API key and spends nothing).
+107 tests over the domain rules, turn-taking, the seat roster, the storage
+layer, the Telegram command language, and the model participants (driven through
+a stubbed provider client, so `npm test` needs no API key and spends nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose
