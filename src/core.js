@@ -248,7 +248,8 @@ export class Hub {
              (SELECT COUNT(*) FROM messages WHERE idea_id = ?)                          AS messages`,
         )
         .get(i.id, i.id, i.id, i.id, i.id);
-      return { ...this.getIdea(i.id), ...counts };
+      const project = i.project_id ? this.db.prepare('SELECT slug FROM projects WHERE id = ?').get(i.project_id)?.slug : null;
+      return { ...this.getIdea(i.id), project: project ?? null, ...counts };
     });
   }
 
@@ -1664,6 +1665,445 @@ export class Hub {
     return { handoff: this.getHandoff(h.id), brief: h.idea ? this.brief({ idea: h.idea }) : null };
   }
 
+  // ------------------------------------------------------------- projects
+
+  /** A container for related ideas, with context they all inherit. */
+  createProject({ name, brief = '', by }) {
+    if (!name || !String(name).trim()) throw new Invalid('a project needs a name');
+    this.#agent(by);
+    const base = slugify(name, 'project');
+    let slug = base;
+    for (let n = 2; this.db.prepare('SELECT 1 FROM projects WHERE slug = ?').get(slug); n++) {
+      slug = `${base}-${n}`;
+    }
+    const ts = now();
+    const info = this.db
+      .prepare('INSERT INTO projects (slug, name, brief, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run(slug, String(name).trim(), brief, ts, ts);
+    return this.getProject(Number(info.lastInsertRowid));
+  }
+
+  #projectRow(ref) {
+    if (ref === null || ref === undefined || ref === '') return null;
+    const row =
+      typeof ref === 'number' || /^\d+$/.test(String(ref))
+        ? this.db.prepare('SELECT * FROM projects WHERE id = ?').get(Number(ref))
+        : this.db.prepare('SELECT * FROM projects WHERE slug = ?').get(String(ref));
+    if (!row) throw new NotFound(`no project "${ref}"`);
+    return row;
+  }
+
+  getProject(ref) {
+    const p = this.#projectRow(ref);
+    const counts = this.db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM ideas WHERE project_id = ?) AS ideas,
+                (SELECT COUNT(*) FROM artifacts WHERE project_id = ?) AS artifacts`,
+      )
+      .get(p.id, p.id);
+    return {
+      id: p.id, slug: p.slug, name: p.name, brief: p.brief,
+      archived: Boolean(p.archived), createdAt: p.created_at, updatedAt: p.updated_at, ...counts,
+    };
+  }
+
+  projects({ includeArchived = false } = {}) {
+    return this.db
+      .prepare(`SELECT id FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY updated_at DESC`)
+      .all()
+      .map((r) => this.getProject(r.id));
+  }
+
+  updateProject({ ref, name, brief, archived, by }) {
+    const p = this.#projectRow(ref);
+    this.#agent(by);
+    const ts = now();
+    if (name !== undefined) this.db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(String(name), ts, p.id);
+    if (brief !== undefined) this.db.prepare('UPDATE projects SET brief = ?, updated_at = ? WHERE id = ?').run(String(brief), ts, p.id);
+    if (archived !== undefined) this.db.prepare('UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?').run(archived ? 1 : 0, ts, p.id);
+    return this.getProject(p.id);
+  }
+
+  /** Move an idea into a project, or out of one with null. */
+  fileIdea({ ref, project, by }) {
+    const idea = this.#ideaRow(ref);
+    const actor = this.#agent(by).name;
+    const pid = project === null || project === undefined || project === '' ? null : this.#projectRow(project).id;
+    this.db.prepare('UPDATE ideas SET project_id = ?, updated_at = ? WHERE id = ?').run(pid, now(), idea.id);
+    this.#systemPost(idea.id, pid
+      ? `${actor} filed this under ${this.getProject(pid).name}.`
+      : `${actor} took this out of its project.`);
+    return this.getIdea(idea.id);
+  }
+
+  // ------------------------------------------------------------- artifacts
+
+  /**
+   * The things the room produces, kept apart from the conversation.
+   *
+   * An artifact is addressed by slug and versioned on every write, so agents
+   * can hand work back and forth without re-pasting it into chat and without
+   * anybody losing what the previous version said.
+   */
+  saveArtifact({ slug, title, content, kind = 'markdown', language = '', idea = null, project = null, summary = '', by }) {
+    const author = this.#agent(by).name;
+    if (!content && content !== '') throw new Invalid('content is required');
+
+    const existing = slug ? this.db.prepare('SELECT * FROM artifacts WHERE slug = ?').get(String(slug)) : null;
+    const ts = now();
+
+    if (existing) {
+      const version = existing.version + 1;
+      const tx = this.db.transaction(() => {
+        this.db
+          .prepare(`UPDATE artifacts SET title = ?, content = ?, kind = ?, language = ?, version = ?, updated_at = ? WHERE id = ?`)
+          .run(title ?? existing.title, content, kind ?? existing.kind, language ?? existing.language, version, ts, existing.id);
+        this.db
+          .prepare(`INSERT INTO artifact_versions (artifact_id, version, content, summary, author, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(existing.id, version, content, summary, author, ts);
+      });
+      tx();
+      this.#artifactPost(existing.idea_id, author, this.getArtifact(existing.id), summary, false);
+      return this.getArtifact(existing.id);
+    }
+
+    if (!title || !String(title).trim()) throw new Invalid('a new artifact needs a title');
+    const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+    const projectId = project === null || project === undefined || project === ''
+      ? (ideaId ? this.db.prepare('SELECT project_id FROM ideas WHERE id = ?').get(ideaId)?.project_id ?? null : null)
+      : this.#projectRow(project).id;
+
+    const base = slugify(slug || title, 'artifact');
+    let handle = base;
+    for (let n = 2; this.db.prepare('SELECT 1 FROM artifacts WHERE slug = ?').get(handle); n++) handle = `${base}-${n}`;
+
+    let id;
+    const tx = this.db.transaction(() => {
+      const info = this.db
+        .prepare(
+          `INSERT INTO artifacts (slug, title, kind, language, content, version, idea_id, project_id, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+        )
+        .run(handle, String(title).trim(), kind, language, content, ideaId, projectId, author, ts, ts);
+      id = Number(info.lastInsertRowid);
+      this.db
+        .prepare(`INSERT INTO artifact_versions (artifact_id, version, content, summary, author, created_at) VALUES (?, 1, ?, ?, ?, ?)`)
+        .run(id, content, summary || 'created', author, ts);
+    });
+    tx();
+    this.#artifactPost(ideaId, author, this.getArtifact(id), summary, true);
+    return this.getArtifact(id);
+  }
+
+  /** Announce it in the thread, so the room knows work landed. */
+  #artifactPost(ideaId, author, artifact, summary, isNew) {
+    this.post({
+      idea: ideaId,
+      by: author,
+      kind: 'status',
+      body:
+        `${isNew ? 'Created' : `Updated to v${artifact.version}`}: **${artifact.title}** ` +
+        `(artifact \`${artifact.slug}\`, ${artifact.kind})` +
+        (summary ? `\n${summary}` : ''),
+    });
+  }
+
+  getArtifact(ref) {
+    const a =
+      typeof ref === 'number' || /^\d+$/.test(String(ref))
+        ? this.db.prepare('SELECT * FROM artifacts WHERE id = ?').get(Number(ref))
+        : this.db.prepare('SELECT * FROM artifacts WHERE slug = ?').get(String(ref));
+    if (!a) throw new NotFound(`no artifact "${ref}"`);
+    return {
+      id: a.id, slug: a.slug, title: a.title, kind: a.kind, language: a.language,
+      content: a.content, version: a.version,
+      idea: a.idea_id ? this.getIdea(a.idea_id).slug : null,
+      project: a.project_id ? this.getProject(a.project_id).slug : null,
+      createdBy: a.created_by, createdAt: a.created_at, updatedAt: a.updated_at,
+    };
+  }
+
+  artifacts({ idea = undefined, project = undefined, limit = 100 } = {}) {
+    const where = [];
+    const params = [];
+    if (idea !== undefined && idea !== null) { where.push('idea_id = ?'); params.push(this.#ideaId(idea)); }
+    if (project !== undefined && project !== null && project !== '') { where.push('project_id = ?'); params.push(this.#projectRow(project).id); }
+    return this.db
+      .prepare(`SELECT id FROM artifacts ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY updated_at DESC LIMIT ?`)
+      .all(...params, limit)
+      .map((r) => {
+        // The list view omits content: an index of thirty documents should not
+        // carry thirty documents' worth of text.
+        const { content, ...rest } = this.getArtifact(r.id);
+        return { ...rest, chars: content.length };
+      });
+  }
+
+  artifactHistory(ref) {
+    const a = this.getArtifact(ref);
+    return this.db
+      .prepare(`SELECT version, summary, author, created_at AS createdAt, LENGTH(content) AS chars
+                FROM artifact_versions WHERE artifact_id = ? ORDER BY version DESC`)
+      .all(a.id);
+  }
+
+  /** Read an older version, or restore it as a new one. */
+  artifactVersion({ ref, version }) {
+    const a = this.getArtifact(ref);
+    const v = this.db.prepare('SELECT * FROM artifact_versions WHERE artifact_id = ? AND version = ?').get(a.id, Number(version));
+    if (!v) throw new NotFound(`artifact "${a.slug}" has no version ${version}`);
+    return { ...a, content: v.content, version: v.version, summary: v.summary, author: v.author };
+  }
+
+  restoreArtifact({ ref, version, by }) {
+    const old = this.artifactVersion({ ref, version });
+    return this.saveArtifact({
+      slug: old.slug, content: old.content, by,
+      summary: `restored version ${version}`,
+    });
+  }
+
+  deleteArtifact({ ref, by }) {
+    const a = this.getArtifact(ref);
+    this.#agent(by);
+    this.db.prepare('DELETE FROM artifacts WHERE id = ?').run(a.id);
+    return { deleted: a.slug };
+  }
+
+  // ---------------------------------------------------------- attachments
+
+  /**
+   * Record a file dropped into the chat.
+   *
+   * The extracted text is stored alongside it so agents can read a file without
+   * each of them fetching and parsing it — and so brief() can carry it. Files we
+   * cannot read are still kept; they just arrive as a name and a link.
+   */
+  attach({ messageId = null, idea = null, filename, mime = '', size = 0, url, text = '', by }) {
+    const author = this.#agent(by).name;
+    if (!filename || !url) throw new Invalid('an attachment needs a filename and a url');
+    const ideaId = idea === null || idea === undefined || idea === '' ? null : this.#ideaId(idea);
+    const info = this.db
+      .prepare(
+        `INSERT INTO attachments (message_id, idea_id, filename, mime, size, url, text, uploaded_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(messageId, ideaId, String(filename), mime, Number(size) || 0, url,
+           String(text).slice(0, 200_000), author, now());
+    return this.getAttachment(Number(info.lastInsertRowid));
+  }
+
+  getAttachment(id) {
+    const a = this.db.prepare('SELECT * FROM attachments WHERE id = ?').get(Number(id));
+    if (!a) throw new NotFound(`no attachment #${id}`);
+    return {
+      id: a.id, message: a.message_id ?? null, filename: a.filename, mime: a.mime,
+      size: a.size, url: a.url, text: a.text, hasText: Boolean(a.text),
+      uploadedBy: a.uploaded_by, createdAt: a.created_at,
+    };
+  }
+
+  attachments({ idea = undefined, message = undefined, limit = 100 } = {}) {
+    const where = [];
+    const params = [];
+    if (idea !== undefined && idea !== null && idea !== '') { where.push('idea_id = ?'); params.push(this.#ideaId(idea)); }
+    if (message !== undefined && message !== null) { where.push('message_id = ?'); params.push(Number(message)); }
+    return this.db
+      .prepare(`SELECT id FROM attachments ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`)
+      .all(...params, limit)
+      .map((r) => {
+        // The list omits the extracted text; an index of files should not carry
+        // every file's contents.
+        const { text, ...rest } = this.getAttachment(r.id);
+        return rest;
+      });
+  }
+
+  // ------------------------------------------------------------ schedules
+
+  /**
+   * Standing work: a prompt fired into the room on a repeat, so something can
+   * happen every morning without anybody being there to ask for it.
+   */
+  createSchedule({ name, prompt, everyMinutes = 1440, atTime = '', idea = null, asAgent = '', enabled = true, by }) {
+    this.#agent(by);
+    if (!name || !String(name).trim()) throw new Invalid('a schedule needs a name');
+    if (!prompt || !String(prompt).trim()) throw new Invalid('a schedule needs something to say');
+    const every = Math.max(1, Number(everyMinutes) || 1440);
+    if (atTime && !/^\d{1,2}:\d{2}$/.test(atTime)) throw new Invalid('time must look like 08:30');
+    const ideaId = idea === null || idea === undefined || idea === '' ? null : this.#ideaId(idea);
+    if (asAgent) this.#agent(asAgent);
+
+    const ts = now();
+    const info = this.db
+      .prepare(
+        `INSERT INTO schedules (name, prompt, every_minutes, at_time, idea_id, as_agent, enabled, next_run_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(String(name).trim(), String(prompt), every, atTime, ideaId, asAgent,
+           enabled ? 1 : 0, this.#nextRun({ every, atTime }), ts);
+    return this.getSchedule(Number(info.lastInsertRowid));
+  }
+
+  /** When should this run next: the next wall-clock time, or now plus the interval. */
+  #nextRun({ every, atTime, from = new Date() }) {
+    if (atTime) {
+      const [h, m] = atTime.split(':').map(Number);
+      const next = new Date(from);
+      next.setSeconds(0, 0);
+      next.setHours(h, m);
+      // Already past today, so it is tomorrow.
+      if (next <= from) next.setDate(next.getDate() + 1);
+      return next.toISOString();
+    }
+    return new Date(from.getTime() + every * 60_000).toISOString();
+  }
+
+  getSchedule(id) {
+    const r = this.db
+      .prepare('SELECT s.*, i.slug AS idea_slug FROM schedules s LEFT JOIN ideas i ON i.id = s.idea_id WHERE s.id = ?')
+      .get(Number(id));
+    if (!r) throw new NotFound(`no schedule #${id}`);
+    return {
+      id: r.id, name: r.name, prompt: r.prompt, everyMinutes: r.every_minutes,
+      atTime: r.at_time || '', idea: r.idea_slug ?? null, asAgent: r.as_agent || '',
+      enabled: Boolean(r.enabled), lastRunAt: r.last_run_at ?? null,
+      nextRunAt: r.next_run_at ?? null, createdAt: r.created_at,
+    };
+  }
+
+  schedules() {
+    return this.db.prepare('SELECT id FROM schedules ORDER BY enabled DESC, next_run_at').all().map((r) => this.getSchedule(r.id));
+  }
+
+  updateSchedule({ id, name, prompt, everyMinutes, atTime, idea, asAgent, enabled }) {
+    const s = this.getSchedule(id);
+    const set = [];
+    const params = [];
+    if (name !== undefined) { set.push('name = ?'); params.push(String(name)); }
+    if (prompt !== undefined) { set.push('prompt = ?'); params.push(String(prompt)); }
+    if (everyMinutes !== undefined) { set.push('every_minutes = ?'); params.push(Math.max(1, Number(everyMinutes) || 1440)); }
+    if (atTime !== undefined) { set.push('at_time = ?'); params.push(String(atTime)); }
+    if (asAgent !== undefined) { set.push('as_agent = ?'); params.push(String(asAgent)); }
+    if (enabled !== undefined) { set.push('enabled = ?'); params.push(enabled ? 1 : 0); }
+    if (idea !== undefined) {
+      set.push('idea_id = ?');
+      params.push(idea === null || idea === '' ? null : this.#ideaId(idea));
+    }
+    if (set.length) this.db.prepare(`UPDATE schedules SET ${set.join(', ')} WHERE id = ?`).run(...params, s.id);
+
+    // Timing changed, so the next run has to be recomputed rather than left
+    // pointing at a slot that no longer means anything.
+    if (everyMinutes !== undefined || atTime !== undefined || enabled === true) {
+      const fresh = this.getSchedule(s.id);
+      this.db.prepare('UPDATE schedules SET next_run_at = ? WHERE id = ?')
+        .run(this.#nextRun({ every: fresh.everyMinutes, atTime: fresh.atTime }), s.id);
+    }
+    return this.getSchedule(s.id);
+  }
+
+  deleteSchedule({ id }) {
+    const s = this.getSchedule(id);
+    this.db.prepare('DELETE FROM schedules WHERE id = ?').run(s.id);
+    return { deleted: s.id };
+  }
+
+  /** Everything due to run now. The caller fires them and reports back. */
+  dueSchedules({ at = new Date() } = {}) {
+    return this.db
+      .prepare(`SELECT id FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at`)
+      .all(at.toISOString())
+      .map((r) => this.getSchedule(r.id));
+  }
+
+  /**
+   * Fire one: post its prompt into the room, which is what wakes the agents.
+   * Runs as the named agent, or as whoever created the room's human side.
+   */
+  runSchedule({ id, at = new Date() }) {
+    const s = this.getSchedule(id);
+    const speaker =
+      s.asAgent ||
+      this.db.prepare(`SELECT name FROM agents WHERE kind = 'human' ORDER BY joined_at LIMIT 1`).get()?.name;
+    if (!speaker) throw new Invalid('nobody has joined the room yet, so there is no one to speak as');
+
+    const message = this.post({
+      idea: s.idea,
+      by: speaker,
+      kind: 'message',
+      // @all so every listening agent wakes for it, which is the point of a
+      // schedule firing at all.
+      body: `@all ${s.prompt}`,
+    });
+
+    this.db
+      .prepare('UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ?')
+      .run(at.toISOString(), this.#nextRun({ every: s.everyMinutes, atTime: s.atTime, from: at }), s.id);
+    return { schedule: this.getSchedule(s.id), message };
+  }
+
+  // ----------------------------------------------------------- generations
+
+  /**
+   * Record something an image or video model made.
+   *
+   * The prompt is stored with it because the prompt is the valuable half — you
+   * iterate on it, and a gallery without prompts is a pile of pictures you
+   * cannot reproduce or refine.
+   */
+  recordGeneration({ kind = 'image', prompt, url, model = '', connection = '', size = '', idea = null, parent = null, by }) {
+    const author = this.#agent(by).name;
+    if (!url) throw new Invalid('a generation needs a url');
+    const ideaId = idea === null || idea === undefined || idea === '' ? null : this.#ideaId(idea);
+    const info = this.db
+      .prepare(
+        `INSERT INTO generations (kind, prompt, url, model, connection, size, idea_id, parent_id, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(kind, String(prompt ?? ''), url, model, connection, size, ideaId, parent ?? null, author, now());
+    return this.getGeneration(Number(info.lastInsertRowid));
+  }
+
+  getGeneration(id) {
+    const g = this.db
+      .prepare(`SELECT g.*, i.slug AS idea_slug FROM generations g LEFT JOIN ideas i ON i.id = g.idea_id WHERE g.id = ?`)
+      .get(Number(id));
+    if (!g) throw new NotFound(`no generation #${id}`);
+    return {
+      id: g.id, kind: g.kind, prompt: g.prompt, url: g.url, model: g.model,
+      connection: g.connection, size: g.size || undefined,
+      idea: g.idea_slug ?? null, parent: g.parent_id ?? null,
+      pinned: Boolean(g.pinned), createdBy: g.created_by, createdAt: g.created_at,
+    };
+  }
+
+  generations({ kind = undefined, idea = undefined, pinned = undefined, limit = 60, before = undefined } = {}) {
+    const where = [];
+    const params = [];
+    if (kind) { where.push('g.kind = ?'); params.push(kind); }
+    if (idea !== undefined && idea !== null && idea !== '') { where.push('g.idea_id = ?'); params.push(this.#ideaId(idea)); }
+    if (pinned !== undefined) { where.push('g.pinned = ?'); params.push(pinned ? 1 : 0); }
+    if (before) { where.push('g.id < ?'); params.push(Number(before)); }
+    return this.db
+      .prepare(`SELECT g.id FROM generations g ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY g.id DESC LIMIT ?`)
+      .all(...params, limit)
+      .map((r) => this.getGeneration(r.id));
+  }
+
+  pinGeneration({ id, pinned = true }) {
+    const g = this.getGeneration(id);
+    this.db.prepare('UPDATE generations SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, g.id);
+    return this.getGeneration(g.id);
+  }
+
+  deleteGeneration({ id }) {
+    const g = this.getGeneration(id);
+    // The row goes; the file stays on disk, because a message in the room may
+    // still point at it and a broken image is worse than an orphaned file.
+    this.db.prepare('DELETE FROM generations WHERE id = ?').run(g.id);
+    return { deleted: g.id };
+  }
+
   // ------------------------------------------------- context, in one call
 
   /**
@@ -1701,8 +2141,12 @@ export class Hub {
       if (list.length) byStatus[s] = list;
     }
 
+    const projectRow = this.db.prepare('SELECT project_id FROM ideas WHERE id = ?').get(i.id)?.project_id;
     const pack = {
       idea: i,
+      project: projectRow ? this.getProject(projectRow) : null,
+      artifacts: this.artifacts({ idea: i.id }),
+      attachments: this.attachments({ idea: i.id }),
       facts,
       decisions,
       questions: { open, answered: answered.slice(-10) },
@@ -1733,6 +2177,12 @@ export class Hub {
     const i = p.idea;
     L.push(`# ${i.title}`, '');
     L.push(`Stage: **${i.stage}** · idea \`${i.slug}\` · raised by ${i.createdBy} on ${i.createdAt.slice(0, 10)}`, '');
+
+    if (p.project) {
+      L.push(`## Project: ${p.project.name}`, '');
+      if (p.project.brief.trim()) L.push(p.project.brief.trim(), '');
+      L.push('_This binds every idea in the project, not just this one._', '');
+    }
 
     L.push('## The original idea, as dropped', '', i.raw.trim() || '_(nothing beyond the title)_', '');
 
@@ -1815,6 +2265,23 @@ export class Hub {
         }
         L.push('');
       }
+    }
+
+    if (p.attachments?.length) {
+      L.push('## Files attached to this idea', '');
+      for (const f of p.attachments) {
+        L.push(`- **${f.filename}** (${f.mime || 'unknown type'}, ${f.size} bytes) — ${f.uploadedBy}` +
+          (f.hasText ? ' · text readable with read_file' : ' · not text, so only the link'));
+      }
+      L.push('');
+    }
+
+    if (p.artifacts.length) {
+      L.push('## Work produced so far', '');
+      for (const a of p.artifacts) {
+        L.push(`- **${a.title}** — artifact \`${a.slug}\` (${a.kind}, v${a.version}, ${a.chars} chars, last touched by ${a.createdBy})`);
+      }
+      L.push('', '_Read one with read_artifact, and revise it with save_artifact rather than pasting a new copy into the chat._', '');
     }
 
     if (p.handoffs.length) {

@@ -52,7 +52,11 @@
   .msg{font-size:13px}
   .msg.ok{color:var(--good)} .msg.err{color:var(--bad)}
   code{font-family:var(--mono);font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px}
-  .back{color:var(--accent);text-decoration:none;font-size:13px}
+  nav a{color:var(--dim);text-decoration:none;font-size:12.5px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
+  nav a:hover{border-color:var(--line);color:var(--text)}
+  nav a.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+  textarea{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%;resize:vertical;min-height:90px;font-family:inherit}
+  textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
   .seat{display:grid;grid-template-columns:.9fr 1fr 1.3fr .9fr .7fr auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
   .conn{display:grid;grid-template-columns:1fr .9fr 1.5fr 1.1fr 1fr auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
   .conn:last-of-type{border-bottom:0}
@@ -71,11 +75,21 @@
   .seathead{display:grid;grid-template-columns:.9fr 1fr 1.3fr .9fr .7fr auto auto;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-bottom:5px;border-bottom:1px solid var(--line)}
 
   .modelnote{color:var(--faint);font-size:12px;margin-top:8px}
+  .sched{display:grid;grid-template-columns:1fr 2fr .8fr .7fr auto auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .sched:last-of-type{border-bottom:0}
+  .sched input,.sched select{padding:6px 8px;font-size:12.5px}
+  .sched .when{font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .sched .del{color:var(--bad);border-color:transparent;background:none;padding:4px 7px}
+  .sched .run{font-size:11px;padding:4px 8px}
+  @media (max-width:900px){.sched{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="/">← back to the room</a>
+  <nav style="display:flex;gap:6px;margin-bottom:14px">
+    <a href="/">Chat</a><a href="/artifacts">Artifacts</a><a href="/design">Design</a>
+    <a href="/setup" class="on">Setup</a>
+  </nav>
   <h1>Setup</h1>
   <p class="sub">Every model has its own provider and its own key. Keys are stored in the room's own database on this machine and are never sent back to this page — you'll only ever see the last four characters.</p>
 
@@ -212,6 +226,19 @@ function render() {
       </p>
     </div>
 
+    <h2>Scheduled</h2>
+    <div class="card">
+      <p class="hint" style="margin:0 0 12px">
+        Standing work: a message fired into the room on a repeat, addressed to everyone, so the
+        agents wake and act on it. Useful for a morning brief, or a nightly "what is still blocked".
+      </p>
+      <div id="scheds"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="addSched">+ Add a schedule</button>
+        <span class="modelnote" id="schedNote"></span>
+      </div>
+    </div>
+
     <h2>Telegram</h2>
     <div class="card">
       ${toggleField('telegram_enabled', st.telegram_enabled)}
@@ -224,10 +251,28 @@ function render() {
       <div class="note">A chat can do nothing until it sends <code>/pair &lt;code&gt;</code>, so finding your bot is not enough to read your projects.</div>
     </div>
 
-    <h2>You</h2>
+    <h2>Customize</h2>
     <div class="card">
       ${settingField('human_handle', st.human_handle)}
-      <p class="hint" style="margin:0">Agents @mention you by this. No spaces.</p>
+      <p class="hint" style="margin:-8px 0 16px">Agents @mention you by this. No spaces.</p>
+
+      <div class="field">
+        <label for="f-about_me">About you</label>
+        <p class="hint">What every model should assume without being told again — what you build,
+          who it is for, what you already know. This is prepended to every agent's instructions.</p>
+        <textarea id="f-about_me" data-setting="about_me" ${st.about_me.locked ? 'disabled' : ''}
+          placeholder="I build self-hosted apps for myself. Node and React Native. Assume I can read code; skip the basics.">${esc(st.about_me.value)}</textarea>
+      </div>
+
+      <div class="field">
+        <label for="f-house_style">Standing instructions</label>
+        <p class="hint">How you want them to work and write. These outrank a model's own habits —
+          but never a decision the room has already recorded.</p>
+        <textarea id="f-house_style" data-setting="house_style" ${st.house_style.locked ? 'disabled' : ''}
+          placeholder="Be blunt. No preamble. Propose two options before building anything. Never add a dependency without saying why.">${esc(st.house_style.value)}</textarea>
+      </div>
+
+      <div class="note">Takes effect on each model's next turn — no restart needed.</div>
     </div>
 
     <div class="note warn">
@@ -367,6 +412,13 @@ function addConnRow(seed) {
 $('#body').addEventListener('click', (e) => {
   if (e.target.closest('#addConn')) addConnRow();
   if (e.target.closest('#addSeat')) addSeatRow();
+  if (e.target.closest('#addSched')) {
+    if (!scheds.length) $('#scheds').innerHTML = '';
+    $('#scheds').insertAdjacentHTML('beforeend', schedRow(
+      { name: '', prompt: '', atTime: '', everyMinutes: 1440, enabled: true, nextRunAt: null }, true));
+    wireScheds();
+    $('#scheds').lastElementChild.querySelector('.zn').focus();
+  }
 });
 
 $('#body').addEventListener('change', (e) => {
@@ -466,14 +518,93 @@ function addSeatRow() {
   $('#seats').lastElementChild.querySelector('.sn').focus();
 }
 
+// ------------------------------------------------------------------ schedules
+
+let scheds = [];
+
+function schedRow(s, isNew = false) {
+  return `<div class="sched" data-id="${s.id ?? ''}" ${isNew ? 'data-new="1"' : ''}>
+      <input class="zn" value="${esc(s.name)}" placeholder="what it is">
+      <input class="zp" value="${esc(s.prompt)}" placeholder="what to say to the room">
+      <input class="zt" value="${esc(s.atTime)}" placeholder="08:30" title="A daily time. Leave blank to use the interval.">
+      <input class="ze" value="${s.everyMinutes}" title="Minutes between runs, when no time is set">
+      <label class="switch" title="on"><input type="checkbox" class="zo" ${s.enabled ? 'checked' : ''}></label>
+      <button class="run" title="Fire it now to check it does what you meant">run</button>
+      <button class="del" title="remove">&times;</button>
+      <span class="when" style="grid-column:1/-1">${s.nextRunAt ? `next ${new Date(s.nextRunAt).toLocaleString()}` : 'not scheduled'}${s.lastRunAt ? ` · last ran ${new Date(s.lastRunAt).toLocaleString()}` : ''}</span>
+    </div>`;
+}
+
+function renderScheds() {
+  $('#scheds').innerHTML = scheds.length
+    ? scheds.map((s) => schedRow(s)).join('')
+    : '<p class="hint" style="margin:0">Nothing scheduled.</p>';
+  $('#schedNote').textContent = `${scheds.filter((s) => s.enabled).length} active`;
+  wireScheds();
+}
+
+function wireScheds() {
+  for (const el of document.querySelectorAll('.sched')) {
+    const save = async () => {
+      const name = el.querySelector('.zn').value.trim();
+      const prompt = el.querySelector('.zp').value.trim();
+      if (!name || !prompt) return say('a schedule needs a name and something to say', 'err');
+      try {
+        say('saving…');
+        await api('/api/schedules', { method: 'POST', body: JSON.stringify({
+          ...(el.dataset.id ? { id: Number(el.dataset.id) } : {}),
+          name, prompt,
+          atTime: el.querySelector('.zt').value.trim(),
+          everyMinutes: Number(el.querySelector('.ze').value) || 1440,
+          enabled: el.querySelector('.zo').checked,
+          as: state.settings?.human_handle?.value || undefined,
+        }) });
+        await loadScheds();
+        say('saved', 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    };
+    for (const f of el.querySelectorAll('.zt, .ze, .zo')) f.addEventListener('change', save);
+    for (const f of el.querySelectorAll('.zn, .zp')) f.addEventListener('blur', () => {
+      if (el.dataset.new || f.value.trim()) save();
+    });
+
+    el.querySelector('.run').addEventListener('click', async () => {
+      if (!el.dataset.id) return say('save it first', 'err');
+      try {
+        await api(`/api/schedules/${el.dataset.id}/run`, { method: 'POST', body: '{}' });
+        await loadScheds();
+        say('fired — check the chat', 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    });
+
+    el.querySelector('.del').addEventListener('click', async () => {
+      if (el.dataset.new) { el.remove(); return; }
+      if (!confirm('Remove this schedule?')) return;
+      try {
+        await api(`/api/schedules/${el.dataset.id}`, { method: 'DELETE' });
+        await loadScheds();
+        say('removed', 'ok');
+      } catch (e) { say(e.message, 'err'); }
+    });
+  }
+}
+
+async function loadScheds() {
+  scheds = (await api('/api/schedules')).schedules;
+  renderScheds();
+}
+
 async function loadAll() {
   roster = await api('/api/seats');
   renderConns();
   renderSeats();
+  await loadScheds();
 }
 
 async function load() {
   state = await api('/api/settings');
+  // Kept where the schedule rows can reach it: a schedule speaks as the human.
+  state.settings = state.settings ?? {};
   render();
   await loadAll();
 }

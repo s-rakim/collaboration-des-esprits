@@ -247,6 +247,121 @@ CREATE INDEX IF NOT EXISTS idx_assessments_open ON assessments(proposal_id, stan
 
 -- ------------------------------------------------------------------- cursors
 
+-- ------------------------------------------------------------------ projects
+
+-- A container for related ideas, with context every idea inside it inherits.
+-- Ideas may sit outside one; project_id NULL is the loose pile.
+CREATE TABLE IF NOT EXISTS projects (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug        TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  -- Standing context for everything in the project: the stack, the constraints,
+  -- who it is for. Handed to agents by brief() alongside the idea's own.
+  brief       TEXT NOT NULL DEFAULT '',
+  archived    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+-- ----------------------------------------------------------------- artifacts
+
+-- The things the room actually produces: a spec, a document, a file of code, a
+-- page. Kept apart from the conversation because that is the point — work you
+-- can open, re-read and hand to somebody should not be buried in a transcript.
+CREATE TABLE IF NOT EXISTS artifacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug        TEXT NOT NULL UNIQUE,
+  title       TEXT NOT NULL,
+  -- markdown | code | html | text — decides only how it is displayed.
+  kind        TEXT NOT NULL DEFAULT 'markdown',
+  language    TEXT NOT NULL DEFAULT '',
+  content     TEXT NOT NULL DEFAULT '',
+  version     INTEGER NOT NULL DEFAULT 1,
+  idea_id     INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  project_id  INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+  created_by  TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_idea ON artifacts(idea_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id, updated_at);
+
+-- Every revision kept, so "what changed and who changed it" is answerable and a
+-- bad edit can be rolled back without losing the reasoning.
+CREATE TABLE IF NOT EXISTS artifact_versions (
+  artifact_id  INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+  version      INTEGER NOT NULL,
+  content      TEXT NOT NULL,
+  summary      TEXT NOT NULL DEFAULT '',
+  author       TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (artifact_id, version)
+);
+
+-- --------------------------------------------------------------- attachments
+
+-- Files dropped into the chat. Text is extracted on upload so agents can read
+-- it without every one of them needing to fetch and parse the file.
+CREATE TABLE IF NOT EXISTS attachments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id   INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  idea_id      INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  filename     TEXT NOT NULL,
+  mime         TEXT NOT NULL DEFAULT '',
+  size         INTEGER NOT NULL DEFAULT 0,
+  url          TEXT NOT NULL,
+  -- Extracted text, where the file has any. Truncated; the file itself stays.
+  text         TEXT NOT NULL DEFAULT '',
+  uploaded_by  TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments(message_id);
+
+-- ---------------------------------------------------------------- generations
+
+-- Everything the image and video models have made, with the prompt that made
+-- it. Kept because the prompt is the valuable half: you iterate on it, and
+-- without it a gallery is just a pile of pictures you cannot reproduce.
+CREATE TABLE IF NOT EXISTS generations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL DEFAULT 'image',   -- image | video
+  prompt      TEXT NOT NULL,
+  url         TEXT NOT NULL,
+  model       TEXT NOT NULL DEFAULT '',
+  connection  TEXT NOT NULL DEFAULT '',
+  size        TEXT NOT NULL DEFAULT '',
+  -- Set when it was generated from within a thread, so it can be traced back.
+  idea_id     INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  -- A generation this one was iterated from, so a lineage is walkable.
+  parent_id   INTEGER REFERENCES generations(id) ON DELETE SET NULL,
+  pinned      INTEGER NOT NULL DEFAULT 0,
+  created_by  TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_generations_recent ON generations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_generations_kind ON generations(kind, created_at DESC);
+
+-- ------------------------------------------------------------------ schedules
+
+-- Standing work: a prompt fired into the room on a repeat, so the room can do
+-- something every morning without anybody being there to ask.
+CREATE TABLE IF NOT EXISTS schedules (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL,
+  prompt        TEXT NOT NULL,
+  -- Minutes between runs. Simpler than cron and enough for "every morning".
+  every_minutes INTEGER NOT NULL DEFAULT 1440,
+  -- Optional wall-clock anchor, "HH:MM" local, for daily-ish schedules.
+  at_time       TEXT NOT NULL DEFAULT '',
+  idea_id       INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  as_agent      TEXT NOT NULL DEFAULT '',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  last_run_at   TEXT,
+  next_run_at   TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(enabled, next_run_at);
+
 -- ---------------------------------------------------------------- connections
 
 -- Every endpoint the room can reach: a name, a URL, a key, and what it is for.
@@ -506,6 +621,7 @@ export function openDb(path) {
   addColumn('participants', 'api_key', 'TEXT');
   addColumn('participants', 'base_url', 'TEXT');
   addColumn('participants', 'connection', 'TEXT');
+  addColumn('ideas', 'project_id', 'INTEGER');
 
   // Seats used to carry their own endpoint and key. Anything configured that
   // way is lifted into a connection once, so the two never disagree.

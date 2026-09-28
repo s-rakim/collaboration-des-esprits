@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifacts — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ee; --dim:#98a0b3; --faint:#6b7488;
+    --accent:#7aa2f7; --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --human:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#dde1e8;
+      --text:#12151b; --dim:#5b6373; --faint:#8b93a5;
+      --accent:#2d5bd7; --good:#3f8f3f; --warn:#96660d; --bad:#c3364f; --human:#6f3fc0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  nav{display:flex;gap:6px;margin-left:8px}
+  nav a{color:var(--dim);text-decoration:none;font-size:12.5px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
+  nav a:hover{border-color:var(--line);color:var(--text)}
+  nav a.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+  .spacer{margin-left:auto}
+  button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px 10px}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  input,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%}
+  main{display:grid;grid-template-columns:300px minmax(0,1fr);height:calc(100vh - 53px)}
+  @media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
+  aside{border-right:1px solid var(--line);overflow-y:auto;padding:12px}
+  .doc{overflow-y:auto;padding:0}
+  .item{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:3px}
+  .item:hover{background:var(--panel2)}
+  .item.on{background:var(--panel2);border-color:var(--accent)}
+  .item .t{font-weight:600;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .m{color:var(--faint);font-size:11px;margin-top:2px;font-family:var(--mono)}
+  .docbar{display:flex;gap:9px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;flex-wrap:wrap}
+  .docbar h2{font-size:15px;margin:0;font-weight:650}
+  .body{padding:18px 20px;max-width:900px}
+  .body pre{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:13px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  .body :is(h1,h2,h3){letter-spacing:-.01em;margin:22px 0 9px}
+  .body h1{font-size:22px} .body h2{font-size:17px} .body h3{font-size:15px}
+  .body p,.body li{color:var(--text)}
+  .body code{font-family:var(--mono);font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  .body blockquote{border-left:3px solid var(--line);margin:0;padding-left:13px;color:var(--dim)}
+  .body table{border-collapse:collapse;width:100%}
+  .body th,.body td{border:1px solid var(--line);padding:6px 9px;text-align:left;font-size:13px}
+  iframe{width:100%;height:calc(100vh - 160px);border:0;background:#fff}
+  .chip{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .empty{color:var(--faint);padding:50px 20px;text-align:center}
+  .msg{font-size:13px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  .vers{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+  .ver{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--dim);padding:4px 6px;border-radius:6px;cursor:pointer}
+  .ver:hover{background:var(--panel2)}
+  .ver.on{background:var(--panel2);color:var(--text)}
+  .ver b{font-family:var(--mono);font-size:11px}
+  h3.side{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 7px;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Artifacts <small>what the room has produced</small></h1>
+  <nav>
+    <a href="/">Chat</a>
+    <a href="/artifacts" class="on">Artifacts</a>
+    <a href="/design">Design</a>
+    <a href="/setup">Setup</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="msg" id="msg"></span>
+</header>
+
+<main>
+  <aside>
+    <input id="q" placeholder="filter by title or slug" autocomplete="off">
+    <h3 class="side">Documents</h3>
+    <div id="list"></div>
+    <div id="verBox"></div>
+  </aside>
+  <div class="doc" id="doc">
+    <div class="empty">Pick something on the left.<br><br>Agents write here with <code>save_artifact</code> instead of pasting work into the chat.</div>
+  </div>
+</main>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const state = { all: [], current: null, viewing: null, me: null };
+try { state.me = localStorage.getItem('esprits.me'); } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const ago = (iso) => {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+function say(t, cls = '') { $('#msg').textContent = t; $('#msg').className = `msg ${cls}`; }
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `${res.status} ${res.statusText}`);
+  return d;
+}
+
+/**
+ * A small Markdown renderer. Deliberately small: artifacts come from models, so
+ * everything is escaped first and only a known set of shapes is turned back
+ * into HTML — no raw HTML from a document ever reaches the page.
+ */
+function markdown(src) {
+  const blocks = [];
+  let t = esc(src).replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    blocks.push(`<pre><code data-lang="${esc(lang)}">${code.replace(/\n$/, '')}</code></pre>`);
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
+
+  t = t
+    .replace(/^###### (.*)$/gm, '<h6>$1</h6>').replace(/^##### (.*)$/gm, '<h5>$1</h5>')
+    .replace(/^#### (.*)$/gm, '<h4>$1</h4>').replace(/^### (.*)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>')
+    .replace(/^&gt; (.*)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/^(?:---|\*\*\*)$/gm, '<hr>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    // Links are rendered, but only http(s) and our own /media paths.
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/media\/[\w.-]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/^[-*] (.*)$/gm, '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
+
+  t = t.split(/\n{2,}/).map((p) => (/^\s*<(h\d|ul|pre|blockquote|hr|table)/.test(p) ? p : `<p>${p.replace(/\n/g, '<br>')}</p>`)).join('\n');
+  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[Number(i)]);
+}
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  const shown = state.all.filter((a) => !q || a.title.toLowerCase().includes(q) || a.slug.includes(q));
+  $('#list').innerHTML = shown.length
+    ? shown.map((a) => `<div class="item ${state.current?.slug === a.slug ? 'on' : ''}" data-slug="${esc(a.slug)}">
+         <span class="t">${esc(a.title)}</span>
+         <span class="m">${esc(a.kind)} · v${a.version} · ${esc(a.createdBy)} · ${ago(a.updatedAt)}</span>
+       </div>`).join('')
+    : '<div class="empty" style="padding:20px 0">Nothing yet.</div>';
+}
+
+function renderVersions() {
+  const a = state.current;
+  if (!a?.history?.length) return ($('#verBox').innerHTML = '');
+  $('#verBox').innerHTML = `<h3 class="side">History</h3><div class="vers">` +
+    a.history.map((v) => `<div class="ver ${state.viewing === v.version ? 'on' : ''}" data-v="${v.version}">
+        <b>v${v.version}</b><span>${esc(v.summary || 'saved')}</span>
+        <span style="margin-left:auto;color:var(--faint)">${esc(v.author)}</span>
+      </div>`).join('') + '</div>';
+}
+
+function renderDoc() {
+  const a = state.current;
+  if (!a) return;
+  const stale = state.viewing && state.viewing !== a.version;
+  const body = a.kind === 'html'
+    // Sandboxed: a document written by a model is untrusted, so it renders with
+    // no scripting and no access to this page.
+    ? `<iframe sandbox srcdoc="${esc(a.content)}"></iframe>`
+    : a.kind === 'code' || a.kind === 'text'
+      ? `<div class="body"><pre><code>${esc(a.content)}</code></pre></div>`
+      : `<div class="body">${markdown(a.content)}</div>`;
+
+  $('#doc').innerHTML = `
+    <div class="docbar">
+      <h2>${esc(a.title)}</h2>
+      <span class="chip">${esc(a.kind)}${a.language ? ` · ${esc(a.language)}` : ''}</span>
+      <span class="chip">v${a.version}</span>
+      ${a.idea ? `<span class="chip">${esc(a.idea)}</span>` : ''}
+      ${a.project ? `<span class="chip">${esc(a.project)}</span>` : ''}
+      ${stale ? `<span class="chip" style="color:var(--warn);border-color:var(--warn)">viewing v${state.viewing}</span>` : ''}
+      <span class="spacer"></span>
+      ${stale ? '<button id="latest">Back to latest</button><button id="restore">Restore this version</button>' : ''}
+      <button id="copy">Copy</button>
+      <a download="${esc(a.slug)}.${a.kind === 'html' ? 'html' : a.kind === 'code' ? (a.language || 'txt') : 'md'}"
+         href="data:text/plain;charset=utf-8,${encodeURIComponent(a.content)}"><button>Download</button></a>
+    </div>
+    ${body}`;
+
+  $('#latest')?.addEventListener('click', () => open(a.slug).catch((x) => say(x.message, 'err')));
+  $('#copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(a.content); say('copied', 'ok'); }
+    catch { say('the browser would not allow copying', 'err'); }
+  });
+  $('#restore')?.addEventListener('click', async () => {
+    if (!state.me) return say('open the chat once to set your handle', 'err');
+    try {
+      await api(`/api/artifacts/${encodeURIComponent(a.slug)}/restore`, {
+        method: 'POST', body: JSON.stringify({ version: state.viewing, as: state.me }),
+      });
+      await load(); await open(a.slug);
+      say(`restored v${state.viewing} as the current version`, 'ok');
+    } catch (e) { say(e.message, 'err'); }
+  });
+}
+
+async function open(slug, version) {
+  const a = await api(`/api/artifacts/${encodeURIComponent(slug)}${version ? `?version=${version}` : ''}`);
+  if (version) {
+    // Only the content changes. Overwriting `version` here would make the page
+    // believe the old revision is the current one, which hides both the warning
+    // and the way back to the latest.
+    state.current = { ...state.current, content: a.content };
+    state.viewing = version;
+  } else {
+    state.current = a;
+    state.viewing = a.version;
+  }
+  renderList(); renderVersions(); renderDoc();
+}
+
+async function load() {
+  state.all = (await api('/api/artifacts')).artifacts;
+  renderList();
+}
+
+$('#q').addEventListener('input', renderList);
+$('#list').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-slug]');
+  if (el) open(el.dataset.slug).catch((x) => say(x.message, 'err'));
+});
+$('#verBox').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-v]');
+  if (el && state.current) open(state.current.slug, Number(el.dataset.v)).catch((x) => say(x.message, 'err'));
+});
+
+await load();
+// Deep link: /artifacts#slug opens one directly.
+if (location.hash.slice(1)) await open(decodeURIComponent(location.hash.slice(1))).catch(() => {});
+</script>
+</body>
+</html>

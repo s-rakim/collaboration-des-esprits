@@ -87,7 +87,9 @@ One port (default `4300`) serves everything:
 
 | | |
 |---|---|
-| `http://127.0.0.1:4300/` | the room — chat page, board, proposals, decisions |
+| `http://127.0.0.1:4300/` | the room — chat, board, proposals, decisions, search |
+| `http://127.0.0.1:4300/artifacts` | what the room has produced, with version history |
+| `http://127.0.0.1:4300/design` | everything generated, with the prompts |
 | `http://127.0.0.1:4300/setup` | your models and their keys, Telegram, your handle |
 | `http://127.0.0.1:4300/mcp` | the connector, for agents not on this machine |
 | `http://127.0.0.1:4300/api/*` | plain JSON, if you want to build your own front end |
@@ -196,6 +198,48 @@ Mix providers on purpose. Two models from the same family agree too readily to
 be worth the tokens; a critic on a different provider than the architect
 disagrees far more usefully.
 
+## Artifacts — what the room produces
+
+Work that somebody would want to open again does not belong in a transcript, so
+agents write it with `save_artifact` instead of pasting it into the chat. Each
+artifact is a document, a spec, a file of code or a page, addressed by slug and
+**versioned on every write** — revising is safe because the previous text is
+never lost, and any version can be restored (as a new version, so the history
+stays honest).
+
+The Artifacts page renders Markdown, syntax-preserved code, and HTML in a
+sandboxed frame. That sandbox matters: an artifact is written by a model, so it
+renders with no scripting and no access to the page around it.
+
+## Projects
+
+A container for related ideas with standing context they all inherit — the
+stack, the constraints, who it is for. `brief()` hands an agent the project's
+context alongside the idea's own, so "we never add a cloud dependency" is stated
+once rather than in every thread.
+
+## Files
+
+**＋ File** attaches anything to the thread. Text formats are extracted on the
+way in so agents can read them with `read_file` without each of them fetching
+and parsing the file. Anything not text is kept and linked, and labelled as such
+rather than pretending to be readable.
+
+## Scheduled
+
+Standing work: a message fired into the room on a repeat, addressed to everyone
+so the agents wake and act on it. Either a daily wall-clock time or an interval
+in minutes. **run** fires one immediately, which is how you check it says what
+you meant.
+
+## Customize
+
+Two standing texts on the setup page, prepended to every model's instructions:
+**About you** (what the room should assume without being told again) and
+**Standing instructions** (how you want them to work). They outrank a model's
+own habits, but never a decision the room has already recorded. Both take effect
+on the next turn.
+
 ## Talking to it
 
 Three ways in, all landing in the same room:
@@ -214,8 +258,11 @@ back spelled right instead of mangled.
 
 ## Images and video
 
-**Create** in the composer generates an image or a video from a prompt and posts
-it to the thread. Agents can do it too — they have `generate_image` and
+**Create** — in the composer or on the Design page — generates an image or a
+video from a prompt and posts it to the thread. Everything generated, by you or
+by an agent, is collected on the **Design** page with the prompt that made it,
+because the prompt is the half you iterate on. Pin the good ones; reuse a prompt
+to make a variation. Agents can do it too — they have `generate_image` and
 `generate_video`, for when a mockup or a diagram carries the point better than a
 paragraph.
 
@@ -380,9 +427,11 @@ The room contains every idea, decision and handoff you have, so:
 npm test
 ```
 
-115 tests over the domain rules, turn-taking, connections and seats, the storage
-layer, the Telegram command language, and the model participants (driven through
-a stubbed provider client, so `npm test` needs no API key and spends nothing).
+134 tests over the domain rules, turn-taking, connections and seats, artifacts
+and their versioning, projects, attachments, schedules, the media library, the
+storage layer, the Telegram command language, and the model participants (driven
+through a stubbed provider client, so `npm test` needs no API key and spends
+nothing).
 
 They cover the guards specifically, because the guards are the design: an agent
 cannot answer a question aimed at you or at another agent by name, cannot choose

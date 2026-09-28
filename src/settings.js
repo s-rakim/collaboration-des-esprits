@@ -18,6 +18,14 @@ import { chmodSync } from 'node:fs';
 export const SETTINGS = {
   telegram_enabled: { env: 'ESPRITS_TELEGRAM_ENABLED', default: 'false', label: 'Telegram bridge' },
   human_handle: { env: 'ESPRITS_HUMAN', default: '', label: 'Your handle' },
+  house_style: {
+    env: 'ESPRITS_HOUSE_STYLE', default: '',
+    label: 'Standing instructions for every model',
+  },
+  about_me: {
+    env: 'ESPRITS_ABOUT_ME', default: '',
+    label: 'About you — what the room should assume',
+  },
 };
 
 /** Secrets: write-only from the outside. */

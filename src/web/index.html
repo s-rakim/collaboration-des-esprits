@@ -90,6 +90,11 @@
   .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
   .dot.working{background:var(--good)}.dot.blocked{background:var(--bad)}.dot.idle{background:var(--warn)}.dot.away{background:var(--faint)}
   .empty{color:var(--faint);font-size:13px;padding:8px 0}
+  .hit{padding:7px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;border-left:2px solid var(--accent);margin-bottom:4px;background:var(--panel)}
+  .hit:hover{background:var(--panel2)}
+  .hit b{color:var(--accent);font-weight:600}
+  .hit .w{color:var(--faint);font-size:11px;display:block;margin-top:2px}
+  .proj{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:12px 0 4px;padding-left:2px;font-weight:600}
   .attn{border-left:3px solid var(--warn)}
   dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(520px,92vw)}
   dialog::backdrop{background:rgba(0,0,0,.55)}
@@ -134,6 +139,8 @@
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
+    <a class="headlink" href="/artifacts">Artifacts</a>
+    <a class="headlink" href="/design">Design</a>
     <a class="headlink" href="/setup">Setup</a>
     <button class="primary" id="newIdea">Drop an idea</button>
   </div>
@@ -141,6 +148,9 @@
 
 <main>
   <aside>
+    <input id="search" placeholder="Search everything ever said" autocomplete="off"
+      style="margin-bottom:10px;font-size:12.5px;padding:6px 9px">
+    <div id="results"></div>
     <h2>Ideas</h2>
     <div id="ideaList"></div>
     <h2>Speaking</h2>
@@ -165,6 +175,8 @@
           <option value="question">question</option>
           <option value="status">status</option>
         </select>
+        <button id="attach" title="Attach a file. Text files are readable by the agents.">＋ File</button>
+        <input type="file" id="file" style="display:none" multiple>
         <button class="mic" id="mic" title="Hold to talk, or click to record. Needs a speech-to-text connection.">🎙 Talk</button>
         <button id="live" title="Hands-free: keeps listening and posts each time you stop speaking.">Live</button>
         <button id="gen" title="Generate an image or a video">Create</button>
@@ -276,15 +288,35 @@ const ago = (iso) => {
 function renderIdeas() {
   const o = state.overview; if (!o) return;
   const attn = new Set(o.needsAttention.map((a) => a.idea));
-  $('#ideaList').innerHTML =
-    `<div class="idea ${state.idea === null ? 'on' : ''}" data-idea="">
-       <span class="t">Lobby</span><span class="m">cross-cutting chat</span></div>` +
-    (o.ideas.map((i) => `
+
+  const row = (i) => `
       <div class="idea ${state.idea === i.slug ? 'on' : ''}" data-idea="${esc(i.slug)}">
         <span class="t">${esc(i.title)}</span>
         <span class="m"><span class="badge ${esc(i.stage)}">${esc(i.stage)}</span>
           ${i.openTasks ? ` ${i.openTasks} open` : ''}${attn.has(i.slug) ? ' · needs you' : ''}</span>
-      </div>`).join('') || '<div class="empty">No ideas yet. Drop one.</div>');
+      </div>`;
+
+  // Ideas filed under a project are grouped beneath it; the rest sit loose.
+  const byProject = new Map();
+  const loose = [];
+  for (const i of o.ideas) {
+    if (i.project) {
+      if (!byProject.has(i.project)) byProject.set(i.project, []);
+      byProject.get(i.project).push(i);
+    } else loose.push(i);
+  }
+
+  let html = `<div class="idea ${state.idea === null ? 'on' : ''}" data-idea="">
+       <span class="t">Lobby</span><span class="m">cross-cutting chat</span></div>`;
+  for (const [proj, list] of byProject) {
+    html += `<div class="proj">${esc(proj)}</div>` + list.map(row).join('');
+  }
+  if (loose.length) {
+    if (byProject.size) html += '<div class="proj">Unfiled</div>';
+    html += loose.map(row).join('');
+  }
+  if (!o.ideas.length) html += '<div class="empty">No ideas yet. Drop one.</div>';
+  $('#ideaList').innerHTML = html;
 
   $('#stats').innerHTML = [
     `<span><b>${o.totals.ideas}</b> ideas</span>`,
@@ -330,7 +362,7 @@ function renderFeed() {
   $('#feed').innerHTML = shown.map((m) => {
     const parent = m.replyTo ? byId.get(m.replyTo) : null;
     return `
-    <div class="msg k-${esc(m.kind)} ${m.authorKind === 'human' ? 'human' : ''}">
+    <div class="msg k-${esc(m.kind)} ${m.authorKind === 'human' ? 'human' : ''}" data-id="${m.id}">
       ${parent ? `<div class="rl">↳ replying to <b>${esc(parent.author)}</b>: ${esc(parent.body.replace(/\n+/g, ' ').slice(0, 90))}${parent.body.length > 90 ? '…' : ''}</div>` : ''}
       <div class="h">
         <span class="who">${esc(m.author)}</span>
@@ -588,6 +620,50 @@ $('#ideaSave').addEventListener('click', async () => {
   } catch (e) { toast(e.message); }
 });
 
+// ------------------------------------------------------------------ search
+
+/**
+ * Search the whole history. The room keeps everything, so the useful question
+ * is usually "what did we say about X" rather than "which thread was that in".
+ */
+let searchTimer = null;
+$('#search').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = $('#search').value.trim();
+  if (!q) { $('#results').innerHTML = ''; return; }
+  // Debounced, because this hits full-text search on every keystroke otherwise.
+  searchTimer = setTimeout(async () => {
+    try {
+      const hits = await api(`/api/search?q=${encodeURIComponent(q)}`);
+      $('#results').innerHTML = hits.length
+        ? `<div class="proj">${hits.length} result${hits.length === 1 ? '' : 's'}</div>` +
+          hits.slice(0, 25).map((m) => `
+            <div class="hit" data-jump="${esc(m.idea ?? '')}" data-msg="${m.id}">
+              ${esc(m.body.replace(/\n+/g, ' ').slice(0, 130))}
+              <span class="w"><b>${esc(m.author)}</b>${m.idea ? ` · ${esc(m.idea)}` : ' · lobby'}</span>
+            </div>`).join('')
+        : '<div class="empty">Nothing found.</div>';
+    } catch (e) { toast(e.message); }
+  }, 220);
+});
+
+$('#results').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-jump]');
+  if (!el) return;
+  state.idea = el.dataset.jump || null;
+  $('#search').value = '';
+  $('#results').innerHTML = '';
+  renderIdeas(); renderFeed();
+  await loadBrief().catch(() => {});
+  // Land on the message that was clicked, not just the thread.
+  const target = document.querySelector(`.msg[data-id="${el.dataset.msg}"]`);
+  if (target) {
+    target.scrollIntoView({ block: 'center' });
+    target.style.outline = '2px solid var(--accent)';
+    setTimeout(() => { target.style.outline = ''; }, 1600);
+  }
+});
+
 // ------------------------------------------------------------------- voice
 
 /**
@@ -736,6 +812,37 @@ function toggleLive(on) {
   }
 }
 $('#live').addEventListener('click', () => toggleLive());
+
+// ----------------------------------------------------------- attachments
+
+/**
+ * Files go in as a message with a link, and text ones are extracted server-side
+ * so agents can read them through the brief rather than each fetching the file.
+ */
+$('#attach').addEventListener('click', () => { if (requireMe()) $('#file').click(); });
+$('#file').addEventListener('change', async () => {
+  const files = [...$('#file').files];
+  $('#file').value = '';
+  for (const f of files) {
+    if (f.size > 30 * 1024 * 1024) { toast(`${f.name} is over 30 MB`); continue; }
+    try {
+      say(`uploading ${f.name}…`);
+      const q = new URLSearchParams({ as: state.me, filename: f.name });
+      if (state.idea) q.set('idea', state.idea);
+      const res = await fetch(`/api/attach?${q}`, {
+        method: 'POST',
+        headers: { 'content-type': f.type || 'application/octet-stream' },
+        body: f,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `${res.status} ${res.statusText}`);
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+  say('');
+  await refresh();
+});
 
 // ------------------------------------------------------------- generation
 

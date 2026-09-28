@@ -794,6 +794,63 @@ export function buildServer({ hub, identity = null }) {
       ),
   );
 
+  // -------------------------------------------------------------- artifacts
+
+  tool(
+    'save_artifact',
+    {
+      title: 'Write a document into the room',
+      description:
+        'Put a spec, a document, a file of code or a page into the room as a real artifact rather ' +
+        'than pasting it into the chat where it gets buried. Pass an existing slug to revise one — ' +
+        'every version is kept, so revising is safe. Use this whenever the output is something ' +
+        'somebody would want to open again later.',
+      inputSchema: {
+        as: AS,
+        content: z.string().describe('The whole document, not a patch.'),
+        slug: z.string().optional().describe('Existing artifact to revise. Omit to create.'),
+        title: z.string().optional().describe('Required when creating.'),
+        kind: z.enum(['markdown', 'code', 'html', 'text']).default('markdown'),
+        language: z.string().default('').describe('For code: the language.'),
+        summary: z.string().default('').describe('One line on what changed and why.'),
+        idea: IDEA.optional(),
+      },
+    },
+    async (a) => {
+      const art = hub.saveArtifact({ ...a, idea: a.idea ?? null, by: who(a.as) });
+      return text(`Saved "${art.title}" as artifact \`${art.slug}\` v${art.version}.`);
+    },
+  );
+
+  tool(
+    'read_artifact',
+    {
+      title: 'Read an artifact',
+      description: 'Fetch one in full. brief() lists what exists; this returns the content.',
+      inputSchema: { slug: z.string(), version: z.number().int().optional() },
+    },
+    async (a) => {
+      const art = a.version ? hub.artifactVersion({ ref: a.slug, version: a.version }) : hub.getArtifact(a.slug);
+      return text(`# ${art.title} (v${art.version}, ${art.kind})\n\n${art.content}`);
+    },
+  );
+
+  tool(
+    'list_artifacts',
+    {
+      title: 'What the room has produced',
+      description: 'Every artifact, newest first, without their contents.',
+      inputSchema: { idea: IDEA.optional(), project: z.string().optional() },
+    },
+    async (a) =>
+      text(
+        hub
+          .artifacts(a)
+          .map((x) => `- \`${x.slug}\` **${x.title}** (${x.kind}, v${x.version}, ${x.chars} chars) — ${x.createdBy}`)
+          .join('\n') || 'Nothing produced yet.',
+      ),
+  );
+
   // --------------------------------------------------------------- handoffs
 
   tool(

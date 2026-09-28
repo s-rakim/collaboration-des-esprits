@@ -174,6 +174,52 @@ function toolDefs() {
       },
     },
     {
+      name: 'save_artifact',
+      description:
+        'Write a document, a spec, a file of code or a page into the room as a real artifact, ' +
+        'instead of pasting it into the chat where it gets buried. Pass an existing slug to revise ' +
+        'one — every version is kept, so revising is safe and the previous text is never lost. ' +
+        'Reach for this whenever the output is something somebody would want to open again later.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          slug: { type: 'string', description: 'Existing artifact to revise. Omit to create a new one.' },
+          title: { type: 'string', description: 'Required when creating.' },
+          content: { type: 'string', description: 'The whole document, not a patch.' },
+          kind: { type: 'string', enum: ['markdown', 'code', 'html', 'text'] },
+          language: { type: 'string', description: 'For code: the language, e.g. javascript.' },
+          summary: { type: 'string', description: 'One line on what changed and why.' },
+        },
+        required: ['content'],
+      },
+    },
+    {
+      name: 'read_artifact',
+      description: 'Read an artifact in full. The brief lists what exists; this fetches one.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          slug: { type: 'string' },
+          version: { type: 'integer', description: 'An older version. Omit for the current one.' },
+        },
+        required: ['slug'],
+      },
+    },
+    {
+      name: 'read_file',
+      description:
+        'Read a file somebody attached to this idea. The brief lists what is attached; this returns ' +
+        'the text of one. Only text formats can be read — anything else you get as a link.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { filename: { type: 'string', description: 'As shown in the brief.' } },
+        required: ['filename'],
+      },
+    },
+    {
       name: 'generate_image',
       description:
         'Make an image and post it to the room. Use it when a picture carries the point better than ' +
@@ -243,6 +289,9 @@ export function createModelParticipant({
   // Supplied by the server: { image(prompt), video(prompt) } resolving to a URL.
   // Absent means the room has no such connection, and the tools say so.
   media = null,
+  // The human's standing instructions, read fresh so an edit takes effect on
+  // the next turn rather than needing a restart.
+  custom = () => ({ houseStyle: '', aboutMe: '' }),
 }) {
   const name = seat?.name ?? 'model';
   const role = seat?.role ?? 'generalist';
@@ -290,6 +339,7 @@ export function createModelParticipant({
 
   const systemPrompt = () => {
     const charter = describeRole(hub.roles, role);
+    const { houseStyle, aboutMe } = custom() ?? {};
     return [
       `You are "${name}", the ${role}, in a group chat with a human and several other AI models.`,
       `You are running on ${currentModel()}. The others may be different models from different`,
@@ -315,6 +365,12 @@ export function createModelParticipant({
       `  the room.`,
       `- If somebody already made your point, say_nothing. A room where every agent restates the same`,
       `  observation is worse than a quiet one.`,
+      '',
+      ...(aboutMe?.trim() ? ['', '## Who you are working for', aboutMe.trim()] : []),
+      ...(houseStyle?.trim()
+        ? ['', '## Standing instructions from the human', houseStyle.trim(),
+           'These outrank your own preferences. They do not outrank a decision already recorded.']
+        : []),
       '',
       `Take exactly one action per turn and then stop. End with reply or say_nothing.`,
     ].join('\n');
@@ -420,6 +476,39 @@ export function createModelParticipant({
 
       case 'say_nothing':
         return { text: 'stayed quiet', ends: true };
+
+      case 'save_artifact': {
+        const a = hub.saveArtifact({
+          slug: input.slug || null,
+          title: input.title,
+          content: String(input.content ?? ''),
+          kind: input.kind || 'markdown',
+          language: input.language || '',
+          summary: input.summary || '',
+          idea,
+          by: name,
+        });
+        return { text: `saved artifact "${a.slug}" as v${a.version}`, ends: true };
+      }
+
+      case 'read_artifact': {
+        const a = input.version
+          ? hub.artifactVersion({ ref: input.slug, version: input.version })
+          : hub.getArtifact(input.slug);
+        // Returned as the tool result rather than posted, so reading a document
+        // does not dump it into the chat for everyone.
+        return { text: `# ${a.title} (v${a.version}, ${a.kind})\n\n${a.content}`, ends: false };
+      }
+
+      case 'read_file': {
+        const want = String(input.filename ?? '').toLowerCase();
+        const match = hub.attachments({ idea }).find((f) => f.filename.toLowerCase() === want)
+          ?? hub.attachments({ idea }).find((f) => f.filename.toLowerCase().includes(want));
+        if (!match) return { text: `FAILED: no file named "${input.filename}" is attached here`, ends: false };
+        const full = hub.getAttachment(match.id);
+        if (!full.text) return { text: `FAILED: ${full.filename} is not a text format; it is at ${full.url}`, ends: false };
+        return { text: `# ${full.filename}\n\n${full.text.slice(0, 60_000)}`, ends: false };
+      }
 
       case 'generate_image':
       case 'generate_video': {

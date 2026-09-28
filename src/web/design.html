@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ee; --dim:#98a0b3; --faint:#6b7488;
+    --accent:#7aa2f7; --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --human:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#dde1e8;
+      --text:#12151b; --dim:#5b6373; --faint:#8b93a5;
+      --accent:#2d5bd7; --good:#3f8f3f; --warn:#96660d; --bad:#c3364f; --human:#6f3fc0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  nav{display:flex;gap:6px;margin-left:8px}
+  nav a{color:var(--dim);text-decoration:none;font-size:12.5px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
+  nav a:hover{border-color:var(--line);color:var(--text)}
+  nav a.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+  .spacer{margin-left:auto}
+  button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,textarea,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%}
+  textarea{resize:vertical;min-height:70px;font-family:inherit}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  main{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
+  .make{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:22px}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+  .card .shot{background:var(--panel2);display:block;width:100%;aspect-ratio:1;object-fit:cover;cursor:zoom-in}
+  .card video.shot{cursor:pointer}
+  .card .meta{padding:10px 11px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .card .p{font-size:12.5px;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .card .sub{font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .card .acts{display:flex;gap:5px;margin-top:auto}
+  .card .acts button{font-size:11px;padding:4px 8px;flex:1}
+  .pin{color:var(--warn)}
+  .pin.on{background:var(--warn);border-color:var(--warn);color:#1a1205}
+  .empty{color:var(--faint);padding:40px 0;text-align:center}
+  .card .shot[data-gone]{display:flex;align-items:center;justify-content:center}
+  .note{background:var(--panel2);border-left:3px solid var(--warn);padding:10px 13px;border-radius:0 7px 7px 0;font-size:13px;color:var(--dim);margin:0 0 18px}
+  .note a{color:var(--accent)}
+  .msg{font-size:13px;color:var(--dim)}
+  .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:0;max-width:min(1000px,94vw);max-height:92vh}
+  dialog::backdrop{background:rgba(0,0,0,.72)}
+  dialog .big{display:block;max-width:100%;max-height:70vh;background:#000}
+  dialog .cap{padding:13px 15px;display:flex;flex-direction:column;gap:8px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Design <small>everything the room has made</small></h1>
+  <nav>
+    <a href="/">Chat</a>
+    <a href="/artifacts">Artifacts</a>
+    <a href="/design" class="on">Design</a>
+    <a href="/setup">Setup</a>
+  </nav>
+  <div class="spacer"></div>
+  <select id="filter" style="width:auto">
+    <option value="">everything</option>
+    <option value="image">images</option>
+    <option value="video">video</option>
+    <option value="pinned">pinned</option>
+  </select>
+  <span class="msg" id="msg"></span>
+</header>
+
+<main>
+  <div id="warn"></div>
+
+  <div class="make">
+    <textarea id="prompt" placeholder="Describe something to make. It posts to the chat and lands here."></textarea>
+    <div class="row" style="margin-top:9px">
+      <select id="kind" style="width:auto">
+        <option value="image">Image</option>
+        <option value="video">Video</option>
+      </select>
+      <select id="size" style="width:auto">
+        <option value="">default size</option>
+        <option>1024x1024</option>
+        <option>1536x1024</option>
+        <option>1024x1536</option>
+      </select>
+      <span class="msg" id="who"></span>
+      <button class="primary" id="go" style="margin-left:auto">Create</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="row" style="justify-content:center;margin-top:20px">
+    <button id="more" style="display:none">Load older</button>
+  </div>
+</main>
+
+<dialog id="viewer">
+  <div id="viewerBody"></div>
+</dialog>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const state = { me: null, items: [], filter: '', done: false };
+try { state.me = localStorage.getItem('esprits.me'); } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const ago = (iso) => {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+function say(t, cls = '') { $('#msg').textContent = t; $('#msg').className = `msg ${cls}`; }
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  return data;
+}
+
+const isVideo = (g) => g.kind === 'video';
+
+/** Stand-in for a file that is no longer on disk. */
+window.gone = () => {
+  const d = document.createElement('div');
+  d.className = 'shot';
+  d.style.cssText = 'display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px;text-align:center;padding:12px';
+  d.textContent = 'file missing — the prompt is still here';
+  return d;
+};
+
+function card(g) {
+  const media = isVideo(g)
+    ? `<video class="shot" src="${esc(g.url)}" preload="metadata" muted onerror="this.replaceWith(gone())"></video>`
+    : `<img class="shot" src="${esc(g.url)}" alt="${esc(g.prompt.slice(0, 80))}" loading="lazy" onerror="this.replaceWith(gone())">`;
+  return `<div class="card" data-id="${g.id}">
+      ${media}
+      <div class="meta">
+        <div class="p">${esc(g.prompt) || '<em>no prompt</em>'}</div>
+        <div class="sub">${esc(g.model || g.kind)} · ${esc(g.createdBy)} · ${ago(g.createdAt)}${g.idea ? ` · ${esc(g.idea)}` : ''}</div>
+        <div class="acts">
+          <button class="open">Open</button>
+          <button class="reuse" title="Put this prompt back in the box">Reuse</button>
+          <button class="pin ${g.pinned ? 'on' : ''}" title="Pin it">${g.pinned ? '★' : '☆'}</button>
+          <button class="del" title="Remove from the library">✕</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function render() {
+  $('#grid').innerHTML = state.items.length
+    ? state.items.map(card).join('')
+    : `<div class="empty" style="grid-column:1/-1">Nothing made yet. Anything you or an agent generates in the chat shows up here.</div>`;
+  $('#more').style.display = state.items.length && !state.done ? '' : 'none';
+  $('#who').textContent = state.me ? `as ${state.me}` : 'set your handle in the chat first';
+}
+
+async function load(reset = true) {
+  if (reset) { state.items = []; state.done = false; }
+  const q = new URLSearchParams({ limit: '60' });
+  if (state.filter === 'pinned') q.set('pinned', 'true');
+  else if (state.filter) q.set('kind', state.filter);
+  if (!reset && state.items.length) q.set('before', String(state.items.at(-1).id));
+
+  const d = await api(`/api/generations?${q}`);
+  state.items.push(...d.generations);
+  if (d.generations.length < 60) state.done = true;
+
+  $('#warn').innerHTML = (!d.has.image && !d.has.video)
+    ? `<div class="note">No image or video connection is configured yet, so nothing can be made.
+       Add one on the <a href="/setup">setup page</a> — any endpoint with the usual
+       <code>/images/generations</code> shape will do.</div>`
+    : !d.has.video && $('#kind').value === 'video'
+      ? `<div class="note">No video connection is configured — <a href="/setup">add one</a> to use the video option.</div>`
+      : '';
+  render();
+}
+
+$('#filter').addEventListener('change', (e) => { state.filter = e.target.value; load(true).catch((x) => say(x.message, 'err')); });
+$('#more').addEventListener('click', () => load(false).catch((x) => say(x.message, 'err')));
+$('#kind').addEventListener('change', () => load(true));
+
+$('#go').addEventListener('click', async () => {
+  const prompt = $('#prompt').value.trim();
+  if (!prompt) return say('describe it first', 'err');
+  if (!state.me) return say('open the chat once to set your handle', 'err');
+  const kind = $('#kind').value;
+  $('#go').disabled = true;
+  try {
+    say(kind === 'video' ? 'making a video — this takes a while…' : 'making an image…');
+    await api('/api/generate', { method: 'POST', body: JSON.stringify({
+      kind, prompt, size: $('#size').value || undefined, as: state.me,
+    }) });
+    $('#prompt').value = '';
+    await load(true);
+    say('done — it is in the chat too', 'ok');
+  } catch (e) {
+    say(e.message, 'err');
+  } finally {
+    $('#go').disabled = false;
+  }
+});
+
+$('#grid').addEventListener('click', async (e) => {
+  const el = e.target.closest('.card');
+  if (!el) return;
+  const g = state.items.find((x) => x.id === Number(el.dataset.id));
+  if (!g) return;
+
+  try {
+    if (e.target.closest('.reuse')) {
+      $('#prompt').value = g.prompt;
+      $('#kind').value = g.kind;
+      $('#prompt').focus();
+      return say('prompt copied — change it and make another', 'ok');
+    }
+    if (e.target.closest('.pin')) {
+      const r = await api(`/api/generations/${g.id}/pin`, { method: 'POST', body: JSON.stringify({ pinned: !g.pinned }) });
+      g.pinned = r.pinned;
+      render();
+      return;
+    }
+    if (e.target.closest('.del')) {
+      if (!confirm('Remove this from the library? The file itself stays, so anything in the chat still shows it.')) return;
+      await api(`/api/generations/${g.id}`, { method: 'DELETE' });
+      state.items = state.items.filter((x) => x.id !== g.id);
+      return render();
+    }
+    // Anything else on the card opens it.
+    $('#viewerBody').innerHTML = `
+      ${isVideo(g)
+        ? `<video class="big" src="${esc(g.url)}" controls autoplay></video>`
+        : `<img class="big" src="${esc(g.url)}" alt="">`}
+      <div class="cap">
+        <div>${esc(g.prompt)}</div>
+        <div class="chips">
+          <span class="chip">${esc(g.kind)}</span>
+          ${g.model ? `<span class="chip">${esc(g.model)}</span>` : ''}
+          ${g.connection ? `<span class="chip">${esc(g.connection)}</span>` : ''}
+          ${g.idea ? `<span class="chip">${esc(g.idea)}</span>` : ''}
+          <span class="chip">${esc(g.createdBy)}</span>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <a href="${esc(g.url)}" download><button>Download</button></a>
+          <button id="close">Close</button>
+        </div>
+      </div>`;
+    $('#viewer').showModal();
+    $('#close').addEventListener('click', () => $('#viewer').close());
+  } catch (err) {
+    say(err.message, 'err');
+  }
+});
+
+await load(true);
+</script>
+</body>
+</html>

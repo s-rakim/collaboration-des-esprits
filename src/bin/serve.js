@@ -11,6 +11,7 @@ import { createSeats } from '../seats.js';
 import { createConnections, PRESETS, KINDS } from '../connections.js';
 import { chatAdapter } from '../participants/chat.js';
 import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
+import { writeFileSync } from 'node:fs';
 import { createModelParticipant } from '../participants/agent.js';
 import { createRouter } from '../bridges/commands.js';
 import { createTelegram } from '../bridges/telegram.js';
@@ -224,6 +225,124 @@ app.post('/api/ask', (req, res) =>
     }
     return q;
   }),
+);
+
+// ---------------------------------------------------------------- attachments
+
+/**
+ * A file dropped into the chat. Text is extracted on the way in so agents can
+ * read it without each of them fetching and parsing the file; anything we
+ * cannot read is still kept and linked.
+ */
+app.post('/api/attach', express.raw({ type: '*/*', limit: '30mb' }), (req, res) =>
+  send(res, () => {
+    const filename = String(req.query.filename ?? 'file').replace(/[/\\]/g, '_').slice(0, 200);
+    const mime = req.get('content-type') ?? '';
+    if (!req.body?.length) throw new Invalid('no file received');
+
+    const ext = (filename.match(/\.([A-Za-z0-9]{1,8})$/)?.[1] ?? 'bin').toLowerCase();
+    const stored = `${randomUUID()}.${ext}`;
+    writeFileSync(join(MEDIA, stored), req.body);
+
+    // Extract text where we sensibly can. Deliberately limited to formats that
+    // are text underneath — guessing at binary formats produces garbage that is
+    // worse than an honest "not readable".
+    const TEXTUAL = /^(text\/|application\/(json|xml|x-yaml|yaml|javascript|typescript|sql|toml))/;
+    const TEXT_EXT = /^(txt|md|markdown|json|csv|tsv|ya?ml|xml|html?|css|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|c|h|cpp|sh|sql|toml|ini|env|log)$/;
+    let text = '';
+    if (TEXTUAL.test(mime) || TEXT_EXT.test(ext)) {
+      const decoded = req.body.toString('utf8');
+      // A binary file with a text-ish extension decodes to replacement chars;
+      // storing that would poison every brief that includes it.
+      if (!/\uFFFD/.test(decoded.slice(0, 2000))) text = decoded;
+    }
+
+    const url = `/media/${stored}`;
+    const readable = req.body.length < 1024
+      ? `${req.body.length} bytes`
+      : req.body.length < 1024 * 1024
+        ? `${(req.body.length / 1024).toFixed(0)} KB`
+        : `${(req.body.length / 1024 / 1024).toFixed(1)} MB`;
+    const body = `Attached **${filename}** (${readable})` +
+      (text ? '' : ' — not a text format, so the agents get the link only') +
+      `\n\n[${filename}](${url})`;
+
+    const message = hub.post({ idea: req.query.idea || null, body, by: req.query.as, kind: 'message' });
+    const attachment = hub.attach({
+      messageId: message.id, idea: req.query.idea || null,
+      filename, mime, size: req.body.length, url, text, by: req.query.as,
+    });
+    return { attachment: { ...attachment, text: undefined }, message };
+  }),
+);
+
+app.get('/api/attachments', (req, res) =>
+  send(res, () => ({ attachments: hub.attachments({ idea: req.query.idea }) })),
+);
+app.get('/api/attachments/:id', (req, res) => send(res, () => hub.getAttachment(req.params.id)));
+
+// ----------------------------------------------------------------- schedules
+
+app.get('/api/schedules', (_req, res) => send(res, () => ({ schedules: hub.schedules() })));
+app.post('/api/schedules', (req, res) =>
+  send(res, () => (req.body?.id
+    ? hub.updateSchedule(req.body)
+    : hub.createSchedule({ ...req.body, by: req.body?.as }))),
+);
+app.delete('/api/schedules/:id', (req, res) => send(res, () => hub.deleteSchedule({ id: req.params.id })));
+/** Fire one now, which is how you check a schedule does what you meant. */
+app.post('/api/schedules/:id/run', (req, res) => send(res, () => hub.runSchedule({ id: req.params.id })));
+
+// -------------------------------------------------------- the media library
+
+app.get('/api/generations', (req, res) =>
+  send(res, () => ({
+    generations: hub.generations({
+      kind: req.query.kind || undefined,
+      idea: req.query.idea || undefined,
+      pinned: req.query.pinned === 'true' ? true : undefined,
+      before: req.query.before || undefined,
+      limit: Math.min(200, Number(req.query.limit ?? 60)),
+    }),
+    // Which capabilities are actually available, so the page can say so.
+    has: { image: connections.ofKind('image').length > 0, video: connections.ofKind('video').length > 0 },
+  })),
+);
+
+app.post('/api/generations/:id/pin', (req, res) =>
+  send(res, () => hub.pinGeneration({ id: req.params.id, pinned: req.body?.pinned !== false })),
+);
+
+app.delete('/api/generations/:id', (req, res) => send(res, () => hub.deleteGeneration({ id: req.params.id })));
+
+// ------------------------------------------------------------------ artifacts
+
+app.get('/api/artifacts', (req, res) =>
+  send(res, () => ({ artifacts: hub.artifacts({ idea: req.query.idea, project: req.query.project }) })),
+);
+app.get('/api/artifacts/:slug', (req, res) =>
+  send(res, () => (req.query.version
+    ? hub.artifactVersion({ ref: req.params.slug, version: req.query.version })
+    : { ...hub.getArtifact(req.params.slug), history: hub.artifactHistory(req.params.slug) })),
+);
+app.post('/api/artifacts', (req, res) => send(res, () => hub.saveArtifact({ ...req.body, by: req.body?.as })));
+app.post('/api/artifacts/:slug/restore', (req, res) =>
+  send(res, () => hub.restoreArtifact({ ref: req.params.slug, version: req.body?.version, by: req.body?.as })),
+);
+app.delete('/api/artifacts/:slug', (req, res) =>
+  send(res, () => hub.deleteArtifact({ ref: req.params.slug, by: req.query.as })),
+);
+
+// ------------------------------------------------------------------- projects
+
+app.get('/api/projects', (_req, res) => send(res, () => ({ projects: hub.projects() })));
+app.post('/api/projects', (req, res) =>
+  send(res, () => (req.body?.slug
+    ? hub.updateProject({ ref: req.body.slug, ...req.body, by: req.body.as })
+    : hub.createProject({ name: req.body?.name, brief: req.body?.brief ?? '', by: req.body?.as }))),
+);
+app.post('/api/ideas/:ref/project', (req, res) =>
+  send(res, () => hub.fileIdea({ ref: req.params.ref, project: req.body?.project ?? null, by: req.body?.as })),
 );
 
 // ------------------------------------------------------------------ setup page
@@ -448,6 +567,7 @@ app.post('/api/generate', async (req, res) => {
       ? await generateVideo({ conn, prompt, dir: MEDIA })
       : await generateImage({ conn, prompt, size: req.body?.size, dir: MEDIA });
 
+    let generation = null;
     if (req.body?.as) {
       hub.post({
         idea: req.body.idea ?? null,
@@ -455,8 +575,13 @@ app.post('/api/generate', async (req, res) => {
         kind: 'message',
         body: `${prompt}\n\n![${kind}](${url})`,
       });
+      generation = hub.recordGeneration({
+        kind, prompt, url, model: conn.model, connection: conn.name,
+        size: req.body?.size ?? '', idea: req.body.idea ?? null,
+        parent: req.body?.parent ?? null, by: req.body.as,
+      });
     }
-    res.json({ url, kind, model: conn.model });
+    res.json({ url, kind, model: conn.model, generation });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -540,8 +665,10 @@ app.get('/api/events', (req, res) => {
   req.on('close', () => clearInterval(tick));
 });
 
-// /setup is friendlier to type than /setup.html.
+// Tidier than typing the .html.
 app.get('/setup', (_req, res) => res.redirect('/setup.html'));
+app.get('/design', (_req, res) => res.redirect('/design.html'));
+app.get('/artifacts', (_req, res) => res.redirect('/artifacts.html'));
 
 app.use(express.static(join(here, '..', 'web')));
 
@@ -568,6 +695,24 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
  * and after every roster edit, so adding a model in the browser puts it in the
  * chat without a restart.
  */
+/**
+ * Generate and record in one step, so anything an agent makes reaches the
+ * library the same way anything the human makes does.
+ */
+async function makeMedia(kind, prompt, by, idea = null) {
+  const conn = connections.resolve(connections.ofKind(kind)[0]?.name);
+  if (!conn) throw new Error(`no ${kind} connection is configured`);
+  const url = kind === 'video'
+    ? await generateVideo({ conn, prompt, dir: MEDIA })
+    : await generateImage({ conn, prompt, dir: MEDIA });
+  try {
+    hub.recordGeneration({ kind, prompt, url, model: conn.model, connection: conn.name, idea, by });
+  } catch {
+    // Failing to index it must not lose the image itself.
+  }
+  return url;
+}
+
 function syncSeats() {
   const wanted = new Map(seats.enabled().map((s) => [s.name, s]));
 
@@ -588,19 +733,12 @@ function syncSeats() {
       seat,
       resolve: (n) => seats.resolve(n),
       log: (m) => process.stdout.write(`${m}\n`),
+      custom: () => ({ houseStyle: config.get('house_style'), aboutMe: config.get('about_me') }),
       // Resolved per call, so adding an image connection later lights the tool
       // up without restarting the seat.
       media: {
-        image: async (prompt) => {
-          const conn = connections.resolve(connections.ofKind('image')[0]?.name);
-          if (!conn) throw new Error('no image connection is configured');
-          return generateImage({ conn, prompt, dir: MEDIA });
-        },
-        video: async (prompt) => {
-          const conn = connections.resolve(connections.ofKind('video')[0]?.name);
-          if (!conn) throw new Error('no video connection is configured');
-          return generateVideo({ conn, prompt, dir: MEDIA });
-        },
+        image: (prompt) => makeMedia('image', prompt, seat.name),
+        video: (prompt) => makeMedia('video', prompt, seat.name),
       },
     });
     models.set(seat.name, p);
@@ -620,8 +758,42 @@ function syncSeats() {
   }
 }
 
+/**
+ * Fire due schedules. Checked once a minute, which is the granularity the
+ * schedules themselves are expressed in — anything finer would be precision
+ * the feature does not claim.
+ */
+function startScheduler() {
+  const tick = () => {
+    let due = [];
+    try {
+      due = hub.dueSchedules();
+    } catch (err) {
+      return process.stderr.write(`scheduler: ${err.message}\n`);
+    }
+    for (const s of due) {
+      try {
+        hub.runSchedule({ id: s.id });
+        process.stdout.write(`scheduler: fired "${s.name}"\n`);
+      } catch (err) {
+        // One broken schedule must not stop the others, and it must not retry
+        // in a tight loop either — push it to its next slot regardless.
+        process.stderr.write(`scheduler: "${s.name}" failed — ${err.message}\n`);
+        try {
+          hub.updateSchedule({ id: s.id, everyMinutes: s.everyMinutes });
+        } catch { /* it was deleted mid-tick */ }
+      }
+    }
+  };
+  setInterval(tick, 60_000).unref();
+  // One pass at boot, so anything that came due while the server was down runs
+  // rather than silently waiting for the next minute.
+  setTimeout(tick, 2_000).unref();
+}
+
 function startParticipants() {
   syncSeats();
+  startScheduler();
 
   const token = config.secret('telegram_token');
   const pairCode = config.secret('pair_code');
@@ -646,6 +818,7 @@ app.listen(PORT, HOST, () => {
       `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n` +
       `  models     ${seats.enabled().map((s) => `${s.name}=${s.model || '?'}`).join(', ') || 'none — add some at /setup'}\n` +
       `  endpoints  ${connections.all().map((c) => `${c.name}(${c.kind})`).join(', ') || 'none'}\n` +
+      `  schedules  ${hub.schedules().filter((s) => s.enabled).length} active\n` +
       `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n`,
   );
   startParticipants();
