@@ -109,3 +109,26 @@ test('the sign-in page does not leak the token it is checking', async () => {
   const body = await (await fetch(`${base}/unlock`)).text();
   assert.equal(body.includes(TOKEN), false);
 });
+
+test('the connector endpoint takes its token in the URL, and only it', async () => {
+  /*
+   * Most MCP clients give you one box for an address and no way to set a
+   * header. Without this, reaching the room from a hosted client means either
+   * no authentication or no connection, and the first is worse. It is confined
+   * to /mcp because a page or an API call always has something behind it that
+   * can send a header.
+   */
+  const mcp = await fetch(`${base}/mcp?token=${encodeURIComponent(TOKEN)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } }),
+  });
+  assert.notEqual(mcp.status, 401, 'the token in the URL should be accepted at /mcp');
+
+  const wrong = await fetch(`${base}/mcp?token=nope`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(wrong.status, 401);
+
+  // Everything else must still insist on a header or a cookie.
+  assert.equal((await fetch(`${base}/api/overview?token=${encodeURIComponent(TOKEN)}`)).status, 401);
+  assert.equal((await fetch(`${base}/api/roster?token=${encodeURIComponent(TOKEN)}`)).status, 401);
+});

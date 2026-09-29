@@ -118,7 +118,23 @@ function cookieToken(req) {
 function presentedToken(req) {
   const header = req.get('authorization') ?? '';
   if (header.startsWith('Bearer ')) return header.slice(7);
-  return req.get('x-esprits-token') ?? cookieToken(req);
+  const named = req.get('x-esprits-token') ?? cookieToken(req);
+  if (named) return named;
+
+  /*
+   * The connector endpoint also takes the token in the query string.
+   *
+   * Not because that is a good place for a secret — it is not: a URL lands in
+   * logs, in history, in a referrer — but because most MCP clients give you one
+   * box for an address and no way to set a header. Without this, reaching the
+   * room from a hosted client means either no authentication at all or no
+   * connection at all, and the first of those is worse.
+   *
+   * Limited to /mcp on purpose. A page or an API call has a browser or a script
+   * behind it, and both can send a header.
+   */
+  if (req.path === '/mcp') return req.query?.token ?? null;
+  return null;
 }
 
 /** A browser asking for a page, as opposed to a script asking for JSON. */
