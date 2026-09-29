@@ -15,8 +15,12 @@ import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
 import { createWebBridge } from '../web.js';
 import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
+import {
+  TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
+  DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss,
+} from '../theme.js';
 import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { createModelParticipant } from '../participants/agent.js';
 import { BUILTIN_ROLES } from '../roles.js';
 import { createRouter } from '../bridges/commands.js';
@@ -906,6 +910,54 @@ app.post('/api/connections/:name/test', async (req, res) => {
 });
 
 // --------------------------------------------------------------------- media
+
+// -------------------------------------------------------------------- theme
+
+const readTheme = () => {
+  try { return JSON.parse(hub.db.prepare("SELECT v FROM settings WHERE k = 'theme'").get()?.v ?? '{}'); }
+  catch { return {}; }
+};
+
+/**
+ * The stylesheet, with whatever colours this room has been given.
+ *
+ * Served rather than static so the overrides arrive in the same request as the
+ * defaults. Applying them afterwards from script would mean every page flashed
+ * somebody else's colours first, which is worse than not offering the setting.
+ */
+app.get('/theme.css', (_req, res) => {
+  const base = readFileSync(join(here, '..', 'web', 'theme.css'), 'utf8');
+  res.type('css').set('Cache-Control', 'no-cache').send(base + themeCss(readTheme()));
+});
+
+app.get('/api/theme', (_req, res) =>
+  send(res, () => ({
+    saved: readTheme(),
+    applied: resolveTheme(readTheme()),
+    tokens: THEME_TOKENS,
+    fonts: THEME_FONTS,
+    presets: THEME_PRESETS,
+    defaultPreset: DEFAULT_PRESET,
+    defaults: THEME_DEFAULTS,
+  })),
+);
+
+app.post('/api/theme', (req, res) =>
+  send(res, () => {
+    const { theme, rejected } = cleanTheme(req.body ?? {});
+    const empty = !Object.keys(theme.dark).length && !Object.keys(theme.light).length && !Object.keys(theme.fonts).length;
+    if (empty) hub.db.prepare("DELETE FROM settings WHERE k = 'theme'").run();
+    else {
+      hub.db.prepare(
+        `INSERT INTO settings (k, v, updated_at) VALUES ('theme', ?, ?)
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+      ).run(JSON.stringify(theme), new Date().toISOString());
+    }
+    // What was dropped comes back, because silently discarding somebody's input
+    // is how you get a bug report that says "it did not save".
+    return { saved: theme, rejected };
+  }),
+);
 
 app.use('/media', express.static(MEDIA, { maxAge: '1h' }));
 

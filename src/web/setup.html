@@ -52,6 +52,15 @@
   @media (max-width:1000px){.conn,.seat{grid-template-columns:1fr 1fr}.connhead,.seathead{display:none}}
   .seat:last-of-type{border-bottom:0}
   .seat input,.seat select{padding:6px 8px;font-size:13px}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:9px}
+  .swatch{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .swatch input[type=color]{width:34px;height:30px;padding:0;border-radius:7px;border:1px solid var(--line);
+    background:none;cursor:pointer;flex:none}
+  .swatch .meta{flex:1;min-width:0}
+  .swatch .meta b{display:block;font-size:12.5px;font-weight:600}
+  .swatch .meta span{display:block;font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis}
+  .swatch input[type=text]{width:88px;font-family:var(--mono);font-size:11.5px;padding:5px 7px;flex:none}
+  .swatch.changed{border-color:var(--accent)}
   .seat label.on{display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
   .seat label.on input{width:16px;height:16px;padding:0;accent-color:var(--accent);cursor:pointer}
   .seat .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;justify-self:center}
@@ -256,6 +265,29 @@ function render() {
       </div>
 
       <div class="note">Takes effect on each model's next turn — no restart needed.</div>
+    </div>
+
+    <h2 id="colours">Colours</h2>
+    <div class="card">
+      <p class="hint" style="margin:0 0 12px">
+        Every colour in the room, and the fonts. Changes show as you make them and save to the
+        room's own database, so the way it looks follows the room rather than the browser you
+        happened to set it in.
+      </p>
+      <div class="row" style="margin-bottom:12px">
+        <select id="themePreset" style="width:auto"><option value="">start from…</option></select>
+        <select id="themeMode" style="width:auto">
+          <option value="dark">editing the dark theme</option>
+          <option value="light">editing the light theme</option>
+        </select>
+        <button id="themeReset" style="margin-left:auto">Back to the default</button>
+      </div>
+      <div id="themeTokens"></div>
+      <div id="themeFonts" class="row" style="margin-top:14px"></div>
+      <div class="row" style="margin-top:14px">
+        <span class="modelnote" id="themeNote"></span>
+        <button class="primary" id="themeSave" style="margin-left:auto">Save the colours</button>
+      </div>
     </div>
 
     <div class="note warn">
@@ -649,6 +681,170 @@ async function loadScheds() {
   renderScheds();
 }
 
+// ------------------------------------------------------------------ colours
+
+/**
+ * The colour editor.
+ *
+ * Changes show on the page as you make them, because choosing a colour from a
+ * list of hex codes is guesswork — you pick it by looking at it. The preview is
+ * the real page, not a swatch board, so what you are judging is the thing you
+ * will be using.
+ *
+ * Saved values live in the room's database rather than this browser: a room you
+ * open from a laptop and a phone should not be two different-looking rooms.
+ */
+const theme = { meta: null, draft: { dark: {}, light: {}, fonts: {} }, mode: 'dark', dirty: false };
+
+/** What a token is set to right now: the override if there is one, else the default. */
+const tokenValue = (mode, key) => theme.draft[mode][key] ?? theme.meta.defaults[mode][key];
+
+/** Push the draft onto this page, so you are looking at what you are choosing. */
+function previewTheme() {
+  let style = document.getElementById('theme-preview');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'theme-preview';
+    document.head.append(style);
+  }
+  // The editor previews the theme you are editing regardless of what the system
+  // is set to — otherwise picking dark colours in daylight shows you nothing.
+  const vars = Object.entries(theme.draft[theme.mode]).map(([k, v]) => `  --${k}:${v};`);
+  for (const [role, choice] of Object.entries(theme.draft.fonts)) {
+    const stack = theme.meta.fonts[role]?.choices?.[choice]?.stack;
+    if (stack) vars.push(`  --${role}:${stack};`);
+  }
+  style.textContent = vars.length ? `:root{\n${vars.join('\n')}\n}` : '';
+}
+
+function renderTheme() {
+  if (!theme.meta) return;
+  const mode = theme.mode;
+
+  $('#themeTokens').innerHTML = `<div class="swatches">${theme.meta.tokens.map((t) => {
+    const value = tokenValue(mode, t.key);
+    const changed = theme.draft[mode][t.key] !== undefined;
+    return `<label class="swatch ${changed ? 'changed' : ''}" data-token="${esc(t.key)}" title="${esc(t.hint)}">
+        <input type="color" value="${esc(/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000')}">
+        <span class="meta"><b>${esc(t.label)}</b><span>${esc(t.hint)}</span></span>
+        <input type="text" value="${esc(value)}" spellcheck="false">
+      </label>`;
+  }).join('')}</div>`;
+
+  $('#themeFonts').innerHTML = Object.entries(theme.meta.fonts).map(([role, def]) => `
+    <label style="font-size:12.5px;color:var(--dim);display:flex;gap:7px;align-items:center;margin:0">
+      ${esc(def.label)}
+      <select data-font="${esc(role)}" style="width:auto">
+        ${Object.entries(def.choices).map(([id, c]) =>
+          `<option value="${esc(id)}" ${((theme.draft.fonts[role] ?? 'system') === id) ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
+      </select>
+    </label>`).join('');
+
+  $('#themePreset').innerHTML = '<option value="">start from…</option>' +
+    Object.entries(theme.meta.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('');
+
+  // "24 changes, not saved yet" after you have just saved them is a lie that
+  // makes somebody press save again to be sure. The two facts are separate.
+  const changed = Object.keys(theme.draft.dark).length + Object.keys(theme.draft.light).length
+    + Object.keys(theme.draft.fonts).length;
+  const from = changed ? `${changed} change${changed === 1 ? '' : 's'} from the default` : 'the default';
+  $('#themeNote').textContent = theme.dirty ? `${from} — not saved yet` : from;
+  previewTheme();
+}
+
+async function loadTheme() {
+  theme.meta = await api('/api/theme');
+  theme.draft = {
+    dark: { ...(theme.meta.saved.dark ?? {}) },
+    light: { ...(theme.meta.saved.light ?? {}) },
+    fonts: { ...(theme.meta.saved.fonts ?? {}) },
+  };
+  theme.dirty = false;
+  renderTheme();
+}
+
+// Everything in the section is wired by delegation, because the rows are redrawn
+// whenever the mode changes and listeners bound to the old ones would be gone.
+$('#body').addEventListener('input', (e) => {
+  const swatch = e.target.closest('.swatch');
+  if (!swatch || !theme.meta) return;
+  const key = swatch.dataset.token;
+  const value = e.target.value.trim();
+
+  // A colour picker and a text box editing the same value: whichever you touch,
+  // the other follows, so typing a name and picking a shade both work.
+  if (e.target.type === 'color') swatch.querySelector('input[type=text]').value = value;
+  else if (/^#[0-9a-f]{6}$/i.test(value)) swatch.querySelector('input[type=color]').value = value;
+
+  if (value.toLowerCase() === theme.meta.defaults[theme.mode][key]) delete theme.draft[theme.mode][key];
+  else theme.draft[theme.mode][key] = value;
+
+  swatch.classList.toggle('changed', theme.draft[theme.mode][key] !== undefined);
+  theme.dirty = true;
+  previewTheme();
+  // The rows are not redrawn on every keystroke — that would take the focus out
+  // of the box you are typing in — so only the line that reports state is.
+  const changed = Object.keys(theme.draft.dark).length + Object.keys(theme.draft.light).length
+    + Object.keys(theme.draft.fonts).length;
+  $('#themeNote').textContent = `${changed} change${changed === 1 ? '' : 's'} from the default — not saved yet`;
+});
+
+$('#body').addEventListener('change', (e) => {
+  if (!theme.meta) return;
+
+  const font = e.target.closest('[data-font]');
+  if (font) {
+    if (font.value === 'system') delete theme.draft.fonts[font.dataset.font];
+    else theme.draft.fonts[font.dataset.font] = font.value;
+    theme.dirty = true;
+    previewTheme();
+    renderTheme();
+    return;
+  }
+
+  if (e.target.id === 'themeMode') { theme.mode = e.target.value; renderTheme(); return; }
+
+  if (e.target.id === 'themePreset' && e.target.value) {
+    const preset = theme.meta.presets[e.target.value];
+    e.target.value = '';
+    if (!preset) return;
+    // A preset fills the draft rather than saving: you can still change any of
+    // it, and nothing is written until you say so.
+    for (const mode of ['dark', 'light']) {
+      theme.draft[mode] = {};
+      for (const [key, value] of Object.entries(preset[mode])) {
+        if (value.toLowerCase() !== theme.meta.defaults[mode][key]) theme.draft[mode][key] = value;
+      }
+    }
+    theme.dirty = true;
+    renderTheme();
+    say(`${preset.label} — press save to keep it`, '');
+  }
+});
+
+$('#body').addEventListener('click', async (e) => {
+  if (e.target.id === 'themeReset') {
+    theme.draft = { dark: {}, light: {}, fonts: {} };
+    theme.dirty = true;
+    renderTheme();
+    say('back to the default — press save to keep it', '');
+    return;
+  }
+  if (e.target.id !== 'themeSave') return;
+  try {
+    say('saving…');
+    const out = await api('/api/theme', { method: 'POST', body: JSON.stringify(theme.draft) });
+    // The stylesheet is served with the colours in it, so a fresh copy is what
+    // makes the change real for every other page and every other browser.
+    document.getElementById('theme-preview')?.remove();
+    for (const link of document.querySelectorAll('link[href^="/theme.css"]')) {
+      link.href = `/theme.css?v=${Date.now()}`;
+    }
+    await loadTheme();
+    say(out.rejected?.length ? `saved, but ignored: ${out.rejected.join('; ')}` : 'saved — every page uses it now', 'ok');
+  } catch (err) { say(err.message, 'err'); }
+});
+
 async function loadAll() {
   roster = await api('/api/seats');
   if (roster.roles?.length) ROLES = roster.roles;
@@ -663,6 +859,7 @@ async function load() {
   state.settings = state.settings ?? {};
   render();
   await loadAll();
+  await loadTheme();
 }
 
 $('#save').addEventListener('click', async () => {
@@ -672,8 +869,10 @@ $('#save').addEventListener('click', async () => {
     state = await api('/api/settings', { method: 'POST', body: JSON.stringify(edited) });
     edited.settings = {}; edited.secrets = {};
     render();
-    // render() rebuilds the whole panel, including both roster containers.
+    // render() rebuilds the whole panel, including both roster containers and
+    // the colour rows.
     await loadAll();
+    renderTheme();
     say('saved', 'ok');
   } catch (e) {
     say(e.message, 'err');

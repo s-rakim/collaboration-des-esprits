@@ -442,10 +442,29 @@ of the things every page shares. The pages hold only what is theirs. It used to
 be seven copies of the same colours, which meant changing one meant changing
 seven and finding out later which one you missed.
 
-The palette is warm rather than blue: a room you leave open all day is a room
-you are staring into, and a warm near-black is easier to sit in front of than a
-cold one. The clay accent is the only saturated colour on the page, so the thing
-wearing it is always the thing to press. Both themes follow the system setting.
+The palette shipped is warm rather than blue: a room you leave open all day is a
+room you are staring into, and a warm near-black is easier to sit in front of
+than a cold one. The clay accent is the only saturated colour on the page, so the
+thing wearing it is always the thing to press. Both themes follow the system
+setting.
+
+**All of it is editable.** Setup → *Colours* has every token — page, rail,
+controls, borders, the three weights of text, the accent, and the four status
+colours — for the dark and light themes separately, plus the three font roles.
+Four palettes ship to start from (clay, midnight, forest, paper); any of them can
+then be changed a colour at a time.
+
+Changes show on the page as you make them, because you pick a colour by looking
+at it rather than by reading a hex code. Nothing is written until you press save,
+and what is saved goes in the room's own database rather than in a browser — a
+room you open from a laptop and a phone should not be two different-looking
+rooms. `/theme.css` is then served with your colours already in it, so no page
+flashes somebody else's first.
+
+Values are validated rather than trusted: they end up inside a stylesheet every
+page loads, so a "colour" of `red; } html { display:none` would be a room
+somebody could break for everyone with one save. Anything that is not plainly a
+colour is refused and the save says which ones it dropped.
 
 Titles are set in a serif, the rest in a sans, and neither is fetched — the room
 runs on a machine that may have no internet, which is rather the point of it, so
@@ -751,7 +770,7 @@ first run were all invisible to a unit test — Enter doing nothing in a dialog,
 error painted behind the modal that raised it, a seat that displayed a
 connection it did not have.
 
-213 tests over the domain rules, turn-taking, connections and seats, artifacts
+224 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
 Telegram command language, the page routes, and the model participants (driven
