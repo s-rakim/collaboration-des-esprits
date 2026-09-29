@@ -74,8 +74,10 @@ function watch(page, where) {
   page.on('pageerror', (e) => note(where, `threw: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') note(where, `console error: ${m.text()}`); });
   page.on('requestfailed', (r) => {
-    // A live stream is cut off by navigation; that is the browser, not a fault.
-    if (r.url().endsWith('/api/events') && r.failure()?.errorText === 'net::ERR_ABORTED') return;
+    // A live stream is cut off by navigation or reload; that is the browser
+    // doing its job, not the page failing. The chat page appends ?since=, so
+    // the path is what is matched rather than the whole URL.
+    if (new URL(r.url()).pathname === '/api/events' && r.failure()?.errorText === 'net::ERR_ABORTED') return;
     note(where, `request failed: ${r.url()} ${r.failure()?.errorText}`);
   });
 }
@@ -246,6 +248,68 @@ try {
     const tops = await page.$$eval('#shell-rail a.item', (a) => a.map((x) => Math.round(x.getBoundingClientRect().top)));
     if (tops.length < 6) note(path, `only ${tops.length} links in the rail`);
     if (new Set(tops).size !== tops.length) note(path, 'rail links share a row — they should stack');
+    await page.close();
+  }
+
+  // ------------------------------------- somewhere to type on the work side
+
+  for (const path of ['/dashboard', '/work']) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.addInitScript(() => { try { localStorage.setItem('esprits.me', 'rakim'); } catch {} });
+    watch(page, `${path} composer`);
+    await page.goto(BASE + path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(700);
+
+    // Work used to be all views and no way in: every page showed something
+    // already running, and starting one meant finding a button behind a dialog.
+    if (!(await page.$('.jobbox textarea'))) note(path, 'no composer — there is nowhere to type');
+    const models = await page.$$eval('.jobbox select option', (o) => o.map((x) => x.value).filter(Boolean));
+    if (!models.length) note(path, 'the composer offers no model to run with');
+    if (await page.isDisabled('.jobbox button.go')) {
+      note(path, `the run button is disabled: ${(await page.textContent('.jobbox .note')).trim()}`);
+    }
+
+    // On the page that owns the composer, "New task" belongs in the composer —
+    // covering it with a dialog that asks the same question is a step for
+    // nothing.
+    if (path === '/work') {
+      await page.click('#shell-rail [data-action]');
+      await page.waitForTimeout(300);
+      const focused = await page.evaluate(() => document.activeElement?.id);
+      if (focused !== 'jobGoal') note(path, `New task left the focus on ${focused || 'nothing'}`);
+    }
+    await page.close();
+  }
+
+  // ------------------------------------------------- the side panel folds away
+
+  for (const [path, panel, name] of [['/', '#ctx', 'context'], ['/work', '#rail', 'run detail']]) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    watch(page, `${path} panel`);
+    await page.goto(BASE + path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+
+    const toggle = `${panel} .panel-toggle`;
+    if (!(await page.$(toggle))) { note(path, `the ${name} panel cannot be put away`); await page.close(); continue; }
+
+    const wide = (await (await page.$(panel)).boundingBox()).width;
+    await page.click(toggle);
+    await page.waitForTimeout(400);
+    const narrow = (await (await page.$(panel)).boundingBox()).width;
+    if (narrow >= wide) note(path, `folding the ${name} panel changed nothing`);
+    // A panel with no way back is one people close once and never find again.
+    if (!(await page.isVisible(toggle))) note(path, `the way back went with the ${name} panel`);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(400);
+    if (Math.abs((await (await page.$(panel)).boundingBox()).width - narrow) > 2) {
+      note(path, `it forgot the ${name} panel was folded`);
+    }
+    await page.click(toggle);
+    await page.waitForTimeout(400);
+    if (Math.abs((await (await page.$(panel)).boundingBox()).width - wide) > 2) {
+      note(path, `the ${name} panel did not come back`);
+    }
     await page.close();
   }
 

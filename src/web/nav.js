@@ -38,6 +38,8 @@ const ICON = {
   prefect: '<path d="M10 2.5l6 2.5v5c0 4-2.6 6.6-6 7.5-3.4-.9-6-3.5-6-7.5v-5z"/><path d="M7.5 10l2 2 3.5-4"/>',
   idea: '<path d="M7.5 15h5M8 17.5h4"/><path d="M10 2.5a5 5 0 0 1 3 9v1.5H7V11.5a5 5 0 0 1 3-9z"/>',
   collapse: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M8 3.5v13"/>',
+  panelClose: '<path d="M12.5 5.5L8 10l4.5 4.5"/>',
+  panelOpen: '<path d="M7.5 5.5L12 10l-4.5 4.5"/>',
 };
 
 const icon = (name) =>
@@ -168,6 +170,14 @@ body.rail-folded #shell-rail .who{justify-content:center;padding:7px 0}
 /* A phone has no room for a permanent rail, so it slides over instead. */
 /* The menu button lives outside the rail, so it needs its own sizing — and a
    tap target a thumb can actually hit. */
+/* The button that puts a side panel away, pinned to its inner edge. */
+.panel-toggle{position:absolute;top:10px;left:6px;z-index:3;display:flex;align-items:center;justify-content:center;
+  width:26px;height:26px;padding:0;border:1px solid transparent;border-radius:7px;cursor:pointer;
+  background:none;color:var(--faint,#6b7488)}
+.panel-toggle:hover{background:var(--panel2,#1e222b);border-color:var(--line,#2a2f3a);color:var(--text,#e6e8ee)}
+.panel-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+
 /* A message shown inside a modal, where a page toast cannot reach. */
 dialog .shell-msg{margin:0;flex:1;min-width:0;font-size:12.5px;color:var(--bad,#f7768e);text-align:left}
 dialog .shell-msg[data-kind="ok"]{color:var(--good,#9ece6a)}
@@ -437,6 +447,57 @@ window.addEventListener('keydown', (e) => {
   e.preventDefault();
   go.click();
 });
+
+/**
+ * A side panel you can put away.
+ *
+ * The right-hand column is context — what needs you, what a run is doing — and
+ * context is exactly the thing you want out of the way while you are reading or
+ * typing, and back when you are not. Closed it becomes a strip holding its own
+ * reopen button, rather than vanishing: a panel with no way back is a panel
+ * people close once and never find again.
+ *
+ * The page owns the grid, because only the page knows what its columns are; the
+ * class on <body> is the contract between them.
+ */
+export function collapsiblePanel({ el, name, title = 'panel' }) {
+  const panel = typeof el === 'string' ? document.querySelector(el) : el;
+  if (!panel || panel.querySelector('.panel-toggle')) return;
+
+  const key = `esprits.panel.${name}`;
+  const cls = `panel-${name}-closed`;
+
+  let closed = false;
+  try { closed = localStorage.getItem(key) === 'closed'; } catch { /* private window */ }
+  document.body.classList.toggle(cls, closed);
+
+  const button = document.createElement('button');
+  button.className = 'panel-toggle';
+  button.type = 'button';
+  panel.prepend(button);
+
+  // A page that redraws its panel with innerHTML throws this away with the rest
+  // of it, and the panel loses the only way to open it again. Rather than
+  // requiring every page to render into an inner element and remember why, the
+  // button puts itself back.
+  new MutationObserver(() => {
+    if (!button.isConnected) panel.prepend(button);
+  }).observe(panel, { childList: true });
+
+  const draw = () => {
+    const shut = document.body.classList.contains(cls);
+    button.setAttribute('aria-expanded', String(!shut));
+    button.title = shut ? `Show the ${title}` : `Hide the ${title}`;
+    button.innerHTML = icon(shut ? 'panelOpen' : 'panelClose');
+  };
+
+  button.addEventListener('click', () => {
+    const shut = document.body.classList.toggle(cls);
+    try { localStorage.setItem(key, shut ? 'closed' : 'open'); } catch { /* ignore */ }
+    draw();
+  });
+  draw();
+}
 
 /** Show which thread is open, when the page changes it without navigating. */
 export function markIdea(slug) {

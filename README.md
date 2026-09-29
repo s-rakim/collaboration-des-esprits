@@ -435,6 +435,23 @@ that returns `{"id": ...}` and exposes `/videos/{id}` works by describing it:
 { "statusPath": "/videos/{id}", "idField": "id", "urlField": "url" }
 ```
 
+## How it looks
+
+One stylesheet, `src/web/theme.css`, holds the palette, the fonts and the shape
+of the things every page shares. The pages hold only what is theirs. It used to
+be seven copies of the same colours, which meant changing one meant changing
+seven and finding out later which one you missed.
+
+The palette is warm rather than blue: a room you leave open all day is a room
+you are staring into, and a warm near-black is easier to sit in front of than a
+cold one. The clay accent is the only saturated colour on the page, so the thing
+wearing it is always the thing to press. Both themes follow the system setting.
+
+Titles are set in a serif, the rest in a sans, and neither is fetched — the room
+runs on a machine that may have no internet, which is rather the point of it, so
+a web font would be a blank page waiting on a request that never returns. Both
+are whichever good one the system already has.
+
 ## The rail
 
 Everything the room can do runs down the left-hand side, in one column you read
@@ -449,6 +466,11 @@ dashboard, the task board and the swarm, the plugins and skills. Keeping both
 sets visible at once made the list long and the distinction invisible, which is
 what the toggle is for. Under it sits the one thing that *does* something rather
 than going somewhere — New idea, or New task — on `Ctrl`/`Cmd` `K`.
+
+The right-hand column folds away with the button on its inner edge, and stays
+folded until you say otherwise. Closed it becomes a strip holding its own way
+back, because a panel with no way back is one people close once and never find
+again.
 
 Below the links are the threads, filed the way the room files them: the lobby,
 then each project with its ideas under it, then anything unfiled. A dot means
@@ -529,6 +551,16 @@ If your network only allows named hosts, that is what it will tell you. A URL th
 refused before a socket is opened — and *that refusal is logged too*, since a
 model filling a template to point at the machine's own network is the single
 call most worth having a record of.
+
+## The composer
+
+Both halves have one, because a half of an app you cannot type in is a half you
+only ever read. In the chat it posts a message; on Work it hands a job to the
+swarm, and the run opens where you are rather than sending you looking for it.
+Both are the same shape: centred and capped, because a line of text three feet
+wide is one nobody can read the start and end of at once, and with the controls
+inside the box rather than in a bar under it — the thing you are writing is the
+point, not the row of buttons beneath it.
 
 ## The dashboard
 
