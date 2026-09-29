@@ -332,3 +332,26 @@ test('unknown references fail loudly rather than silently doing nothing', () => 
   assert.throws(() => h.getTask(9999), NotFound);
   assert.throws(() => h.weighIn({ proposal: 9999, stance: 'endorse', by: 'bob' }), NotFound);
 });
+
+test('a handle typed with its @ is stored without it', () => {
+  const hub = new Hub({ dbPath: ':memory:' });
+  // Writing your own handle as "@name" is the natural thing to do, and storing
+  // it that way makes every mention of you read "@@name" and match nobody.
+  const joined = hub.join({ name: '@holysukuna', role: 'human', kind: 'human' });
+  assert.equal(joined.agent.name, 'holysukuna');
+  // And it is the same person as the one who types it without.
+  assert.equal(hub.join({ name: 'holysukuna', role: 'human', kind: 'human' }).rejoined, true);
+  assert.equal(hub.roster().filter((a) => a.name === 'holysukuna').length, 1);
+});
+
+test('a name nobody could @mention is refused', () => {
+  const hub = new Hub({ dbPath: ':memory:' });
+  // The feed links mentions with /@([a-zA-Z0-9][\w.-]*)/, so a name outside
+  // that can be joined but never addressed — which in this room is useless.
+  for (const bad of ['holy sukuna', '!nope', '-lead', '.dot', '@@', '   ']) {
+    assert.throws(() => hub.join({ name: bad }), /name/, `${JSON.stringify(bad)} should be refused`);
+  }
+  for (const good of ['rakim', 'holy.sukuna', 'agent-7', 'k3_swarm', '9lives']) {
+    assert.equal(hub.join({ name: good }).agent.name, good);
+  }
+});

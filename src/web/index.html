@@ -560,6 +560,26 @@ async function refresh() {
   catch (e) { toast(e.message); }
 }
 
+/**
+ * Do something as yourself, rejoining once if the room has forgotten you.
+ *
+ * The room can be rebuilt under a running page — that is exactly what happens
+ * when you wipe the database and reload — so "call join first" is a thing to
+ * repair rather than a thing to report.
+ */
+async function asMe(run) {
+  try {
+    return await run();
+  } catch (err) {
+    if (!/call join first/i.test(err.message) || !state.me) throw err;
+    const joined = await api('/api/join', { method: 'POST', body: JSON.stringify({ name: state.me, role: 'human', kind: 'human' }) });
+    state.me = joined.agent?.name ?? state.me;
+    try { localStorage.setItem('esprits.me', state.me); } catch {}
+    $('#meLabel').textContent = state.me;
+    return run();
+  }
+}
+
 // ---------------------------------------------------------------- interaction
 
 // The rail says which thread you picked; opening one is still a switch of
@@ -611,7 +631,43 @@ $('#ctx').addEventListener('change', async (e) => {
 
 function requireMe() {
   if (state.me) return true;
-  $('#dlgMe').showModal(); return false;
+  openDialog('#dlgMe'); return false;
+}
+
+/**
+ * A handle remembered in this browser has to still exist in this room.
+ *
+ * localStorage belongs to the address, not to the database behind it, so it
+ * outlives the room. Point the browser at a rebuilt room — or a different one
+ * on the same port — and it goes on insisting you are somebody the room has
+ * never heard of: the header says your name, the roster says nobody has joined,
+ * and every message comes back "call join first" with no way to correct it,
+ * because a page that thinks you are identified never asks again.
+ *
+ * Rejoining is the obvious repair. You are a person returning to your own room;
+ * there is nothing to decide.
+ */
+async function ensureJoined() {
+  if (!state.me) return;
+  const known = (state.overview?.roster ?? []).some((a) => a.name === state.me);
+  if (known) return;
+  try {
+    // The room decides what your name actually is — it strips a leading @, for
+    // one — so the answer is the authority, not what was asked for. Keeping the
+    // asked-for spelling is how you end up posting as somebody who is not there.
+    const joined = await api('/api/join', { method: 'POST', body: JSON.stringify({ name: state.me, role: 'human', kind: 'human' }) });
+    state.me = joined.agent?.name ?? state.me;
+    try { localStorage.setItem('esprits.me', state.me); } catch {}
+    await loadOverview();
+  } catch (err) {
+    // The stored handle is not one this room will take. Forget it and ask,
+    // rather than leaving the page insisting on a name that cannot work.
+    state.me = null;
+    try { localStorage.removeItem('esprits.me'); } catch {}
+    $('#meLabel').textContent = 'not identified';
+    toast(`that handle no longer works here (${err.message}) — pick one`);
+    openDialog('#dlgMe');
+  }
 }
 
 function setTarget(agent, messageId) {
@@ -642,14 +698,16 @@ async function send() {
     if (state.target) {
       // A tagged question is recorded as addressed to that agent by name, so
       // only it can answer — and it threads under the message it is about.
-      const r = await api('/api/ask', { method: 'POST', body: JSON.stringify({
+      const r = await asMe(() => api('/api/ask', { method: 'POST', body: JSON.stringify({
         idea: state.idea, body, as: state.me,
         audience: state.target.agent, replyTo: state.target.messageId, blocking: false,
-      }) });
+      }) }));
       if (r.nudged) toast(`asked ${r.nudged} — answering now`);
       setTarget(null);
     } else {
-      await api('/api/post', { method: 'POST', body: JSON.stringify({ idea: state.idea, body, as: state.me, kind: $('#kind').value }) });
+      await asMe(() => api('/api/post', { method: 'POST', body: JSON.stringify({
+        idea: state.idea, body, as: state.me, kind: $('#kind').value,
+      }) }));
     }
     $('#body').value = '';
     await refresh();
@@ -685,12 +743,15 @@ function openDialog(selector) {
 $('#setMe').addEventListener('click', () => { $('#meName').value = state.me ?? ''; openDialog('#dlgMe'); });
 $('#meCancel').addEventListener('click', () => $('#dlgMe').close());
 $('#meSave').addEventListener('click', async () => {
-  const name = $('#meName').value.trim();
+  // A leading @ is how you would write your own handle, so accept it and take
+  // it off — the server does the same, and the two must agree or the name
+  // stored here will not be the name the room knows.
+  const name = $('#meName').value.trim().replace(/^@+/, '');
   if (!name || /\s/.test(name)) return toast('one word, no spaces — agents @mention you by it');
   try {
-    await api('/api/join', { method: 'POST', body: JSON.stringify({ name, role: 'human', kind: 'human' }) });
-    state.me = name;
-    try { localStorage.setItem('esprits.me', name); } catch {}
+    const joined = await api('/api/join', { method: 'POST', body: JSON.stringify({ name, role: 'human', kind: 'human' }) });
+    state.me = joined.agent?.name ?? name;
+    try { localStorage.setItem('esprits.me', state.me); } catch {}
     $('#meLabel').textContent = name;
     $('#dlgMe').close();
     await refresh();
@@ -1370,6 +1431,8 @@ function listen() {
 
 if (state.me) $('#meLabel').textContent = state.me;
 await refresh();
+await ensureJoined();
+if (state.me) $('#meLabel').textContent = state.me;
 await loadVoices();
 listen();
 

@@ -87,8 +87,17 @@ export class Hub {
    */
   join({ name, role = 'generalist', kind = 'agent', model = '', capabilities = [] }) {
     if (!name || !String(name).trim()) throw new Invalid('name is required');
-    name = String(name).trim();
+    // Typing your own handle with the @ on it is the natural thing to do, and
+    // storing it that way makes every mention of you read "@@name" and match
+    // nothing. Take it off rather than refusing a reasonable thing to type.
+    name = String(name).trim().replace(/^@+/, '');
+    if (!name) throw new Invalid('name is required');
     if (/\s/.test(name)) throw new Invalid('name cannot contain spaces (it is used for @mentions)');
+    // A name nobody can @mention is a name that cannot be addressed, which
+    // defeats the point of having one in a room that works by addressing people.
+    if (!/^[A-Za-z0-9][\w.-]*$/.test(name)) {
+      throw new Invalid('a name has to start with a letter or number, and hold only letters, numbers, dots, dashes or underscores');
+    }
 
     const existing = this.db.prepare('SELECT * FROM agents WHERE name = ?').get(name);
     const ts = now();

@@ -149,6 +149,13 @@ so itself rather than leaving you to guess:
 If the room is silent after all that, the note under the seats on the setup page
 says how many models are in the chat and what is keeping the rest out.
 
+One more, which only bites after you rebuild the room: your browser remembers
+your handle against the *address*, not against the database behind it. Point it
+at a room whose database has been replaced and it goes on insisting you are
+somebody that room has never heard of. The page now checks on load and rejoins
+you, so this should not reach you — but if you ever see `call join first`, that
+is what it was.
+
 ## Setup
 
 Requires **Node 22.5 or newer** — that is where SQLite became part of Node
@@ -712,7 +719,7 @@ first run were all invisible to a unit test — Enter doing nothing in a dialog,
 error painted behind the modal that raised it, a seat that displayed a
 connection it did not have.
 
-211 tests over the domain rules, turn-taking, connections and seats, artifacts
+213 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
 Telegram command language, the page routes, and the model participants (driven

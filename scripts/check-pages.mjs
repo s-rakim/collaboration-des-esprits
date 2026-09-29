@@ -136,6 +136,32 @@ try {
     await page.close();
   }
 
+  // ------------------------------- a handle this browser remembers but the room does not
+
+  {
+    // localStorage belongs to the address, not to the database behind it, so a
+    // rebuilt room meets a browser still insisting on the old handle. The page
+    // used to believe it and every message failed with "call join first", with
+    // no way back because a page that thinks you are identified never asks.
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => { try { localStorage.setItem('esprits.me', '@ghost-of-a-dead-room'); } catch {} });
+    const page = await ctx.newPage();
+    watch(page, 'stale handle');
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const known = await page.evaluate(async () => (await (await fetch('/api/roster')).json()).map((a) => a.name));
+    if (!known.includes('ghost-of-a-dead-room')) note('stale handle', 'the page did not rejoin a room that had forgotten it');
+    if (known.some((n) => n.startsWith('@'))) note('stale handle', 'the @ somebody typed was stored as part of the name');
+
+    await page.fill('#body', 'anybody there');
+    await page.click('#send');
+    await page.waitForTimeout(1200);
+    const feed = await page.evaluate(async () => (await (await fetch('/api/feed?since=0')).json()).messages.map((m) => m.body));
+    if (!feed.includes('anybody there')) note('stale handle', 'sending still failed after the page repaired itself');
+    await ctx.close();
+  }
+
   // ------------------------------------------------- a key, a seat, and a reply
 
   {
