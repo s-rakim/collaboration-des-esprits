@@ -66,6 +66,24 @@ A fresh agent calls it once and is caught up. That is what replaces re-briefing.
 
 ---
 
+## If it is not working
+
+Three things account for almost every "it does not work", and the app now says
+so itself rather than leaving you to guess:
+
+- **A seat with no connection.** The room ships with two seats, `architect` and
+  `critic`, as a hint at the shape. They start with no connection and no key, and
+  the setup page says which seats are stuck on what — `architect, critic have no
+  connection yet — pick one`. Pick one and that seat joins the chat.
+- **A key on the connection, not on the seat.** Keys live on connections. A seat
+  points at a connection and inherits its key, so a seat pointing at nothing has
+  no key however many you have pasted in.
+- **A base URL without `/v1`.** Most providers' base URL ends in `/v1`. Press
+  **test** on the row: one real call, and the error says what to change.
+
+If the room is silent after all that, the note under the seats on the setup page
+says how many models are in the chat and what is keeping the rest out.
+
 ## Setup
 
 Requires **Node 22.5 or newer** — that is where SQLite became part of Node
@@ -612,8 +630,17 @@ The room contains every idea, decision and handoff you have, so:
 ## Tests
 
 ```bash
-npm test
+npm test              # the rules
+npm run check:pages   # the pages, in a real browser
+npm run check:presets # the endpoint catalogue, by calling it
 ```
+
+`check:pages` starts its own server on a scratch database and drives the room
+the way a person does: joining, adding a key, putting a model in the chat, and
+checking it answers. It exists because the bugs that made this feel broken on a
+first run were all invisible to a unit test — Enter doing nothing in a dialog, an
+error painted behind the modal that raised it, a seat that displayed a
+connection it did not have.
 
 196 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media

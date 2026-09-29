@@ -168,6 +168,12 @@ body.rail-folded #shell-rail .who{justify-content:center;padding:7px 0}
 /* A phone has no room for a permanent rail, so it slides over instead. */
 /* The menu button lives outside the rail, so it needs its own sizing — and a
    tap target a thumb can actually hit. */
+/* A message shown inside a modal, where a page toast cannot reach. */
+dialog .shell-msg{margin:0;flex:1;min-width:0;font-size:12.5px;color:var(--bad,#f7768e);text-align:left}
+dialog .shell-msg[data-kind="ok"]{color:var(--good,#9ece6a)}
+dialog .shell-msg[data-kind="info"]{color:var(--dim,#98a0b3)}
+dialog .shell-msg:empty{display:none}
+
 #rail-open{display:none;align-items:center;justify-content:center;background:none;border:0;
   color:var(--dim);width:38px;height:38px;padding:0;border-radius:9px;cursor:pointer;flex:none}
 #rail-open svg{width:20px;height:20px}
@@ -365,6 +371,72 @@ function render(rail, mode, ideas, me) {
     });
   }
 }
+
+/**
+ * Making the dialogs behave like dialogs.
+ *
+ * Two things were wrong with every modal in this app, and together they read as
+ * "the app is broken" rather than as two small bugs.
+ *
+ * Enter did nothing. You type your handle, press Enter the way you do in every
+ * other box you have ever typed a name into, and nothing happens — no error, no
+ * join, no hint that the button is the only thing that works.
+ *
+ * And an error raised inside a modal was invisible. A <dialog> opened with
+ * showModal() is painted in the browser's top layer, above everything on the
+ * page including a toast — so the toast telling you what was wrong with what you
+ * typed rendered *behind* the dialog you were looking at. You were told; you
+ * just could not see it.
+ *
+ * Both are fixed here rather than in each page, because every page has dialogs
+ * and every one of them had both bugs.
+ */
+
+/** The button a dialog means by "go": the primary one, else the last. */
+function primaryButton(dialog) {
+  return dialog.querySelector('button.primary')
+    ?? [...dialog.querySelectorAll('button')].at(-1)
+    ?? null;
+}
+
+/**
+ * Put a message where the person is actually looking. Inside an open modal that
+ * is the modal; with nothing open, the caller's own toast is right.
+ * Returns whether it was handled here.
+ */
+export function dialogMessage(text, kind = 'err') {
+  const dialog = document.querySelector('dialog[open]');
+  if (!dialog) return false;
+
+  let line = dialog.querySelector('.shell-msg');
+  if (!line) {
+    line = document.createElement('p');
+    line.className = 'shell-msg';
+    // Next to the buttons, where the eye already is when you press one.
+    const row = primaryButton(dialog)?.parentElement;
+    if (row) row.prepend(line); else dialog.append(line);
+  }
+  line.textContent = text ?? '';
+  line.dataset.kind = kind;
+  return true;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.defaultPrevented) return;
+  const dialog = e.target?.closest?.('dialog[open]');
+  if (!dialog) return;
+  // A textarea is somewhere you press Enter to get a new line, so it is left
+  // alone; a one-line field is somewhere Enter means "done".
+  const field = e.target;
+  if (field.tagName === 'TEXTAREA' || field.isContentEditable) return;
+  if (!['INPUT', 'SELECT'].includes(field.tagName)) return;
+  if (field.type === 'checkbox' || field.type === 'radio') return;
+
+  const go = primaryButton(dialog);
+  if (!go || go.disabled) return;
+  e.preventDefault();
+  go.click();
+});
 
 /** Show which thread is open, when the page changes it without navigating. */
 export function markIdea(slug) {

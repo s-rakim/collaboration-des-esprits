@@ -701,7 +701,18 @@ app.delete('/api/connections/:name', (req, res) =>
 app.post('/api/connections/:name/test', async (req, res) => {
   const conn = connections.resolve(req.params.name);
   if (!conn) return res.status(404).json({ ok: false, error: `no connection named "${req.params.name}"` });
+  if (!conn.baseURL) return res.status(400).json({ ok: false, error: 'set a base URL on this connection first' });
   if (!conn.model) return res.status(400).json({ ok: false, error: 'set a model on this connection first' });
+  // Say the obvious thing before making a call that can only fail. A provider
+  // error about an unreachable host is a bad way to learn you left the key box
+  // empty — and it is the reason this looks like "keys do not work".
+  const local = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)/.test(conn.baseURL);
+  if (!conn.apiKey && !local) {
+    return res.status(400).json({
+      ok: false,
+      error: `${conn.name} has no API key — paste one in the key box on this row (it is only needed for endpoints that are not on this machine)`,
+    });
+  }
 
   try {
     if (conn.kind === 'chat') {
@@ -721,8 +732,13 @@ app.post('/api/connections/:name/test', async (req, res) => {
     }
 
     if (conn.kind === 'speak') {
-      const url = await speak({ conn, text: 'ready', dir: MEDIA });
-      return res.json({ ok: true, kind: conn.kind, model: conn.model, said: 'generated audio', url });
+      // speak() hands back the voice and format as well as the file, so the
+      // test can say which voice you just heard rather than only that it worked.
+      const spoken = await speak({ conn, text: 'ready', dir: MEDIA });
+      return res.json({
+        ok: true, kind: conn.kind, model: conn.model, url: spoken.url,
+        said: `said "ready" in ${spoken.voice}`,
+      });
     }
 
     // Transcription needs a clip to send and video costs real money and minutes,

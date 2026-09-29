@@ -46,9 +46,19 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
           });
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.
+          // What a person needs here is the next thing to do, so a connection
+          // error names the address rather than reporting "error undefined".
           if (err instanceof OpenAI.AuthenticationError) throw new Error('the provider rejected the API key');
           if (err instanceof OpenAI.RateLimitError) throw new Error('rate limited by the provider — backing off');
-          if (err instanceof OpenAI.APIError) throw new Error(`provider API error ${err.status}: ${err.message}`);
+          if (err instanceof OpenAI.APIError) {
+            if (err.status === undefined || err.status === null) {
+              throw new Error(`could not reach ${baseURL || 'the provider'} — check the base URL, and that the service is running`);
+            }
+            if (err.status === 404) {
+              throw new Error(`${baseURL} answered 404 — the base URL is probably missing or has an extra path segment (most end in /v1)`);
+            }
+            throw new Error(`provider API error ${err.status}: ${err.message}`);
+          }
           throw err;
         }
 

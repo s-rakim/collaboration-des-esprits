@@ -291,7 +291,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { markIdea, refreshNav } from '/nav.js';
+import { markIdea, refreshNav, dialogMessage } from '/nav.js';
 
 const $ = (s) => document.querySelector(s);
 const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null };
@@ -304,7 +304,15 @@ state.idea = new URLSearchParams(location.search).get('idea') || null;
 // room itself lives in SQLite, so a cleared browser loses nothing.
 try { state.me = localStorage.getItem('esprits.me'); } catch {}
 
-function toast(msg) {
+/**
+ * Say something to the person.
+ *
+ * A modal is painted above the page, so a toast raised while one is open is
+ * behind it and might as well not have been raised. When a dialog is open the
+ * message goes in the dialog.
+ */
+function toast(msg, kind = 'err') {
+  if (dialogMessage(msg, kind)) return;
   const t = $('#toast');
   t.textContent = msg; t.classList.add('on');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 4000);
@@ -666,7 +674,15 @@ $('#body').addEventListener('keydown', (e) => {
 });
 $('#body').addEventListener('blur', () => setTimeout(() => { if (slash.open) closeSlash(); }, 150));
 
-$('#setMe').addEventListener('click', () => { $('#meName').value = state.me ?? ''; $('#dlgMe').showModal(); });
+/** Open a dialog with no message left over from the last time it was used. */
+function openDialog(selector) {
+  const d = $(selector);
+  d.querySelector('.shell-msg')?.replaceChildren();
+  d.showModal();
+  d.querySelector('input, textarea')?.focus();
+}
+
+$('#setMe').addEventListener('click', () => { $('#meName').value = state.me ?? ''; openDialog('#dlgMe'); });
 $('#meCancel').addEventListener('click', () => $('#dlgMe').close());
 $('#meSave').addEventListener('click', async () => {
   const name = $('#meName').value.trim();
@@ -681,7 +697,7 @@ $('#meSave').addEventListener('click', async () => {
   } catch (e) { toast(e.message); }
 });
 
-$('#newIdea').addEventListener('click', () => { if (requireMe()) $('#dlgIdea').showModal(); });
+$('#newIdea').addEventListener('click', () => { if (requireMe()) openDialog('#dlgIdea'); });
 $('#ideaCancel').addEventListener('click', () => $('#dlgIdea').close());
 $('#ideaSave').addEventListener('click', async () => {
   const title = $('#ideaTitle').value.trim();
@@ -1317,7 +1333,7 @@ function openGen(kind) {
   if (kind) $('#genKind').value = kind;
   $('#genNote').textContent = state.idea ? `posts to ${state.idea}` : 'posts to the lobby';
   genHint();
-  $('#dlgGen').showModal();
+  openDialog('#dlgGen');
   $('#genPrompt').focus();
 }
 $('#gen').addEventListener('click', () => openGen());
