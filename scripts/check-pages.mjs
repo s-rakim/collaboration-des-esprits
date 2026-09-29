@@ -209,9 +209,11 @@ try {
 
     // Ask the endpoint what it wants, instead of making somebody guess twice.
     await page.click('.conn[data-conn="test provider"] .find');
+    // Wait for the call to finish, whatever it concluded, rather than for one
+    // particular wording — the wording is allowed to change.
     await page.waitForFunction(
-      () => /models —|error|could not|none of these/i.test(document.querySelector('#msg')?.textContent ?? ''),
-      null, { timeout: 20000 },
+      () => !/…$/.test((document.querySelector('#msg')?.textContent ?? '').trim()),
+      null, { timeout: 25000 },
     );
     await page.waitForTimeout(600);
 
@@ -221,6 +223,11 @@ try {
     if (!list.length) note('setup', '"find" did not offer the models the endpoint listed');
     const left = await page.inputValue('.conn[data-conn="test provider"] .cm');
     if (left) note('setup', `a model the endpoint does not have was kept: ${left}`);
+
+    // Listing models often needs no key, so finding the endpoint must not be
+    // reported as being able to use it.
+    const verdict = (await page.textContent('#msg')).trim();
+    if (!/the key works/i.test(verdict)) note('setup', `"find" did not check the key: ${verdict}`);
 
     // Picking one from the list must actually work.
     await page.fill('.conn[data-conn="test provider"] .cm', list[0] ?? 'nothing');

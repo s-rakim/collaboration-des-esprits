@@ -18,6 +18,7 @@ import { chatAdapter } from './chat.js';
  */
 
 const MAX_TURNS = 6; // tool-use round trips per wake, so one reply cannot loop forever
+const QUIET_AFTER_STOP_MS = 6000; // how long a stopped seat stays out of the way
 
 /** How long to queue for the floor before giving up on this turn. */
 const FLOOR_WAIT_MS = 30_000;
@@ -419,6 +420,35 @@ export function createModelParticipant({
   }
 
   let stopped = false;
+  /**
+   * The turn in flight, if any.
+   *
+   * Held so that "stop" can reach it. A flag alone only takes effect between
+   * round trips, and the wait somebody actually wants to end is the one in the
+   * middle of a request — a model thinking for thirty seconds is exactly when
+   * you realise you asked the wrong thing.
+   */
+  let inFlight = null;
+  let interrupted = false;
+  /** Set when somebody presses stop; the loop holds off until it passes. */
+  let quietUntil = 0;
+
+  /**
+   * Stop this seat's current turn.
+   *
+   * Not the same as stop(): the seat stays in the room and answers the next
+   * thing said to it. This only ends the turn it is in the middle of.
+   */
+  function interrupt() {
+    interrupted = true;
+    try { inFlight?.abort(); } catch { /* already finished */ }
+    inFlight = null;
+    // And stay out of the way for a moment. Without this the watch loop picks
+    // up the next thing immediately and the seat is thinking again before the
+    // button has finished animating, which reads as the stop having done
+    // nothing at all.
+    quietUntil = Date.now() + QUIET_AFTER_STOP_MS;
+  }
 
   /** The seat's live endpoint, model and credential. */
   const live = () => (resolve ? resolve(name) : null);
@@ -508,7 +538,22 @@ export function createModelParticipant({
    * The adapter owns the provider conversation, so this loop is the same whether
    * the seat is on OpenAI, Gemini, OpenRouter or something local.
    */
-  async function think({ trigger, ideaSlug, replyUrgency = 'comment' }) {
+  /**
+   * One turn, with the seat marked as mid-turn for as long as it lasts.
+   *
+   * The flag has to be cleared on every way out — an answer, a refusal, a
+   * thrown provider error, a stop — or the seat looks busy forever and the
+   * stop button never goes away.
+   */
+  async function think(args) {
+    try {
+      return await runTurn(args);
+    } finally {
+      inFlight = null;
+    }
+  }
+
+  async function runTurn({ trigger, ideaSlug, replyUrgency = 'comment' }) {
     const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 30, by: name }) : null;
     const catchUp = hub.catchUp({ name });
 
@@ -525,14 +570,23 @@ export function createModelParticipant({
     ].join('\n');
 
     const turn = adapter().startTurn({ system: systemPrompt(), tools: toolDefs() });
+    inFlight = turn;
+    interrupted = false;
     const done = [];
 
     // Requests are counted rather than loop iterations: the first one happens
     // before the loop, so iterating MAX_TURNS times would spend MAX_TURNS + 1.
     let requests = 1;
-    let step = await turn.send(context);
+    let step;
+    try {
+      step = await turn.send(context);
+    } catch (err) {
+      if (err.interrupted) return { actions: done, interrupted: true };
+      throw err;
+    }
 
     for (;;) {
+      if (interrupted) return { actions: done, interrupted: true };
       if (step.stopReason === 'refusal') return { actions: done, refused: true };
       if (step.stopReason === 'max_tokens') return { actions: done, truncated: true };
 
@@ -566,8 +620,14 @@ export function createModelParticipant({
       }
 
       if (finished) return { actions: done };
+      if (interrupted) return { actions: done, interrupted: true };
       if (requests >= MAX_TURNS) return { actions: done, exhausted: true };
-      step = await turn.toolResults(results);
+      try {
+        step = await turn.toolResults(results);
+      } catch (err) {
+        if (err.interrupted) return { actions: done, interrupted: true };
+        throw err;
+      }
       requests++;
     }
   }
@@ -804,6 +864,10 @@ export function createModelParticipant({
           await sleep(3000);
           continue;
         }
+        if (Date.now() < quietUntil) {
+          await sleep(Math.min(1000, quietUntil - Date.now()));
+          continue;
+        }
 
         const woke = await hub.waitFor({ by: name, mentioningMe: true, timeoutMs: 20000 });
         const owed = hub.catchUp({ name }).proposalsAwaitingMyScore;
@@ -861,7 +925,10 @@ export function createModelParticipant({
 
   return {
     run,
-    stop: () => { stopped = true; },
+    stop: () => { stopped = true; interrupt(); },
+    /** End whatever this seat is doing now, without taking it out of the room. */
+    interrupt,
+    get busy() { return Boolean(inFlight) && !inFlight.aborted; },
     askDirect,
     join,
     name,

@@ -117,6 +117,50 @@ async function askModels(base, apiKey, extra = {}) {
 }
 
 /**
+ * Make the smallest real call there is, to find out whether the key works.
+ *
+ * Listing models often needs no credential at all — which is why finding an
+ * endpoint and being able to use it are different questions, and answering only
+ * the first sends somebody away thinking they are set up when they are not.
+ */
+export async function tryKey({ baseURL, apiKey, model, extra = {} }) {
+  if (!model) return { ok: null, error: 'no model to try' };
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  try {
+    const headers = { 'content-type': 'application/json', ...(extra.headers ?? {}) };
+    if (apiKey) {
+      const named = extra.keyHeader;
+      if (named) headers[named] = apiKey;
+      else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
+    }
+
+    const res = await fetch(`${baseURL}/chat/completions`, {
+      method: 'POST',
+      headers,
+      signal: ctl.signal,
+      // As small as a request can be: one token in, one token out.
+      body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    if (res.ok) return { ok: true };
+
+    const text = (await res.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    return {
+      ok: false,
+      status: res.status,
+      unauthorized: res.status === 401 || res.status === 403,
+      error: text ? `${res.status}: ${text}` : `HTTP ${res.status}`,
+    };
+  } catch (err) {
+    if (err.name === 'AbortError') return { ok: false, error: `no answer within ${TIMEOUT_MS / 1000}s` };
+    return { ok: false, error: err.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Find the base URL that works and the models behind it.
  *
  * Tries the obvious repairs in order and stops at the first that answers, so a

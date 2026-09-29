@@ -61,6 +61,8 @@ export const PRESETS = [
     keyHint: 'platform.deepseek.com' },
   { preset: 'xAI Grok', kind: 'chat', baseURL: 'https://api.x.ai/v1', model: 'grok-4',
     keyHint: 'console.x.ai' },
+  { preset: 'NVIDIA NIM', kind: 'chat', baseURL: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3',
+    keyHint: 'build.nvidia.com — a free tier, and the model ids carry the vendor: moonshotai/…, meta/…' },
   { preset: 'Ollama (local)', kind: 'chat', baseURL: 'http://127.0.0.1:11434/v1', model: 'qwen3',
     keyHint: 'no key needed', keyOptional: true },
   { preset: 'LM Studio (local)', kind: 'chat', baseURL: 'http://127.0.0.1:1234/v1', model: 'local-model',
@@ -121,6 +123,59 @@ export const PRESETS = [
 
 const mask = (v) => (!v ? null : v.length <= 8 ? '•'.repeat(v.length) : `${'•'.repeat(8)}${v.slice(-4)}`);
 
+/**
+ * Pull the key out of whatever was pasted.
+ *
+ * Nobody copies a bare key. They copy the line it was sitting in — out of a
+ * curl example, a JSON body, a Python snippet — and it arrives wrapped in a
+ * header name, a scheme word, quotes and a trailing comma:
+ *
+ *     "Authorization": "Bearer nvapi-xxxx",
+ *
+ * Every one of those wrappers makes the provider reject the credential, with a
+ * message that sends somebody off to regenerate a key that was fine all along.
+ *
+ * Rather than peeling the wrappers off — they nest, and peeling leaves whatever
+ * was underneath — this looks for the credential itself: the longest run of
+ * key-shaped characters that is not one of the words such lines are made of.
+ */
+const NOISE = new Set([
+  'authorization', 'bearer', 'token', 'basic', 'apikey', 'api', 'key', 'x-api-key',
+  'headers', 'header', 'auth', 'secret', 'value', 'string', 'const', 'let', 'var',
+  'export', 'set', 'setx', 'env', 'true', 'false', 'null', 'none',
+]);
+
+export function cleanKey(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+
+  // Whatever it was wrapped in, the key is in there as one unbroken run.
+  const tokens = text.match(/[A-Za-z0-9_\-.~+/]{8,}/g) ?? [];
+  const candidates = tokens.filter((t) => !NOISE.has(t.toLowerCase().replace(/[_-]/g, '')));
+  if (candidates.length) {
+    // A credential has digits in it; the words around one — OPENAI_API_KEY,
+    // production, Authorization — do not. That single test separates the key
+    // from the name of the variable it was assigned to.
+    const digity = candidates.filter((t) => /\d/.test(t));
+    const pool = digity.length ? digity : candidates;
+    // Then the longest, and on a tie the later one, since a value follows the
+    // name of the thing it is the value of.
+    // A dot or comma at the end of the run is the punctuation of the sentence
+    // it was pasted in, not part of the credential. Only trailing ones: a
+    // JWT-shaped key has dots in the middle and needs them.
+    return pool.reduce((best, t) => (t.length >= best.length ? t : best)).replace(/[.,;:]+$/, '');
+  }
+
+  // Nothing key-shaped: a short or unusual credential, so take it as typed with
+  // only the obvious wrapping removed rather than throwing it away.
+  return text
+    .replace(/^["'`]+|["'`]+,?$/g, '')
+    .replace(/^(bearer|token|basic)\s+/i, '')
+    .trim()
+    .split(/\s/)[0];
+}
+
+
 /** A name has to survive being put in a URL and referenced by a seat. */
 function checkName(raw) {
   const name = String(raw ?? '').trim();
@@ -155,6 +210,10 @@ export function createConnections(db) {
       // The credential itself never appears here; this is the shape the HTTP
       // layer returns, so a key cannot leak by somebody forgetting to strip it.
       keySet: Boolean(effective),
+      // The length, not the key. A key that was cut off when it was copied
+      // looks exactly like a working one behind eight dots, and this is the
+      // cheapest way to see that it is short.
+      keyLength: effective ? effective.length : 0,
       keyPreview: mask(r.api_key) ?? (fromEnv ? `from ${envName}` : null),
       keySource: r.api_key ? 'stored' : fromEnv ? 'env' : 'unset',
       keyEnv: envName,
@@ -201,7 +260,7 @@ export function createConnections(db) {
       const existing = db.prepare('SELECT * FROM connections WHERE name = ?').get(handle);
       // undefined means "leave it alone" — the page sends a key only when it was
       // edited, so re-saving a row cannot wipe the key already stored for it.
-      const key = apiKey === undefined ? (existing?.api_key ?? null) : String(apiKey).trim() || null;
+      const key = apiKey === undefined ? (existing?.api_key ?? null) : cleanKey(apiKey) || null;
       const ex = extra === undefined ? (existing?.extra ?? '{}') : JSON.stringify(extra ?? {});
 
       db.prepare(

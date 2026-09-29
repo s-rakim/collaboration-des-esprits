@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../src/db.js';
-import { createConnections, PRESETS, KINDS } from '../src/connections.js';
+import { createConnections, cleanKey, PRESETS, KINDS } from '../src/connections.js';
 import { createSeats } from '../src/seats.js';
 
 const fresh = () => {
@@ -163,4 +163,71 @@ test('old per-seat endpoints are lifted into a connection on open', () => {
   assert.equal(seats.get('legacy').connection, 'openai');
   assert.equal(seats.resolve('legacy').apiKey, 'sk-legacy-1234');
   assert.equal(seats.get('legacy').ready, true, 'and it keeps working');
+});
+
+/**
+ * Nobody copies a bare key.
+ *
+ * They copy the line it was sitting in — out of a curl example, a JSON body, a
+ * shell export — and it arrives wrapped in a header name, a scheme word, quotes
+ * and whatever punctuation ended the sentence. Every one of those wrappers
+ * makes the provider reject the credential, with a message that sends somebody
+ * off to regenerate a key that was fine all along.
+ */
+test('the key is picked out of whatever it was pasted inside', () => {
+  const key = 'nvapi-kjb18jw3MH46A6BRmuWy4fAzfHazCsgbJuUSk4yWzE2xImJHC2GXPxC6qOq';
+  const pastes = [
+    key,
+    `Bearer ${key}`,
+    `  ${key}  `,
+    `"${key}"`,
+    `Authorization: Bearer ${key}`,
+    `"Authorization": "Bearer ${key}",`,
+    `'Authorization': 'Bearer ${key}'`,
+    `x-api-key: ${key}`,
+    `export NVIDIA_API_KEY=${key}`,
+    `setx NVIDIA_API_KEY ${key}`,
+    `${key} # production`,
+    // The one that turned up in real life: a sentence ended after the key.
+    `Bearer ${key}.`,
+  ];
+  for (const pasted of pastes) {
+    assert.equal(cleanKey(pasted), key, `did not find the key in: ${pasted.slice(0, 40)}…`);
+  }
+});
+
+test('dots inside a key survive, only the ones at the end go', () => {
+  // A JWT-shaped credential is dots all the way down; trailing punctuation is
+  // the sentence it was written in.
+  const jwt = 'eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4';
+  assert.equal(cleanKey(jwt), jwt);
+  assert.equal(cleanKey(`Bearer ${jwt}.`), jwt);
+  assert.equal(cleanKey('sk-proj-a_b-c.d1234567'), 'sk-proj-a_b-c.d1234567');
+});
+
+test('the name of the variable is not mistaken for its value', () => {
+  // Both are long; only one has digits in it, which is what tells them apart.
+  assert.equal(cleanKey('export OPENAI_API_KEY=sk-abc12345678'), 'sk-abc12345678');
+  assert.equal(cleanKey('GROQ_API_KEY=gsk_abcdef1234567890'), 'gsk_abcdef1234567890');
+});
+
+test('a short or unusual credential is taken as typed rather than thrown away', () => {
+  assert.equal(cleanKey('short'), 'short');
+  assert.equal(cleanKey('Bearer short'), 'short');
+  assert.equal(cleanKey(''), '');
+  assert.equal(cleanKey(null), '');
+});
+
+test('what is stored is the cleaned key, and its length is reported', () => {
+  const { connections } = fresh();
+  const key = 'nvapi-kjb18jw3MH46A6BRmuWy4fAzfHazCsgbJuUSk4yWzE2xImJHC2GXPxC6qOq';
+  connections.save({ name: 'nv', kind: 'chat', baseURL: 'https://x.test/v1', model: 'm', apiKey: `Bearer ${key}.` });
+
+  assert.equal(connections.keyFor('nv'), key, 'the wrapper must not be stored with the key');
+
+  // The length is shown so a key cut off in the copy is visible; the key itself
+  // still never leaves the server.
+  const view = connections.get('nv');
+  assert.equal(view.keyLength, key.length);
+  assert.equal(JSON.stringify(view).includes(key), false);
 });

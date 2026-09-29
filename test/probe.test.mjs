@@ -136,3 +136,61 @@ test('the key goes where that provider wants it', async () => {
   assert.equal(headers[2].auth, 'Token k3');
   server.close();
 });
+
+test('a listing that needs no key does not mean the key works', async () => {
+  // This is the gap that sent somebody away thinking they were set up: plenty
+  // of providers serve /models to anybody, so finding the endpoint and being
+  // able to use it are different questions.
+  const { tryKey } = await import('../src/probe.js');
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const path = new URL(req.url, 'http://x').pathname;
+    if (path === '/models') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end('{"data":[{"id":"vendor/model"}]}');
+    }
+    if (req.headers.authorization !== 'Bearer right') {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      return res.end('{"detail":"invalid api key"}');
+    }
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], asked: body }));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  // The listing succeeds whatever the key is.
+  assert.equal((await probe({ baseURL: base, apiKey: 'wrong' })).ok, true);
+
+  // The call does not, and says so in a way somebody can act on.
+  const bad = await tryKey({ baseURL: base, apiKey: 'wrong', model: 'vendor/model' });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.unauthorized, true);
+  assert.match(bad.error, /invalid api key/);
+
+  assert.equal((await tryKey({ baseURL: base, apiKey: 'right', model: 'vendor/model' })).ok, true);
+  // With no model there is nothing to call, and that is not a failure.
+  assert.equal((await tryKey({ baseURL: base, apiKey: 'right', model: '' })).ok, null);
+  server.close();
+});
+
+test('the key check asks for as little as a request can ask for', async () => {
+  const { tryKey } = await import('../src/probe.js');
+  let asked = null;
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    asked = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"message":{"content":"ok"}}]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await tryKey({ baseURL: `http://127.0.0.1:${server.address().port}`, apiKey: 'k', model: 'm' });
+  server.close();
+  // It costs somebody money, so it is one token in and one token out.
+  assert.equal(asked.max_tokens, 1);
+  assert.equal(asked.messages.length, 1);
+  assert.equal(asked.model, 'm');
+});

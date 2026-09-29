@@ -339,8 +339,11 @@ function connRow(c, isNew = false) {
   const kinds = Object.entries(roster.kinds)
     .map(([id, k]) => `<option value="${esc(id)}" ${c.kind === id ? 'selected' : ''} title="${esc(k.blurb)}">${esc(k.label)}</option>`)
     .join('');
+  // The length is shown because a key that was cut off when it was copied looks
+  // exactly like a working one behind eight dots, and the length is the cheapest
+  // way to see that it is short.
   const keyPlaceholder = c.keySource === 'env' ? `from ${c.keyEnv}`
-    : c.keySet ? 'saved — blank keeps it' : 'paste key';
+    : c.keySet ? `saved · ${c.keyLength} chars` : 'paste key';
   const extra = c.extra ?? {};
 
   // A voice connection gets a voice picker, because the voice is the setting
@@ -365,7 +368,8 @@ function connRow(c, isNew = false) {
       <datalist id="models-${esc(c.name || 'new')}">${(offered.get(c.name) ?? [])
         .map((m) => `<option value="${esc(m)}"></option>`).join('')}</datalist>
       <input class="cs" type="password" autocomplete="off" placeholder="${esc(keyPlaceholder)}"
-        title="${esc(c.keyPreview ?? '')}">
+        title="${esc(c.keySet ? `${c.keyLength} characters, ending ${c.keyPreview}. Paste a new one to replace it; blank keeps it.`
+          : 'Paste the key. A whole line copied from the docs is fine — the key is picked out of it.')}">
       ${voicePicker}
       <button class="find" title="Ask this endpoint what it wants: the right base URL, and the models it will accept.">find</button>
       <button class="test" title="make one real call">test</button>
@@ -471,8 +475,20 @@ function wireConns() {
         const notes = [];
         if (found.changed) notes.push(`fixed the URL to ${found.baseURL}`);
         if (found.clearedModel) notes.push(`"${found.clearedModel}" is not one it has`);
-        notes.push(`${found.models.length} models — click the model box to pick one`);
-        say(notes.join(' · '), 'ok');
+        notes.push(`${found.models.length} models`);
+
+        // Finding the endpoint and being able to use it are different
+        // questions, because listing models often needs no credential.
+        if (found.key?.ok === false) {
+          notes.push(found.key.unauthorized
+            ? 'but it refused the key — paste a fresh one'
+            : `but a real call failed: ${found.key.error}`);
+          say(notes.join(' · '), 'err');
+        } else {
+          if (found.key?.ok) notes.push('the key works');
+          notes.push('click the model box to pick one');
+          say(notes.join(' · '), 'ok');
+        }
         document.querySelector(`.conn[data-conn="${CSS.escape(name)}"] .cm`)?.focus();
       } catch (err) {
         say(err.message, 'err');

@@ -20,7 +20,8 @@
     "telegram": "node --disable-warning=ExperimentalWarning src/bin/telegram.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
     "check:presets": "node --disable-warning=ExperimentalWarning scripts/check-presets.mjs",
-    "check:pages": "node --disable-warning=ExperimentalWarning scripts/check-pages.mjs"
+    "check:pages": "node --disable-warning=ExperimentalWarning scripts/check-pages.mjs",
+    "confirm": "node --disable-warning=ExperimentalWarning scripts/confirm.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

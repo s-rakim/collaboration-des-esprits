@@ -30,6 +30,9 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
     startTurn({ system, tools }) {
       const messages = [{ role: 'system', content: system }];
       const toolDefs = asTools(tools);
+      // One controller for the whole turn, so "stop" reaches whichever request
+      // is in flight rather than only the next one that has not started.
+      const ctl = new AbortController();
 
       const request = async () => {
         let response;
@@ -43,11 +46,18 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
             // Omitted entirely unless the provider declared the field, since an
             // unknown parameter fails the request rather than being ignored.
             ...(effortParam && effort ? { [effortParam]: effort } : {}),
-          });
+          }, { signal: ctl.signal });
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.
           // What a person needs here is the next thing to do, so a connection
           // error names the address rather than reporting "error undefined".
+          // A cut-off request is not a failure to report; it is what was asked
+          // for, and it needs to be told apart from the provider going wrong.
+          if (ctl.signal.aborted || err.name === 'AbortError' || err.name === 'APIUserAbortError') {
+            const stop = new Error('stopped');
+            stop.interrupted = true;
+            throw stop;
+          }
           if (err instanceof OpenAI.AuthenticationError) throw new Error('the provider rejected the API key');
           if (err instanceof OpenAI.RateLimitError) throw new Error('rate limited by the provider — backing off');
           if (err instanceof OpenAI.APIError) {
@@ -110,6 +120,9 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
           return request();
         },
         sent: () => messages,
+        /** Cut the turn off wherever it is. */
+        abort: () => ctl.abort(),
+        get aborted() { return ctl.signal.aborted; },
       };
     },
   };

@@ -15,7 +15,7 @@ import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
 import { createWebBridge } from '../web.js';
 import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
-import { probe as probeEndpoint } from '../probe.js';
+import { probe as probeEndpoint, tryKey } from '../probe.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss,
@@ -891,7 +891,20 @@ app.post('/api/connections/:name/probe', async (req, res) => {
       model: keepsModel ? conn.model : '',
     });
   }
-  res.json({ ...found, clearedModel: keepsModel ? null : conn.model });
+
+  // Listing models often needs no credential at all, so an endpoint that
+  // answered is not yet an endpoint you can use. One tiny call settles it here
+  // rather than leaving somebody to find out at the next step.
+  const usable = conn.kind === 'chat'
+    ? await tryKey({
+        baseURL: found.baseURL,
+        apiKey: conn.apiKey,
+        model: keepsModel && conn.model ? conn.model : found.models[0],
+        extra: conn.extra,
+      })
+    : { ok: null };
+
+  res.json({ ...found, clearedModel: keepsModel ? null : conn.model, key: usable });
 });
 
 /** One real call, so a wrong key or base URL fails here and not in a loop. */
@@ -1149,6 +1162,41 @@ app.get('/api/voices', (_req, res) =>
 // ------------------------------------------------------- talking to a model
 
 app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
+
+/**
+ * Stop whatever is running.
+ *
+ * Not a disconnect: every seat stays in the room and answers the next thing
+ * said to it. This ends the turns in progress — including the request in
+ * flight, which is the wait anybody actually wants to end, since a model
+ * thinking for thirty seconds is exactly when you realise you asked the wrong
+ * thing. Swarm runs are cancelled the same way.
+ */
+app.post('/api/interrupt', (_req, res) =>
+  send(res, () => {
+    const seats = [];
+    for (const [name, participant] of models) {
+      if (!participant.busy) continue;
+      participant.interrupt();
+      seats.push(name);
+    }
+
+    const runs = [];
+    for (const run of hub.swarms({ limit: 50 })) {
+      if (!swarm.isRunning(run.id)) continue;
+      try { swarm.cancel(run.id); runs.push(run.id); } catch { /* finished as we asked */ }
+    }
+    return { stopped: { seats, runs } };
+  }),
+);
+
+/** Who is mid-turn right now, which is what the stop button watches. */
+app.get('/api/busy', (_req, res) =>
+  send(res, () => ({
+    seats: [...models.entries()].filter(([, p]) => p.busy).map(([name]) => name),
+    runs: hub.swarms({ limit: 50 }).filter((r) => swarm.isRunning(r.id)).map((r) => r.id),
+  })),
+);
 
 /**
  * Ask one model directly and get the answer in this request, rather than waiting

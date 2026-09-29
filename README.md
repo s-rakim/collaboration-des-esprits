@@ -584,10 +584,27 @@ call most worth having a record of.
 Both halves have one, because a half of an app you cannot type in is a half you
 only ever read. In the chat it posts a message; on Work it hands a job to the
 swarm, and the run opens where you are rather than sending you looking for it.
-Both are the same shape: centred and capped, because a line of text three feet
-wide is one nobody can read the start and end of at once, and with the controls
-inside the box rather than in a bar under it — the thing you are writing is the
-point, not the row of buttons beneath it.
+
+The box is centred and capped — a line of text three feet wide is one nobody can
+read the start and end of at once — with the controls on a row beneath it rather
+than inside it: what you are writing is the point, not the buttons under it.
+`/` opens the menu of everything else.
+
+**Two buttons, two jobs.** The return key sends what you wrote. The filled circle
+stops what is already running, and only appears while something is. They cannot
+be the same control: you want the second one while the box is empty.
+
+Stopping is real. It aborts the request *in flight* rather than waiting for the
+current one to come back, because the wait you actually want to end is the one
+in the middle — a model thinking for thirty seconds is exactly when you realise
+you asked the wrong thing. The seat then stays out of the way for a few seconds;
+without that its watch loop picks the next thing up immediately and the stop
+looks like it did nothing. Running swarm jobs are cancelled the same way.
+
+Beside it, a ring turns while anybody is working. It asks the server who is
+mid-turn rather than reading the roster, and on its own clock rather than with
+the feed: a model thinking says nothing for as long as it thinks, which is
+precisely the window the ring exists for.
 
 ## The dashboard
 
@@ -758,7 +775,10 @@ The room contains every idea, decision and handoff you have, so:
   SameSite=Strict cookie; scripts keep using a bearer header. Sign-in attempts
   are rate limited, and the `next` parameter can only ever point back at this
   server.
-- A Telegram chat is inert until paired, and `/stop` revokes it.
+- A Telegram chat is inert until paired, and `/stop` revokes it. The Bot API host
+is configurable with `ESPRITS_TELEGRAM_API`, for a self-hosted Bot API server —
+and so the polling loop can be exercised against a stub rather than being the one
+part nothing covers.
 - The database holds your API keys once you save them, so it is set to `600` and
   should be treated like a credential file. Prefer environment variables if you
   would rather keys never touch it.
@@ -767,9 +787,18 @@ The room contains every idea, decision and handoff you have, so:
 
 ```bash
 npm test              # the rules, the routes, the binding rules and auth
+npm run confirm       # the whole room, end to end, on a scratch database
 npm run check:pages   # the pages, in a real browser
 npm run check:presets # the endpoint catalogue, by calling it
 ```
+
+`confirm` is the one to run when you want to know whether the thing works. It
+starts a server, stubs everything outside this machine, and drives each
+capability the way a person does: a key pasted with its whole line around it, an
+endpoint interrogated, a model seated and answering, a skill uploaded and read
+back, a document parsed, a voice spoken, a plugin refused for pointing inside the
+network, a job swarmed, a phone paired over Telegram. It needs no keys and spends
+nothing.
 
 `check:pages` starts its own server on a scratch database and drives the room
 the way a person does: joining, adding a key, putting a model in the chat, and
@@ -778,7 +807,7 @@ first run were all invisible to a unit test — Enter doing nothing in a dialog,
 error painted behind the modal that raised it, a seat that displayed a
 connection it did not have.
 
-231 tests over the domain rules, turn-taking, connections and seats, artifacts
+244 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
 Telegram command language, the page routes, and the model participants (driven

@@ -9,13 +9,23 @@
 
 import { chunk } from './commands.js';
 
-const API = (token, method) => `https://api.telegram.org/bot${token}/${method}`;
+/**
+ * Where the Bot API lives.
+ *
+ * Telegram's own host by default. Configurable because two real situations need
+ * it: a self-hosted Bot API server, which Telegram supports and which is the
+ * only way to move files over 20 MB; and a test, which is how the polling loop
+ * below gets exercised at all rather than being the one part nothing covers.
+ */
+export const TELEGRAM_API = process.env.ESPRITS_TELEGRAM_API || 'https://api.telegram.org';
 
-async function call(token, method, payload, { timeoutMs = 70000 } = {}) {
+const API = (base, token, method) => `${String(base).replace(/\/+$/, '')}/bot${token}/${method}`;
+
+async function call(base, token, method, payload, { timeoutMs = 70000 } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch(API(token, method), {
+    const res = await fetch(API(base, token, method), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload ?? {}),
@@ -29,7 +39,7 @@ async function call(token, method, payload, { timeoutMs = 70000 } = {}) {
   }
 }
 
-export function createTelegram({ hub, router, token, log = (m) => process.stdout.write(`${m}\n`) }) {
+export function createTelegram({ hub, router, token, apiBase = TELEGRAM_API, log = (m) => process.stdout.write(`${m}\n`) }) {
   const db = hub.db;
   const getState = (k) => db.prepare('SELECT v FROM bridge_state WHERE k = ?').get(k)?.v ?? null;
   const setState = (k, v) =>
@@ -41,7 +51,7 @@ export function createTelegram({ hub, router, token, log = (m) => process.stdout
   async function send(chatId, body) {
     for (const part of chunk(body)) {
       if (!part.trim()) continue;
-      await call(token, 'sendMessage', { chat_id: chatId, text: part, disable_web_page_preview: true });
+      await call(apiBase, token, 'sendMessage', { chat_id: chatId, text: part, disable_web_page_preview: true });
     }
   }
 
@@ -86,7 +96,7 @@ export function createTelegram({ hub, router, token, log = (m) => process.stdout
   }
 
   async function run() {
-    const me = await call(token, 'getMe');
+    const me = await call(apiBase, token, 'getMe');
     log(`telegram: connected as @${me.username}`);
 
     // Notifications are pushed on their own cadence, so a quiet long-poll never
@@ -100,6 +110,7 @@ export function createTelegram({ hub, router, token, log = (m) => process.stdout
       try {
         const offset = Number(getState('telegram.offset') ?? 0);
         const updates = await call(
+          apiBase,
           token,
           'getUpdates',
           { offset, timeout: 50, allowed_updates: ['message', 'edited_message'] },

@@ -179,36 +179,50 @@
     <div class="composer">
       <div class="wrap">
         <div class="chips">
-          <span class="chip" id="whereChip"></span>
           <span class="chip" id="targetRow" style="display:none">
             asking <b id="targetName"></b> <span id="targetAbout"></span>
             <button id="targetClear" title="cancel">&times;</button>
           </span>
         </div>
+
         <div class="box">
           <div class="slashwrap">
             <div class="slash" id="slash" hidden></div>
-            <textarea id="body" rows="1"
-              placeholder="Say something, or press / for what else you can do"></textarea>
+            <textarea id="body" rows="1" placeholder="Type / for commands"></textarea>
           </div>
-          <div class="row">
-            <button class="icon" id="attach" title="Attach a file. PDF, Word, Excel, PowerPoint and anything textual are read, not just linked.">＋</button>
-            <input type="file" id="file" style="display:none" multiple>
-            <button class="icon mic" id="mic" title="Hold to talk, or click to record. Needs a speech-to-text connection.">🎙</button>
-            <button class="icon" id="live" title="Hands-free: keeps listening and posts each time you stop speaking.">Live</button>
-            <button class="icon" id="hear" title="Read replies aloud as they arrive.">🔊</button>
-            <select id="voiceSel" style="width:auto;display:none" title="Which voice the room speaks with"></select>
-            <button class="icon" id="gen" title="Generate an image, a video or a voice line">Create</button>
-            <span class="vu" id="vu"><i></i></span>
-            <span id="where"></span>
-            <select id="kind" class="quiet" style="width:auto;margin-left:auto">
-              <option value="message">message</option>
-              <option value="question">question</option>
-              <option value="status">status</option>
-            </select>
-            <button class="primary send" id="send" title="Ctrl+Enter">Send</button>
-          </div>
+          <button class="stop" id="stop" title="Stop the models" aria-label="Stop" hidden><i></i></button>
+          <button class="go" id="send" title="Send — Ctrl+Enter" aria-label="Send">
+            <svg viewBox="0 0 20 20"><path d="M15.5 5v4.5a2 2 0 0 1-2 2H5"/><path d="M8 8.5l-3 3 3 3"/></svg>
+          </button>
         </div>
+
+        <div class="bar">
+          <button class="i" id="attach" title="Attach a file. PDF, Word, Excel, PowerPoint and anything textual are read, not just linked.">
+            <svg viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11"/></svg>
+          </button>
+          <input type="file" id="file" style="display:none" multiple>
+          <button class="i mic" id="mic" title="Hold to talk, or click to record.">
+            <svg viewBox="0 0 20 20"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg>
+          </button>
+          <span class="vu" id="vu"><i></i></span>
+          <button class="i" id="more" title="Voice and media" aria-expanded="false">
+            <svg viewBox="0 0 20 20"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>
+          </button>
+          <div class="menu" id="moreMenu" hidden></div>
+          <button class="t" id="kindBtn" title="What kind of message this is">message</button>
+
+          <span class="grow"></span>
+
+          <button class="t" id="whereBtn" title="Which thread this goes to">Lobby</button>
+          <span class="t quiet" id="where"></span>
+          <span class="ring" id="busy" title="nobody is working"></span>
+        </div>
+        <select id="kind" hidden>
+          <option value="message">message</option>
+          <option value="question">question</option>
+          <option value="status">status</option>
+        </select>
+        <select id="voiceSel" hidden></select>
       </div>
     </div>
   </div>
@@ -383,6 +397,9 @@ function renderIdeas() {
 
   markIdea(state.idea ?? '');
   say('');
+  $('#whereBtn').textContent = open ? open.title : 'Lobby';
+  $('#whereBtn').classList.toggle('on', Boolean(open));
+  renderBusy().catch(() => {});
 
   $('#stats').innerHTML = [
     `<span><b>${o.totals.ideas}</b> ideas</span>`,
@@ -718,6 +735,7 @@ async function send() {
     }
     $('#body').value = '';
     grow();
+    readyToSend();
     await refresh();
   } catch (e) { toast(e.message); }
 }
@@ -950,9 +968,9 @@ async function sendClip(blob) {
  * belongs on a chip above the box; the second beside the buttons, where it can
  * come and go without the destination flickering with it.
  */
+/** What is happening this second. Where it is going is the button beside it. */
 function say(text) {
   $('#where').textContent = text ?? '';
-  $('#whereChip').textContent = state.idea ? `in ${state.idea}` : 'in the lobby';
 }
 
 /** Let the box grow with what you write, up to a point. */
@@ -979,9 +997,11 @@ $('#mic').addEventListener('pointerup', () => {
 
 function toggleLive(on) {
   voice.live = on ?? !voice.live;
-  $('#live').classList.toggle('live', voice.live);
-  $('#live').textContent = voice.live ? 'Live ●' : 'Live';
+  // Live and read-aloud live in the chevron menu now, so their state shows
+  // there and on the mic rather than on buttons of their own.
+  $('#mic').classList.toggle('on', voice.live);
   $('#mic').disabled = voice.live;
+  if (!$('#moreMenu').hidden) renderMore();
   if (voice.live) {
     startRecording().catch((e) => { toast(e.message); toggleLive(false); });
     toast('Listening. It posts each time you stop speaking.');
@@ -991,7 +1011,6 @@ function toggleLive(on) {
     $('#vu').classList.remove('on');
   }
 }
-$('#live').addEventListener('click', () => toggleLive());
 
 // ------------------------------------------------------------- the / menu
 
@@ -1257,14 +1276,8 @@ async function loadVoices() {
     })),
   );
 
-  if (!options.length) {
-    sel.style.display = 'none';
-    $('#hear').disabled = true;
-    $('#hear').title = 'Add a voice connection at /setup to have replies read aloud.';
-    return;
-  }
-  $('#hear').disabled = false;
-  $('#hear').title = 'Read replies aloud as they arrive.';
+  hear.available = options;
+  if (!options.length) return;
 
   // Keep what was chosen before if it still exists; otherwise take the first.
   const match = options.find((o) => o.connection === hear.connection && o.voice === hear.voice)
@@ -1276,7 +1289,6 @@ async function loadVoices() {
   sel.innerHTML = options
     .map((o, i) => `<option value="${i}"${o === match ? ' selected' : ''}>${esc(o.label)}</option>`)
     .join('');
-  sel.style.display = options.length > 1 ? '' : 'none';
   sel.onchange = () => {
     const picked = options[Number(sel.value)];
     hear.connection = picked.connection;
@@ -1308,7 +1320,7 @@ async function drainSpeech() {
   if (hear.playing || !hear.queue.length || !hear.on) return;
   const next = hear.queue.shift();
   hear.playing = next;
-  $('#hear').classList.add('talking');
+  $('#mic').classList.add('talking');
 
   // Live mode must not hear this: the mic goes shut for as long as it plays.
   const wasLive = voice.live;
@@ -1342,16 +1354,18 @@ async function drainSpeech() {
     hear.audio = null;
     mark?.classList.remove('saying');
     hear.playing = null;
-    $('#hear').classList.toggle('talking', hear.queue.length > 0);
+    $('#mic').classList.toggle('talking', hear.queue.length > 0);
     if (wasLive && voice.live) { voice.muted = false; startRecording().catch(() => {}); }
     drainSpeech();
   }
 }
 
 function toggleHear(on) {
+  if (on !== false && !hear.available?.length) {
+    return toast('Add a voice connection at /setup to have replies read aloud.');
+  }
   hear.on = on ?? !hear.on;
-  $('#hear').classList.toggle('on', hear.on);
-  $('#hear').textContent = hear.on ? '🔊 Listening' : '🔊 Listen';
+  if (!$('#moreMenu').hidden) renderMore();
   if (hear.on) {
     // Start from now. Switching it on should not read out an hour of backlog.
     hear.from = state.msgs.length ? state.msgs[state.msgs.length - 1].id : 0;
@@ -1360,10 +1374,8 @@ function toggleHear(on) {
   } else {
     hear.queue = [];
     if (hear.audio) { hear.audio.pause(); hear.audio = null; }
-    $('#hear').classList.remove('talking');
   }
 }
-$('#hear').addEventListener('click', () => toggleHear());
 
 // ----------------------------------------------------------- attachments
 
@@ -1418,7 +1430,6 @@ function openGen(kind) {
   openDialog('#dlgGen');
   $('#genPrompt').focus();
 }
-$('#gen').addEventListener('click', () => openGen());
 $('#genCancel').addEventListener('click', () => $('#dlgGen').close());
 $('#genGo').addEventListener('click', async () => {
   const prompt = $('#genPrompt').value.trim();
@@ -1441,6 +1452,132 @@ $('#genGo').addEventListener('click', async () => {
     $('#genGo').disabled = false;
     say('');
   }
+});
+
+/**
+ * Watch for somebody starting or finishing a turn.
+ *
+ * The feed only moves when something is *said*; a model thinking says nothing
+ * for as long as it thinks, which is exactly the window the ring and the stop
+ * button exist for. So this is its own slow poll rather than a reaction to the
+ * feed.
+ */
+setInterval(() => { renderBusy().catch(() => {}); }, 2500);
+
+// ------------------------------------------------------------- the bar
+
+/**
+ * The row under the box.
+ *
+ * Four things are on it because four things are worth a click: attach, talk,
+ * everything else, and what kind of message this is. The rest live behind the
+ * chevron — voice, live, the media it can make — because a row with eleven
+ * buttons on it is a row nobody reads, and the point of the box is the writing.
+ */
+
+/** The send button fills in when there is something to send. */
+function readyToSend() {
+  $('#send').classList.toggle('ready', Boolean($('#body').value.trim()));
+}
+$('#body').addEventListener('input', readyToSend);
+
+/** Cycle the kind, rather than spending a dropdown on three values. */
+const KINDS = ['message', 'question', 'status'];
+$('#kindBtn').addEventListener('click', () => {
+  const next = KINDS[(KINDS.indexOf($('#kind').value) + 1) % KINDS.length];
+  $('#kind').value = next;
+  $('#kindBtn').textContent = next;
+  $('#kindBtn').classList.toggle('on', next !== 'message');
+});
+
+/** The thread button goes back to the lobby, or to the rail to pick another. */
+$('#whereBtn').addEventListener('click', () => {
+  if (state.idea) window.dispatchEvent(new CustomEvent('esprits:idea', { detail: { idea: '' } }));
+  else toast('Pick a thread in the rail on the left, or drop a new idea.');
+});
+
+/** Everything the row has no room for. */
+function renderMore() {
+  const voices = [...$('#voiceSel').options].map((o) => ({ value: o.value, label: o.textContent }));
+  $('#moreMenu').innerHTML = `
+    <button data-do="live" class="${voice.live ? 'on' : ''}">🎧 ${voice.live ? 'Stop live listening' : 'Live — hands free'}</button>
+    <button data-do="hear" class="${hear.on ? 'on' : ''}" ${$('#voiceSel').options.length ? '' : 'disabled'}>
+      🔊 ${hear.on ? 'Stop reading replies' : 'Read replies aloud'}
+    </button>
+    ${voices.length > 1 && hear.on ? `<select data-do="voice">${voices
+      .map((v) => `<option value="${esc(v.value)}" ${v.value === $('#voiceSel').value ? 'selected' : ''}>${esc(v.label)}</option>`)
+      .join('')}</select>` : ''}
+    <div class="sep"></div>
+    <button data-do="image">🎨 Make an image</button>
+    <button data-do="video">🎬 Make a video</button>
+    <button data-do="audio">🔉 Make audio</button>
+    <div class="sep"></div>
+    <button data-do="search">🌐 Search the web</button>
+    <button data-do="swarm">🐝 Hand it to the swarm</button>`;
+}
+
+function toggleMore(open) {
+  const show = open ?? $('#moreMenu').hidden;
+  if (show) renderMore();
+  $('#moreMenu').hidden = !show;
+  $('#more').setAttribute('aria-expanded', String(show));
+  $('#more').classList.toggle('on', show);
+}
+$('#more').addEventListener('click', (e) => { e.stopPropagation(); toggleMore(); });
+document.addEventListener('click', (e) => {
+  if (!$('#moreMenu').hidden && !e.target.closest('#moreMenu, #more')) toggleMore(false);
+});
+
+$('#moreMenu').addEventListener('change', (e) => {
+  if (e.target.dataset.do !== 'voice') return;
+  $('#voiceSel').value = e.target.value;
+  $('#voiceSel').dispatchEvent(new Event('change'));
+});
+
+$('#moreMenu').addEventListener('click', (e) => {
+  const what = e.target.closest('[data-do]')?.dataset.do;
+  if (!what || what === 'voice') return;
+  toggleMore(false);
+  if (what === 'live') return toggleLive();
+  if (what === 'hear') return toggleHear();
+  if (what === 'search') return openSearch();
+  if (what === 'swarm') return openSwarm();
+  if (['image', 'video', 'audio'].includes(what)) return openGen(what);
+});
+
+/**
+ * The ring turns while somebody is working, and the stop button appears.
+ *
+ * Without it a room that is thinking looks exactly like a room that has
+ * ignored you, and the difference matters most in the seconds after you press
+ * send — which is precisely when there is nothing else on the screen to say
+ * which it is. And a model thinking for thirty seconds is when you realise you
+ * asked the wrong thing, so that is when you need a way out.
+ *
+ * Who is mid-turn is asked of the server rather than read off the roster: the
+ * roster says what an agent last recorded itself doing, which is a different
+ * and slower thing than whether a request is open right now.
+ */
+async function renderBusy() {
+  let busy = { seats: [], runs: [] };
+  try { busy = await api('/api/busy'); } catch { /* the ring can wait */ }
+
+  const working = busy.seats.length + busy.runs.length;
+  $('#busy').classList.toggle('busy', working > 0);
+  $('#busy').title = working
+    ? [busy.seats.join(', '), busy.runs.length ? `${busy.runs.length} run(s)` : ''].filter(Boolean).join(' · ') + ' working'
+    : 'nobody is working';
+
+  $('#stop').hidden = working === 0;
+}
+
+$('#stop').addEventListener('click', async () => {
+  try {
+    const { stopped } = await api('/api/interrupt', { method: 'POST' });
+    const what = [...stopped.seats, ...stopped.runs.map((r) => `run #${r}`)];
+    toast(what.length ? `stopped ${what.join(', ')}` : 'nothing was running', 'info');
+    await renderBusy();
+  } catch (e) { toast(e.message); }
 });
 
 // Live updates: the server tells us the high-water mark moved, we pull the delta.
