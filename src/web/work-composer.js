@@ -135,7 +135,10 @@ export async function mountJobBox({ host, onStarted = null, idea = null } = {}) 
   }
 
   const goal = box.querySelector('#jobGoal');
-  const grow = () => { goal.style.height = 'auto'; goal.style.height = `${Math.min(goal.scrollHeight, 200)}px`; };
+  const grow = () => {
+    goal.style.height = 'auto';
+    goal.style.height = `${Math.min(Math.max(goal.scrollHeight, 28), 320)}px`;
+  };
   goal.addEventListener('input', grow);
 
   box.querySelector('#jobGo').addEventListener('click', run);

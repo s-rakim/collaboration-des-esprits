@@ -151,9 +151,12 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 .composer, .jobbox {
   flex:none;
   background:var(--bg);
-  padding:8px 16px 18px;
+  /* No side gutter: the box spans the column it belongs to, corner to corner.
+     A centred, capped box leaves two strips of dead space either side of the
+     one thing on the screen you are actually using. */
+  padding:8px 0 12px;
 }
-.composer > .wrap, .jobbox > .wrap { max-width:820px; margin:0 auto }
+.composer > .wrap, .jobbox > .wrap { max-width:none; margin:0 }
 
 /* The box: the text, and one round button for the only thing it can do. */
 .composer .box, .jobbox .box {
@@ -168,15 +171,22 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 }
 .composer .box:focus-within, .jobbox .box:focus-within { border-color:var(--accent) }
 
+/*
+ * One line to begin with, growing as you write.
+ *
+ * The width is where the room is: the box spans the column, so a paragraph gets
+ * two or three lines rather than ten. Opening several lines tall would mean a
+ * block of empty space under every short message, which is most of them.
+ */
 .composer .box textarea, .jobbox .box textarea {
   flex:1;
   min-width:0;
   border:0;
   background:none;
-  padding:6px 0;
-  min-height:26px;
+  padding:5px 0;
+  min-height:28px;
   resize:none;
-  line-height:1.5;
+  line-height:1.55;
 }
 .composer .box textarea:focus, .jobbox .box textarea:focus { outline:0 }
 .composer .box .slashwrap { flex:1; min-width:0 }
@@ -246,7 +256,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   display:flex;
   align-items:center;
   gap:2px;
-  padding:7px 4px 0;
+  padding:7px 2px 0;
   font-size:12.5px;
 }
 .composer .bar .grow, .jobbox .bar .grow { flex:1 }
@@ -346,7 +356,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   gap:6px;
   align-items:center;
   flex-wrap:wrap;
-  margin-bottom:7px;
+  margin:0 2px 7px;
   font-size:12px;
   color:var(--faint);
 }

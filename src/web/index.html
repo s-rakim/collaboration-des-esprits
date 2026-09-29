@@ -59,7 +59,9 @@
   .msg.k-question .b{border-left:3px solid var(--bad)}
   .msg.k-handoff .b{border-left:3px solid var(--human)}
   .msg .b .mention{color:var(--accent);font-weight:600}
-  .composer{border-top:1px solid var(--line);padding:11px 16px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+  /* The shape of the composer lives in theme.css, which both halves share.
+     This page only says where it sits in the column. */
+  .composer{display:flex;flex-direction:column}
   .row{display:flex;gap:8px;align-items:center}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;font-size:13px}
   .card .cardh{font-weight:600;margin-bottom:4px}
@@ -977,7 +979,9 @@ function say(text) {
 function grow() {
   const box = $('#body');
   box.style.height = 'auto';
-  box.style.height = `${Math.min(box.scrollHeight, 220)}px`;
+  // The floor matches the stylesheet's, or the first keystroke collapses the
+  // box to one line and it looks like typing broke it.
+  box.style.height = `${Math.min(Math.max(box.scrollHeight, 28), 340)}px`;
 }
 $('#body').addEventListener('input', grow);
 

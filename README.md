@@ -585,10 +585,12 @@ Both halves have one, because a half of an app you cannot type in is a half you
 only ever read. In the chat it posts a message; on Work it hands a job to the
 swarm, and the run opens where you are rather than sending you looking for it.
 
-The box is centred and capped — a line of text three feet wide is one nobody can
-read the start and end of at once — with the controls on a row beneath it rather
-than inside it: what you are writing is the point, not the buttons under it.
-`/` opens the menu of everything else.
+The box spans its column, corner to corner. A centred, capped one leaves two
+strips of dead space either side of the single thing on the screen you are
+actually using. It opens one line tall and grows as you write — the width is
+where the room is, so a paragraph takes two or three lines rather than ten.
+Controls sit on a row beneath rather than inside it: what you are writing is the
+point, not the buttons under it. `/` opens the menu of everything else.
 
 **Two buttons, two jobs.** The return key sends what you wrote. The filled circle
 stops what is already running, and only appears while something is. They cannot
