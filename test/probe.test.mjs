@@ -194,3 +194,107 @@ test('the key check asks for as little as a request can ask for', async () => {
   assert.equal(asked.messages.length, 1);
   assert.equal(asked.model, 'm');
 });
+
+test('a model the account cannot reach is not a broken key', async () => {
+  // The catalogue an endpoint serves is what the provider hosts, not what your
+  // account may call. Answering "does this key work" with whichever model
+  // sorted first turned one unavailable model into "your key is broken", and
+  // sent somebody off to fetch a new key they did not need.
+  const { tryKey } = await import('../src/probe.js');
+  const asked = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    asked.push(body.model);
+    if (body.model !== 'vendor/allowed') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({
+        status: 404,
+        title: 'Not Found',
+        detail: `Function '23bd454d-b225': Not found for account 'klpks'`,
+      }));
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"message":{"content":"ok"}}]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  // Given the list, it walks past the ones the account cannot reach and
+  // reports the one it can.
+  const found = await tryKey({
+    baseURL: base,
+    apiKey: 'k',
+    models: ['vendor/a', 'vendor/b', 'vendor/allowed', 'vendor/d'],
+  });
+  assert.equal(found.ok, true);
+  assert.equal(found.model, 'vendor/allowed');
+  assert.deepEqual(asked, ['vendor/a', 'vendor/b', 'vendor/allowed']);
+
+  // Asked about one model in particular, it answers about that model and does
+  // not go hunting for a different one.
+  asked.length = 0;
+  const one = await tryKey({ baseURL: base, apiKey: 'k', model: 'vendor/a' });
+  assert.equal(one.ok, false);
+  assert.equal(one.modelUnavailable, true);
+  assert.equal(one.unauthorized, false);
+  assert.deepEqual(asked, ['vendor/a']);
+  // The sentence carries the provider's own words, not its JSON.
+  assert.match(one.error, /Not found for account/);
+  assert.doesNotMatch(one.error, /[{}"]/);
+
+  // When none of them work it still blames the models, not the key, and says
+  // how many it got through.
+  asked.length = 0;
+  const none = await tryKey({ baseURL: base, apiKey: 'k', models: ['x1', 'x2', 'x3'] });
+  assert.equal(none.ok, false);
+  assert.equal(none.modelUnavailable, true);
+  assert.equal(none.exhausted, 3);
+  server.close();
+});
+
+test('a refused key is reported after one model, not six', async () => {
+  const { tryKey } = await import('../src/probe.js');
+  let calls = 0;
+  const server = http.createServer(async (req, res) => {
+    for await (const c of req) void c;
+    calls += 1;
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end('{"error":{"message":"Incorrect API key provided"}}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const out = await tryKey({
+    baseURL: `http://127.0.0.1:${server.address().port}`,
+    apiKey: 'nope',
+    models: ['a', 'b', 'c', 'd', 'e', 'f'],
+  });
+  server.close();
+  assert.equal(out.ok, false);
+  assert.equal(out.unauthorized, true);
+  // A refused key refuses every model, so walking the list only makes somebody
+  // wait for six copies of the same answer.
+  assert.equal(calls, 1);
+  assert.match(out.error, /401: Incorrect API key provided/);
+});
+
+test('the list of models to try is capped', async () => {
+  const { tryKey } = await import('../src/probe.js');
+  let calls = 0;
+  const server = http.createServer(async (req, res) => {
+    for await (const c of req) void c;
+    calls += 1;
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end('{"detail":"model_not_found"}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  // An endpoint offering 81 models must not cost 81 requests to give up on.
+  const out = await tryKey({
+    baseURL: `http://127.0.0.1:${server.address().port}`,
+    apiKey: 'k',
+    models: Array.from({ length: 81 }, (_, i) => `m${i}`),
+  });
+  server.close();
+  assert.equal(calls, 6);
+  assert.equal(out.exhausted, 6);
+});

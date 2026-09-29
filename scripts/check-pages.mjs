@@ -221,8 +221,13 @@ try {
     if (!fixed.endsWith('/v1')) note('setup', `"find" did not repair the base URL (left it at ${fixed})`);
     const list = await page.$$eval('.conn[data-conn="test provider"] datalist option', (o) => o.map((x) => x.value));
     if (!list.length) note('setup', '"find" did not offer the models the endpoint listed');
+    // "Vendor Model A" is not something this endpoint has. It must not survive,
+    // and an empty box is only the floor: a model the key was just proven on is
+    // a better thing to leave behind than nothing to pick from.
     const left = await page.inputValue('.conn[data-conn="test provider"] .cm');
-    if (left) note('setup', `a model the endpoint does not have was kept: ${left}`);
+    if (left && !OFFERED.includes(left)) {
+      note('setup', `a model the endpoint does not have was kept: ${left}`);
+    }
 
     // Listing models often needs no key, so finding the endpoint must not be
     // reported as being able to use it.

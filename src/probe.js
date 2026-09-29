@@ -117,47 +117,114 @@ async function askModels(base, apiKey, extra = {}) {
 }
 
 /**
+ * Say what a refusal actually means, in a sentence.
+ *
+ * Providers answer failures with their own JSON, and pasting that JSON into
+ * the page verbatim hands somebody a function UUID and an account hash to read
+ * past before they reach the one word that matters. The useful part is nearly
+ * always a "message" or a "detail" field, so dig it out and show that.
+ */
+export function explain(status, raw) {
+  const text = String(raw ?? '').trim();
+  let message = '';
+  try {
+    const body = JSON.parse(text);
+    const found = body.error?.message ?? body.message ?? body.detail ?? body.error ?? body.title;
+    if (typeof found === 'string') message = found;
+  } catch {
+    message = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  message = message.slice(0, 200);
+  return message ? `${status}: ${message}` : `HTTP ${status}`;
+}
+
+/**
+ * Is this a refusal of the model rather than of the key?
+ *
+ * The distinction decides what somebody is told to do next: a key that was
+ * refused has to be replaced, while a model the account cannot reach just means
+ * picking another from the list — and a catalogue listing every model a
+ * provider hosts is not a list of the ones your particular account may call.
+ */
+function aboutTheModel(status, text) {
+  if (status === 404) return true;
+  return /model[_ ]?not[_ ]?found|not found for account|does not exist|no access to|not authorized to (use|access) (the )?model/i.test(text);
+}
+
+/**
  * Make the smallest real call there is, to find out whether the key works.
  *
  * Listing models often needs no credential at all — which is why finding an
  * endpoint and being able to use it are different questions, and answering only
  * the first sends somebody away thinking they are set up when they are not.
+ *
+ * Takes a list rather than one name, because the answer to "does this key work"
+ * must not depend on which model happened to sort first. A provider's catalogue
+ * is what it hosts, not what your account may call, so a few of the listed
+ * models refusing is ordinary — the key is proven by the first one that does
+ * not, and that one is worth handing back as the model to start with.
  */
-export async function tryKey({ baseURL, apiKey, model, extra = {} }) {
-  if (!model) return { ok: null, error: 'no model to try' };
+export async function tryKey({ baseURL, apiKey, model, models, extra = {} }) {
+  const list = (models ?? (model ? [model] : [])).filter(Boolean);
+  if (!list.length) return { ok: null, error: 'no model to try' };
 
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-  try {
-    const headers = { 'content-type': 'application/json', ...(extra.headers ?? {}) };
-    if (apiKey) {
-      const named = extra.keyHeader;
-      if (named) headers[named] = apiKey;
-      else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
+  // Enough to get past a run of models the account cannot reach, few enough
+  // that a key which is simply wrong is reported in seconds. A model that was
+  // asked for explicitly is the only one tried, because "that one failed, so
+  // here is a different one" is not an answer to a question about that one.
+  const attempts = models ? list.slice(0, 6) : list;
+  let last = null;
+
+  for (const candidate of attempts) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    try {
+      const headers = { 'content-type': 'application/json', ...(extra.headers ?? {}) };
+      if (apiKey) {
+        const named = extra.keyHeader;
+        if (named) headers[named] = apiKey;
+        else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
+      }
+
+      const res = await fetch(`${baseURL}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: ctl.signal,
+        // As small as a request can be: one token in, one token out.
+        body: JSON.stringify({
+          model: candidate,
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+      if (res.ok) return { ok: true, model: candidate, tried: attempts.indexOf(candidate) + 1 };
+
+      const text = await res.text();
+      last = {
+        ok: false,
+        status: res.status,
+        model: candidate,
+        unauthorized: res.status === 401 || res.status === 403,
+        modelUnavailable: aboutTheModel(res.status, text),
+        error: explain(res.status, text),
+      };
+      // A refused key refuses every model, so walking the list proves nothing
+      // and only makes somebody wait for six copies of the same answer.
+      if (!last.modelUnavailable) return last;
+    } catch (err) {
+      last = err.name === 'AbortError'
+        ? { ok: false, model: candidate, error: `no answer within ${TIMEOUT_MS / 1000}s` }
+        : { ok: false, model: candidate, error: err.message };
+      return last;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const res = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers,
-      signal: ctl.signal,
-      // As small as a request can be: one token in, one token out.
-      body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-    });
-    if (res.ok) return { ok: true };
-
-    const text = (await res.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-    return {
-      ok: false,
-      status: res.status,
-      unauthorized: res.status === 401 || res.status === 403,
-      error: text ? `${res.status}: ${text}` : `HTTP ${res.status}`,
-    };
-  } catch (err) {
-    if (err.name === 'AbortError') return { ok: false, error: `no answer within ${TIMEOUT_MS / 1000}s` };
-    return { ok: false, error: err.message };
-  } finally {
-    clearTimeout(timer);
   }
+
+  // Every one tried was refused for being that model. The key was never the
+  // problem, and saying so is the difference between picking from a list and
+  // hunting for a new key.
+  return { ...last, exhausted: attempts.length };
 }
 
 /**

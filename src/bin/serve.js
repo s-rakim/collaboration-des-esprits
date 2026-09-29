@@ -911,14 +911,25 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   // Listing models often needs no credential at all, so an endpoint that
   // answered is not yet an endpoint you can use. One tiny call settles it here
   // rather than leaving somebody to find out at the next step.
+  const chosen = keepsModel && conn.model ? conn.model : null;
   const usable = conn.kind === 'chat'
     ? await tryKey({
         baseURL: found.baseURL,
         apiKey: conn.apiKey,
-        model: keepsModel && conn.model ? conn.model : found.models[0],
+        // With a model already chosen the question is about that model. With
+        // none, the question is whether the key works at all, and answering it
+        // with whichever model sorted first turns one unavailable model into
+        // "your key is broken".
+        ...(chosen ? { model: chosen } : { models: found.models }),
         extra: conn.extra,
       })
     : { ok: null };
+
+  // A model proven to work is better than an empty box, so long as nobody had
+  // picked one — the list is still there to change it.
+  if (usable.ok && !chosen && usable.model) {
+    connections.save({ name: conn.name, kind: conn.kind, baseURL: found.baseURL, model: usable.model });
+  }
 
   res.json({ ...found, clearedModel: keepsModel ? null : conn.model, key: usable });
 });

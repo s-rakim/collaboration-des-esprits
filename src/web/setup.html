@@ -480,12 +480,24 @@ function wireConns() {
         // Finding the endpoint and being able to use it are different
         // questions, because listing models often needs no credential.
         if (found.key?.ok === false) {
-          notes.push(found.key.unauthorized
-            ? 'but it refused the key — paste a fresh one'
-            : `but a real call failed: ${found.key.error}`);
+          // Which of the two is wrong decides what to do next, and they look
+          // nothing alike: one needs a new key, the other needs a different
+          // pick from a list that is already on screen.
+          if (found.key.unauthorized) {
+            notes.push('but it refused the key — paste a fresh one');
+          } else if (found.key.modelUnavailable && found.key.exhausted) {
+            notes.push(`but the first ${found.key.exhausted} are not enabled for your account`
+              + ' — pick another from the box');
+          } else if (found.key.modelUnavailable) {
+            notes.push(`but "${found.key.model}" is not enabled for your account — pick another`);
+          } else {
+            notes.push(`but a real call failed — ${found.key.error}`);
+          }
           say(notes.join(' · '), 'err');
         } else {
-          if (found.key?.ok) notes.push('the key works');
+          if (found.key?.ok) {
+            notes.push(found.key.model ? `the key works on ${found.key.model}` : 'the key works');
+          }
           notes.push('click the model box to pick one');
           say(notes.join(' · '), 'ok');
         }
