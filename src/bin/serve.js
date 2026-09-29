@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import express from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -73,19 +73,167 @@ let telegram = null;
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+// The sign-in page posts a form, so that one body shape is parsed too.
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 
 /**
- * Shared-secret auth, on when ESPRITS_TOKEN is set. Loopback-only by default
- * means the common local setup needs no secret; binding to 0.0.0.0 without one
- * is refused below rather than silently exposing the room.
+ * Shared-secret auth, on when ESPRITS_TOKEN is set.
+ *
+ * Loopback-only by default means the common local setup needs no secret.
+ * Reaching the room from another machine does, and that has to work in a
+ * browser as well as from a script — which is what the cookie is for.
+ *
+ * A header alone cannot carry a browser: EventSource, <img src>, a plain link
+ * and the media files all make requests you cannot attach a header to, so a
+ * token-protected room would have had a dead feed and broken images even if
+ * every fetch had been wrapped. Signing in once exchanges the token for a
+ * cookie the browser then sends on everything by itself.
  */
-app.use((req, res, next) => {
-  if (!TOKEN || req.path === '/health') return next();
+const COOKIE = 'esprits_token';
+const SESSION_DAYS = 30;
+
+/** Constant-time-ish compare, so a wrong token leaks nothing by how long it took. */
+function sameSecret(a, b) {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b ?? ''));
+  if (x.length !== y.length) return false;
+  return timingSafeEqual(x, y);
+}
+
+function cookieToken(req) {
+  const raw = req.get('cookie');
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name === COOKIE) return decodeURIComponent(rest.join('='));
+  }
+  return null;
+}
+
+function presentedToken(req) {
   const header = req.get('authorization') ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : req.get('x-esprits-token');
-  if (bearer !== TOKEN) return res.status(401).json({ error: 'bad or missing token' });
-  next();
+  if (header.startsWith('Bearer ')) return header.slice(7);
+  return req.get('x-esprits-token') ?? cookieToken(req);
+}
+
+/** A browser asking for a page, as opposed to a script asking for JSON. */
+const wantsPage = (req) =>
+  req.method === 'GET' && (req.get('accept') ?? '').includes('text/html');
+
+// A shared secret with no rate limit is a secret you can guess at line speed.
+const attempts = new Map();
+function tooManyTries(ip) {
+  const seen = attempts.get(ip) ?? { n: 0, until: 0 };
+  if (Date.now() < seen.until) return true;
+  if (seen.n >= 8) {
+    attempts.set(ip, { n: 0, until: Date.now() + 60_000 });
+    return true;
+  }
+  return false;
+}
+
+app.use((req, res, next) => {
+  if (!TOKEN || req.path === '/health' || req.path === '/unlock') return next();
+  if (sameSecret(presentedToken(req), TOKEN)) return next();
+  // A person gets somewhere they can do something about it; a script gets JSON.
+  if (wantsPage(req)) return res.redirect(`/unlock?next=${encodeURIComponent(req.originalUrl)}`);
+  res.status(401).json({ error: 'bad or missing token' });
 });
+
+/**
+ * Sign in. The token goes in once and comes back as a cookie, so the browser
+ * carries it on the feed, the images and the pages without any of them knowing
+ * about it.
+ */
+app.get('/unlock', (req, res) => {
+  if (!TOKEN) return res.redirect('/');
+  if (sameSecret(presentedToken(req), TOKEN)) return res.redirect(safeNext(req.query.next));
+  res.type('html').send(unlockPage({ next: safeNext(req.query.next) }));
+});
+
+app.post('/unlock', (req, res) => {
+  if (!TOKEN) return res.redirect('/');
+  const ip = req.ip ?? 'unknown';
+  if (tooManyTries(ip)) {
+    return res.status(429).type('html').send(unlockPage({ next: '/', error: 'Too many tries. Wait a minute.' }));
+  }
+
+  const given = String(req.body?.token ?? '').trim();
+  if (!sameSecret(given, TOKEN)) {
+    const seen = attempts.get(ip) ?? { n: 0, until: 0 };
+    attempts.set(ip, { ...seen, n: seen.n + 1 });
+    return res.status(401).type('html').send(unlockPage({ next: safeNext(req.body?.next), error: 'That is not the token.' }));
+  }
+
+  attempts.delete(ip);
+  // Secure only over HTTPS, or the cookie is dropped on a plain-http tailnet.
+  const https = req.secure || (req.get('x-forwarded-proto') ?? '').split(',')[0] === 'https';
+  res.cookie(COOKIE, TOKEN, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: https,
+    path: '/',
+    maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
+  });
+  res.redirect(safeNext(req.body?.next));
+});
+
+app.post('/lock', (req, res) => {
+  res.clearCookie(COOKIE, { path: '/' });
+  res.json({ ok: true });
+});
+
+/** Only ever send somebody back to a path on this server. */
+function safeNext(raw) {
+  const to = String(raw ?? '/');
+  return /^\/(?!\/)/.test(to) ? to : '/';
+}
+
+/**
+ * The sign-in page.
+ *
+ * Deliberately standalone: it is the one page served to somebody who has not
+ * authenticated, so it borrows nothing from the app it is guarding.
+ */
+function unlockPage({ next = '/', error = '' } = {}) {
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collaboration des Esprits</title><link rel="icon" href="data:,">
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e6e8ee;--dim:#98a0b3;--faint:#6b7488;--accent:#7aa2f7;--bad:#f7768e}
+  @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--panel:#fff;--line:#dde1e8;--text:#12151b;--dim:#5b6373;--faint:#8b93a5;--accent:#2d5bd7;--bad:#c3364f}}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;width:min(400px,100%)}
+  h1{margin:0 0 4px;font-size:16px;letter-spacing:-.01em}
+  p{margin:0 0 18px;color:var(--dim);font-size:13px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:6px}
+  input{width:100%;font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px}
+  input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  button{width:100%;margin-top:14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff;
+    border:0;border-radius:8px;padding:10px 14px;font-weight:550}
+  .err{color:var(--bad);font-size:12.5px;margin:10px 0 0}
+  .hint{color:var(--faint);font-size:11.5px;margin:16px 0 0;line-height:1.5}
+</style></head>
+<body>
+  <form method="post" action="/unlock">
+    <h1>Collaboration des Esprits</h1>
+    <p>This room is reachable from outside this machine, so it asks for its token.</p>
+    <label for="token">Access token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" autofocus
+      placeholder="the value of ESPRITS_TOKEN">
+    <input type="hidden" name="next" value="${esc(next)}">
+    <button type="submit">Open the room</button>
+    ${error ? `<p class="err">${esc(error)}</p>` : ''}
+    <p class="hint">Set on the machine running the room, as <code>ESPRITS_TOKEN</code>.
+      Signing in here keeps this browser signed in for 30 days.</p>
+  </form>
+</body></html>`;
+}
 
 app.get('/health', (_req, res) => res.json({ ok: true, name: 'collaboration-des-esprits', head: hub.head() }));
 
@@ -998,14 +1146,58 @@ app.use(express.static(join(here, '..', 'web')));
 
 // ------------------------------------------------------------------- listen
 
-if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
-  // Binding beyond loopback with no secret would publish the whole room —
-  // every idea, decision and handoff — to anything that can reach the port.
-  process.stderr.write(
-    `esprits: refusing to bind ${HOST} without ESPRITS_TOKEN set.\n` +
-      `Set a token, or leave ESPRITS_HOST at 127.0.0.1.\n`,
-  );
-  process.exit(1);
+/**
+ * What kind of address is this, and can it be bound without a secret?
+ *
+ * Loopback needs nothing. A private address — your LAN, or a Tailscale
+ * interface — is already behind something that decides who may reach it, so a
+ * token there is defence in depth rather than the only defence, and requiring
+ * it would be friction for no gain.
+ *
+ * Everything else is refused without one. 0.0.0.0 in particular means *every*
+ * interface, including whichever one faces the internet, and this database
+ * holds every key you have pasted in.
+ */
+function bindKind(host) {
+  const h = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.')) return 'loopback';
+  if (h === '0.0.0.0' || h === '::' || h === '*') return 'everything';
+
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    // 100.64/10 is the shared-address range Tailscale hands out.
+    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+        (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)) return 'private';
+    return 'public';
+  }
+  // Tailscale's own IPv6 range is inside fd00::/8, with the rest of unique-local.
+  if (/^f[cd][0-9a-f]{2}:/.test(h) || /^fe80:/.test(h)) return 'private';
+  // A hostname could be anything, so it is treated as though it were public.
+  return 'public';
+}
+
+const BIND = bindKind(HOST);
+
+if (BIND !== 'loopback' && !TOKEN) {
+  if (BIND === 'private') {
+    process.stdout.write(
+      `esprits: binding ${HOST} with no ESPRITS_TOKEN.\n` +
+        `  Anything already on that network can open this room and read every key in it.\n` +
+        `  On a tailnet that is your own devices. On a shared network it is not.\n` +
+        `  Set ESPRITS_TOKEN to ask for a password as well.\n\n`,
+    );
+  } else {
+    // Binding beyond a private network with no secret would publish the whole
+    // room — every idea, decision, handoff and API key — to anything that can
+    // reach the port.
+    process.stderr.write(
+      `esprits: refusing to bind ${HOST} without ESPRITS_TOKEN set.\n` +
+        `  ${HOST === '0.0.0.0' || HOST === '::' ? 'That is every interface, including any facing the internet.' : 'That address is not a private one.'}\n` +
+        `  Set a token, bind a private or tailnet address instead, or leave ESPRITS_HOST at 127.0.0.1.\n`,
+    );
+    process.exit(1);
+  }
 }
 
 /**
@@ -1146,7 +1338,7 @@ app.listen(PORT, HOST, () => {
       `  setup      http://${HOST}:${PORT}/setup\n` +
       `  connector  http://${HOST}:${PORT}/mcp\n` +
       `  database   ${hub.db.name}\n` +
-      `  auth       ${TOKEN ? 'bearer token required' : 'none (loopback only)'}\n` +
+      `  auth       ${TOKEN ? 'token — sign in once per browser at /unlock' : `none (${BIND === 'loopback' ? 'loopback only' : 'anyone on this network'})`}\n` +
       `  models     ${seats.enabled().map((s) => `${s.name}=${s.model || '?'}`).join(', ') || 'none — add some at /setup'}\n` +
       `  endpoints  ${connections.all().map((c) => `${c.name}(${c.kind})`).join(', ') || 'none'}\n` +
       `  schedules  ${hub.schedules().filter((s) => s.enabled).length} active\n` +

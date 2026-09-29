@@ -66,6 +66,71 @@ A fresh agent calls it once and is caught up. That is what replaces re-briefing.
 
 ---
 
+## Running it somewhere else
+
+The room is one process and one SQLite file, so "somewhere else" is a box you
+can SSH into. What changes is who can reach it.
+
+### On a tailnet (the good option)
+
+A tailnet already answers the question a password is usually there to answer —
+which devices are yours — and it encrypts the hop, which plain HTTP does not.
+Two ways, and the first is better:
+
+**Let Tailscale do the serving.** The room stays on loopback and never listens
+on a network at all:
+
+```bash
+npm start                      # still 127.0.0.1:4300, still no token
+tailscale serve --bg 4300      # now https://<machine>.<tailnet>.ts.net
+```
+
+Nothing else changes. You get a real HTTPS certificate, the port is never open
+to anything but your tailnet, and if you turn Tailscale off it is unreachable
+rather than merely unauthenticated.
+
+**Or bind the tailnet address yourself**, if you would rather not use `serve`:
+
+```bash
+ESPRITS_HOST=$(tailscale ip -4) npm start
+```
+
+That is allowed without a token, because a private address is already behind
+something that decides who may reach it — the room says as much at startup. Add
+`ESPRITS_TOKEN` as well if other people are on your tailnet.
+
+### Anywhere else
+
+Binding `0.0.0.0` without `ESPRITS_TOKEN` is refused, and that refusal is not
+being precious: this database holds every API key you have pasted in, in plain
+text, next to every idea and decision the room has recorded.
+
+```bash
+ESPRITS_HOST=0.0.0.0 ESPRITS_TOKEN=$(openssl rand -hex 24) npm start
+```
+
+Put it behind something that terminates TLS. A token over plain HTTP is a token
+anybody on the path can read.
+
+### Signing in
+
+With a token set, a browser is sent to `/unlock`, where the token goes in once
+and comes back as an httpOnly cookie good for thirty days. This is not
+decoration: `EventSource`, `<img src>` and a plain link cannot carry an
+`Authorization` header, so a header-only room would have had a dead live feed and
+broken images. Scripts and the MCP connector keep using
+`Authorization: Bearer <token>` as before.
+
+`POST /lock` signs the browser out. `/health` stays open, so a monitor can watch
+the room without holding the secret.
+
+### What still lives on the machine
+
+The database — and therefore your keys — sits next to the process, unencrypted.
+Whoever can read that file has your keys, wherever that file is. That argues for
+a box you control over a shared host, and for a separate set of keys if you are
+putting it somewhere you do not.
+
 ## If it is not working
 
 Three things account for almost every "it does not work", and the app now says
@@ -618,10 +683,15 @@ just takes precedence when both are present.
 
 The room contains every idea, decision and handoff you have, so:
 
-- It binds to **loopback only** by default. Binding elsewhere without
-  `ESPRITS_TOKEN` is **refused**, not warned about.
+- It binds to **loopback only** by default. A private or tailnet address binds
+  without a token, with a line at startup saying what that means; a public
+  address or `0.0.0.0` without one is **refused**, not warned about.
 - To reach it from outside, put it on a private network (Tailscale) rather than
-  opening a port.
+  opening a port. See **Running it somewhere else**.
+- With a token set, a browser signs in once at `/unlock` and carries an httpOnly,
+  SameSite=Strict cookie; scripts keep using a bearer header. Sign-in attempts
+  are rate limited, and the `next` parameter can only ever point back at this
+  server.
 - A Telegram chat is inert until paired, and `/stop` revokes it.
 - The database holds your API keys once you save them, so it is set to `600` and
   should be treated like a credential file. Prefer environment variables if you
@@ -630,7 +700,7 @@ The room contains every idea, decision and handoff you have, so:
 ## Tests
 
 ```bash
-npm test              # the rules
+npm test              # the rules, the routes, the binding rules and auth
 npm run check:pages   # the pages, in a real browser
 npm run check:presets # the endpoint catalogue, by calling it
 ```
@@ -642,7 +712,7 @@ first run were all invisible to a unit test — Enter doing nothing in a dialog,
 error painted behind the modal that raised it, a seat that displayed a
 connection it did not have.
 
-196 tests over the domain rules, turn-taking, connections and seats, artifacts
+211 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
 Telegram command language, the page routes, and the model participants (driven
