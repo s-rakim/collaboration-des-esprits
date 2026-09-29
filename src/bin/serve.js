@@ -15,6 +15,7 @@ import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
 import { createWebBridge } from '../web.js';
 import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
+import { probe as probeEndpoint } from '../probe.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss,
@@ -848,6 +849,50 @@ app.post('/api/connections', (req, res) =>
 app.delete('/api/connections/:name', (req, res) =>
   send(res, () => ({ removed: connections.remove(req.params.name) })),
 );
+
+/**
+ * Work out what this endpoint wants, rather than making somebody guess it.
+ *
+ * Two guesses were in every new connection — whether the base URL ends in /v1,
+ * and what the model is really called — and getting either wrong produced an
+ * error from somebody else's server about somebody else's field names. This
+ * asks the endpoint both questions and fixes the URL if one of the obvious
+ * repairs is the answer.
+ */
+app.post('/api/connections/:name/probe', async (req, res) => {
+  const conn = connections.resolve(req.params.name);
+  if (!conn) return res.status(404).json({ ok: false, error: `no connection named "${req.params.name}"` });
+
+  // The page sends what is typed in the row, which may not be saved yet — the
+  // whole point is to check before committing to it.
+  const baseURL = String(req.body?.baseURL ?? conn.baseURL ?? '').trim();
+  if (!baseURL) return res.status(400).json({ ok: false, error: 'there is no base URL to check' });
+
+  const found = await probeEndpoint({ baseURL, apiKey: conn.apiKey, extra: conn.extra });
+  if (!found.ok) {
+    return res.status(400).json({
+      ...found,
+      error: found.unauthorized
+        ? `${found.baseURL} is the right address, but the key was refused (${found.error})`
+        : `${found.error} — tried ${found.tried.map((t) => t.baseURL).join(', ') || 'nothing'}`,
+    });
+  }
+
+  // A repaired URL is saved, because leaving the broken one in the box after
+  // telling somebody it is broken is a step for nothing. A model this endpoint
+  // has never heard of goes the same way: keeping it only means the next call
+  // fails for the same reason, and now there is a list to pick from.
+  const keepsModel = !conn.model || found.models.includes(conn.model);
+  if (found.changed || !keepsModel) {
+    connections.save({
+      name: conn.name,
+      kind: conn.kind,
+      baseURL: found.baseURL,
+      model: keepsModel ? conn.model : '',
+    });
+  }
+  res.json({ ...found, clearedModel: keepsModel ? null : conn.model });
+});
 
 /** One real call, so a wrong key or base URL fails here and not in a loop. */
 app.post('/api/connections/:name/test', async (req, res) => {

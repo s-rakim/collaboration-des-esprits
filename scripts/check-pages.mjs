@@ -44,11 +44,27 @@ const serverLog = [];
 server.stdout.on('data', (d) => serverLog.push(String(d)));
 server.stderr.on('data', (d) => serverLog.push(String(d)));
 
-/** A provider that answers like OpenAI, so a seat can really be exercised. */
+/**
+ * A provider that answers like OpenAI, so a seat can really be exercised — and
+ * like the ones people actually paste: nothing at the root, the API under /v1,
+ * and model ids that look nothing like the names on the marketing page.
+ */
 const { createServer } = await import('node:http');
+const OFFERED = ['vendor/model-a-instruct', 'vendor/model-b-instruct'];
 const provider = createServer(async (req, res) => {
   const chunks = [];
   for await (const c of req) chunks.push(c);
+  const path = new URL(req.url, 'http://x').pathname;
+
+  if (path === '/v1/models') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ data: OFFERED.map((id) => ({ id })) }));
+  }
+  if (path !== '/v1/chat/completions') {
+    res.writeHead(404, { 'content-type': 'text/html' });
+    return res.end('<html><body>404 Not Found</body></html>');
+  }
+
   const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({
@@ -58,7 +74,9 @@ const provider = createServer(async (req, res) => {
   }));
 });
 await new Promise((r) => provider.listen(0, '127.0.0.1', r));
-const PROVIDER = `http://127.0.0.1:${provider.address().port}/v1`;
+// Deliberately without the /v1 the endpoint needs: the check is that the page
+// works that out rather than leaving somebody to read a 404 and guess.
+const PROVIDER = `http://127.0.0.1:${provider.address().port}`;
 
 async function waitForServer() {
   for (let i = 0; i < 60; i++) {
@@ -182,10 +200,32 @@ try {
     const row = await page.$('.conn[data-new="1"]');
     await row.$eval('.cn', (el) => { el.value = 'test provider'; });
     await row.$eval('.cu', (el, url) => { el.value = url; }, PROVIDER);
-    await row.$eval('.cm', (el) => { el.value = 'test-model'; });
+    // The name off the documentation page rather than the id, which is the
+    // mistake everybody makes and nothing used to catch.
+    await row.$eval('.cm', (el) => { el.value = 'Vendor Model A'; });
     await row.$eval('.cs', (el) => { el.value = 'sk-not-a-real-key'; });
     await row.$eval('.cn', (el) => el.dispatchEvent(new Event('blur')));
     await page.waitForTimeout(1200);
+
+    // Ask the endpoint what it wants, instead of making somebody guess twice.
+    await page.click('.conn[data-conn="test provider"] .find');
+    await page.waitForFunction(
+      () => /models —|error|could not|none of these/i.test(document.querySelector('#msg')?.textContent ?? ''),
+      null, { timeout: 20000 },
+    );
+    await page.waitForTimeout(600);
+
+    const fixed = await page.inputValue('.conn[data-conn="test provider"] .cu');
+    if (!fixed.endsWith('/v1')) note('setup', `"find" did not repair the base URL (left it at ${fixed})`);
+    const list = await page.$$eval('.conn[data-conn="test provider"] datalist option', (o) => o.map((x) => x.value));
+    if (!list.length) note('setup', '"find" did not offer the models the endpoint listed');
+    const left = await page.inputValue('.conn[data-conn="test provider"] .cm');
+    if (left) note('setup', `a model the endpoint does not have was kept: ${left}`);
+
+    // Picking one from the list must actually work.
+    await page.fill('.conn[data-conn="test provider"] .cm', list[0] ?? 'nothing');
+    await page.dispatchEvent('.conn[data-conn="test provider"] .cm', 'change');
+    await page.waitForTimeout(1000);
 
     const saved = await page.evaluate(async () => (await (await fetch('/api/connections')).json()).connections);
     const mine = saved.find((c) => c.name === 'test provider');

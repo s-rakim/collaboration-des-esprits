@@ -42,13 +42,13 @@
   textarea{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%;resize:vertical;min-height:90px;font-family:inherit}
   textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
   .seat{display:grid;grid-template-columns:.9fr 1fr 1.3fr .9fr .7fr auto auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
-  .conn{display:grid;grid-template-columns:1fr .9fr 1.5fr 1.1fr 1fr auto auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .conn{display:grid;grid-template-columns:1fr .9fr 1.5fr 1.1fr 1fr auto auto auto auto;gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
   .conn:last-of-type{border-bottom:0}
   .conn input,.conn select{padding:6px 8px;font-size:12.5px}
   .conn .del,.seat .del{color:var(--bad);border-color:transparent;background:none;padding:4px 7px}
   .conn .del:hover,.seat .del:hover{border-color:var(--bad)}
   .conn .test,.seat .test{font-size:11px;padding:4px 8px}
-  .connhead{display:grid;grid-template-columns:1fr .9fr 1.5fr 1.1fr 1fr auto auto auto;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .connhead{display:grid;grid-template-columns:1fr .9fr 1.5fr 1.1fr 1fr auto auto auto auto;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-bottom:5px;border-bottom:1px solid var(--line)}
   @media (max-width:1000px){.conn,.seat{grid-template-columns:1fr 1fr}.connhead,.seathead{display:none}}
   .seat:last-of-type{border-bottom:0}
   .seat input,.seat select{padding:6px 8px;font-size:13px}
@@ -166,7 +166,7 @@ function render() {
       </p>
       <div class="connhead">
         <span>Name</span><span>Used for</span><span>Base URL</span><span>Default model</span>
-        <span>API key</span><span>Voice</span><span></span><span></span>
+        <span>API key</span><span>Voice</span><span></span><span></span><span></span>
       </div>
       <div id="conns"></div>
       <div class="row" style="margin-top:12px">
@@ -313,6 +313,15 @@ function render() {
 
 let roster = null;
 
+/**
+ * What each endpoint said it offers, by connection name.
+ *
+ * Kept here rather than in the row, because saving anything redraws every row
+ * and a list living in the DOM would be thrown away the moment it became
+ * useful — which is exactly what happened the first time.
+ */
+const offered = new Map();
+
 /** Filled from /api/seats; the fallback only matters if that call ever fails. */
 let ROLES = [{ id: 'generalist', summary: '' }];
 const EFFORTS = ['low','medium','high','xhigh','max'];
@@ -351,10 +360,14 @@ function connRow(c, isNew = false) {
       <input class="cn" value="${esc(c.name)}" placeholder="a name you choose">
       <select class="ck">${kinds}</select>
       <input class="cu" value="${esc(c.baseURL)}" placeholder="https://api.example.com/v1" spellcheck="false">
-      <input class="cm" value="${esc(c.model)}" placeholder="model id" spellcheck="false">
+      <input class="cm" value="${esc(c.model)}" placeholder="${(offered.get(c.name) ?? []).length ? 'pick or type' : 'model id'}"
+        spellcheck="false" list="models-${esc(c.name || 'new')}">
+      <datalist id="models-${esc(c.name || 'new')}">${(offered.get(c.name) ?? [])
+        .map((m) => `<option value="${esc(m)}"></option>`).join('')}</datalist>
       <input class="cs" type="password" autocomplete="off" placeholder="${esc(keyPlaceholder)}"
         title="${esc(c.keyPreview ?? '')}">
       ${voicePicker}
+      <button class="find" title="Ask this endpoint what it wants: the right base URL, and the models it will accept.">find</button>
       <button class="test" title="make one real call">test</button>
       <button class="del" title="remove">&times;</button>
     </div>`;
@@ -420,6 +433,52 @@ function wireConns() {
     el.querySelector('.cn').addEventListener('blur', () => {
       const name = el.querySelector('.cn').value.trim();
       if (name && (el.dataset.new || name !== el.dataset.conn)) save();
+    });
+
+    /**
+     * Ask the endpoint what it wants.
+     *
+     * This replaces the two guesses that made adding a provider a game of
+     * error-message roulette: whether the URL wants /v1 on the end, and what
+     * the model is really called. The endpoint knows both.
+     */
+    el.querySelector('.find').addEventListener('click', async () => {
+      const name = el.dataset.conn || el.querySelector('.cn').value.trim();
+      if (!name) return say('save the row first — it needs a name', 'err');
+      const button = el.querySelector('.find');
+      button.disabled = true;
+      try {
+        say(`asking ${name} what it offers…`);
+        const found = await api(`/api/connections/${encodeURIComponent(name)}/probe`, {
+          method: 'POST',
+          body: JSON.stringify({ baseURL: el.querySelector('.cu').value.trim() }),
+        });
+
+        offered.set(name, found.models);
+
+        // If what is in the box is not something this endpoint has, the box is
+        // wrong — and now there is a list to pick from instead of a guess.
+        const model = el.querySelector('.cm');
+        const wanted = model.value.trim();
+        const keep = wanted && found.models.includes(wanted);
+        if (!keep) model.value = '';
+
+        // A repaired URL is already saved server-side, so the rows are reloaded
+        // to show the truth rather than patched in place.
+        el.querySelector('.cu').value = found.baseURL;
+        if (found.changed || !keep) await loadAll();
+
+        const notes = [];
+        if (found.changed) notes.push(`fixed the URL to ${found.baseURL}`);
+        if (found.clearedModel) notes.push(`"${found.clearedModel}" is not one it has`);
+        notes.push(`${found.models.length} models — click the model box to pick one`);
+        say(notes.join(' · '), 'ok');
+        document.querySelector(`.conn[data-conn="${CSS.escape(name)}"] .cm`)?.focus();
+      } catch (err) {
+        say(err.message, 'err');
+      } finally {
+        button.disabled = false;
+      }
     });
 
     el.querySelector('.test').addEventListener('click', async () => {

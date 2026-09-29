@@ -143,8 +143,16 @@ so itself rather than leaving you to guess:
 - **A key on the connection, not on the seat.** Keys live on connections. A seat
   points at a connection and inherits its key, so a seat pointing at nothing has
   no key however many you have pasted in.
-- **A base URL without `/v1`.** Most providers' base URL ends in `/v1`. Press
-  **test** on the row: one real call, and the error says what to change.
+- **A base URL without `/v1`, or a model named the way the website names it.**
+  These were the two guesses in every new connection, and getting either wrong
+  produced an error from somebody else's server about somebody else's field
+  names. Press **find** on the row instead: it asks the endpoint, repairs the
+  URL if one of the obvious variants is the answer, and fills the model box with
+  the ids that endpoint will actually accept. `Gemini 3.1 Pro` is a name on a
+  web page; `gemini-3-pro` is what the API answers to, and now you pick from a
+  list rather than guessing which.
+
+  **test** still makes one real call, for when you want to be sure.
 
 If the room is silent after all that, the note under the seats on the setup page
 says how many models are in the chat and what is keeping the rest out.
@@ -770,7 +778,7 @@ first run were all invisible to a unit test — Enter doing nothing in a dialog,
 error painted behind the modal that raised it, a seat that displayed a
 connection it did not have.
 
-224 tests over the domain rules, turn-taking, connections and seats, artifacts
+231 tests over the domain rules, turn-taking, connections and seats, artifacts
 and their versioning, projects, attachments, schedules, the swarm runner, the media
 library, the document readers, skills, plugins, the voice, the storage layer, the
 Telegram command language, the page routes, and the model participants (driven
