@@ -51,6 +51,11 @@ server.stderr.on('data', (d) => serverLog.push(String(d)));
  */
 const { createServer } = await import('node:http');
 const OFFERED = ['vendor/model-a-instruct', 'vendor/model-b-instruct'];
+// The stub checks the key, because a stub that accepts anything cannot tell the
+// difference between the key somebody typed and the empty string — which is
+// exactly the bug this file exists to catch.
+const GOOD_KEY = 'sk-not-a-real-key';
+const keysSeen = [];
 const provider = createServer(async (req, res) => {
   const chunks = [];
   for await (const c of req) chunks.push(c);
@@ -63,6 +68,13 @@ const provider = createServer(async (req, res) => {
   if (path !== '/v1/chat/completions') {
     res.writeHead(404, { 'content-type': 'text/html' });
     return res.end('<html><body>404 Not Found</body></html>');
+  }
+
+  const key = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+  keysSeen.push(key);
+  if (key !== GOOD_KEY) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    return res.end('{"error":{"message":"Incorrect API key provided"}}');
   }
 
   const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
@@ -203,7 +215,7 @@ try {
     // The name off the documentation page rather than the id, which is the
     // mistake everybody makes and nothing used to catch.
     await row.$eval('.cm', (el) => { el.value = 'Vendor Model A'; });
-    await row.$eval('.cs', (el) => { el.value = 'sk-not-a-real-key'; });
+    await row.$eval('.cs', (el, k) => { el.value = k; }, GOOD_KEY);
     await row.$eval('.cn', (el) => el.dispatchEvent(new Event('blur')));
     await page.waitForTimeout(1200);
 
@@ -243,7 +255,62 @@ try {
     const mine = saved.find((c) => c.name === 'test provider');
     if (!mine) note('setup', 'the connection was not saved');
     else if (!mine.keySet) note('setup', 'the key was not stored');
-    if (JSON.stringify(saved).includes('sk-not-a-real-key')) note('setup', 'the raw key was sent back to the page');
+    if (JSON.stringify(saved).includes(GOOD_KEY)) note('setup', 'the raw key was sent back to the page');
+
+    // ------------------------------------- typing a key and pressing a button
+    //
+    // One gesture, two events. The key box saves on blur and that save is a
+    // round trip, so pressing the button beside it used to send the call out
+    // with whatever the server still had — nothing, on a new row. The key was
+    // in the box, visibly accepted, and every provider said it was wrong. This
+    // is what "no API key works" was, so it is checked with no pause anywhere:
+    // the delays elsewhere in this file are what hid it.
+    {
+      keysSeen.length = 0;
+      await page.click('#addConn');
+      // Only the name is allowed to settle — naming a row redraws it, and the
+      // race under test is the one between the key box and the button, not
+      // between the name box and anything.
+      await page.fill('.conn[data-new] .cn', 'in a hurry');
+      await page.dispatchEvent('.conn[data-new] .cn', 'blur');
+      await page.waitForSelector('.conn[data-conn="in a hurry"]', { timeout: 15000 });
+      const fresh = '.conn[data-conn="in a hurry"]';
+      await page.fill(`${fresh} .cu`, PROVIDER);
+      // Typed and pressed with nothing in between, which is the whole point:
+      // the save behind the key box starts, and the button fires before it can
+      // possibly have finished. Any wait here hides the bug, which is how it
+      // survived a suite that waited everywhere.
+      await page.$eval(`${fresh}`, (row, k) => {
+        const box = row.querySelector('.cs');
+        box.value = k;
+        box.dispatchEvent(new Event('change'));
+        row.querySelector('.test').click();
+      }, GOOD_KEY);
+      await page.waitForFunction(
+        () => !/…$/.test((document.querySelector('#msg')?.textContent ?? '').trim()),
+        null, { timeout: 25000 },
+      ).catch(() => {});
+      await page.waitForTimeout(1200);
+
+      const wrong = keysSeen.filter((k) => k !== GOOD_KEY);
+      if (wrong.length) {
+        note('setup', `a key was typed but ${JSON.stringify(wrong[0])} was sent to the provider`);
+      }
+      const said = (await page.textContent('#msg')).trim();
+      if (/refused|rejected|no API key/i.test(said)) {
+        note('setup', `typing a key then pressing "test" reported: ${said}`);
+      }
+      // No model was set, so the test had to go and find one rather than refuse.
+      const hurried = await page.evaluate(async () =>
+        (await (await fetch('/api/connections')).json()).connections.find((c) => c.name === 'in a hurry'));
+      if (!hurried?.model) {
+        // The likeliest cause by far is the race above: with the key still
+        // unsaved the test is refused before it can ask the endpoint anything,
+        // and nothing is found because nothing was looked for.
+        note('setup', '"test" on a freshly typed row found no model — the key probably'
+          + ' had not saved before the button fired');
+      }
+    }
 
     // The note under the seats has to say what is stopping them.
     const seatNote = (await page.textContent('#seatNote')).trim();

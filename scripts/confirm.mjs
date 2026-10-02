@@ -144,6 +144,8 @@ for (const s of [provider, dataSource, telegram]) {
   await new Promise((r) => s.listen(0, '127.0.0.1', r));
 }
 const PROVIDER = `http://127.0.0.1:${provider.address().port}/v1`;
+// The same endpoint without the /v1, so the unrepaired form is exercised too.
+const PROVIDER_ROOT = PROVIDER.replace(/\/v1$/, "");
 const DATA = `http://127.0.0.1:${dataSource.address().port}`;
 const TELEGRAM = `http://127.0.0.1:${telegram.address().port}`;
 
@@ -216,6 +218,20 @@ try {
     const r = await api('/api/connections/provider/test', { method: 'POST', body: '{}' });
     if (!r.ok) throw new Error(r.error);
     return r.said;
+  });
+
+  await check('a key is proven without being told which model to use', async () => {
+    // Nobody adding a provider knows its model ids yet, and refusing to test
+    // until they do left somebody staring at a key they had no way to check.
+    await api('/api/connections', { method: 'POST', body: JSON.stringify({
+      name: 'unnamed model', kind: 'chat', baseURL: PROVIDER_ROOT, apiKey: 'sk-test-key-value',
+    }) });
+    const r = await api('/api/connections/unnamed%20model/test', { method: 'POST', body: '{}' });
+    if (!r.ok) throw new Error(r.error);
+    if (!r.chose || !r.model) throw new Error('it tested, but did not say which model it settled on');
+    const saved = (await api('/api/connections')).connections.find((c) => c.name === 'unnamed model');
+    if (saved.model !== r.model) throw new Error('the model it proved was not kept');
+    return `picked ${r.model} and kept it`;
   });
 
   // --------------------------------------------------------- models in the room

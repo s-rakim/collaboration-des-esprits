@@ -410,11 +410,32 @@ function rowExtra(el) {
 
 function wireConns() {
   for (const el of document.querySelectorAll('.conn')) {
+    // Typing in a box and pressing the button next to it is one gesture, but it
+    // is two events, and the save behind the first is a round trip. Pressing
+    // "find" or "test" used to race it: the key had been typed, accepted and
+    // was visibly in the box, while the call that was supposed to prove it went
+    // out with whatever the server still had — usually nothing. That is what
+    // "no API key works" looked like from the outside.
+    //
+    // So the buttons wait for the row to be settled first: whatever edit is in
+    // flight, plus any the browser has not told us about yet.
+    let inFlight = null;
+    const settled = async () => {
+      // A field edited but not yet blurred has fired no change event at all,
+      // and blurring it here is what makes it fire.
+      document.activeElement?.blur?.();
+      // One turn of the loop, so that blur's handler starts before we wait.
+      await new Promise((r) => setTimeout(r, 0));
+      while (inFlight) await inFlight.catch(() => {});
+    };
+
     const save = async () => {
       const name = el.querySelector('.cn').value.trim();
       if (!name) return say('a connection needs a name', 'err');
       const typedKey = el.querySelector('.cs').value;
       const was = el.dataset.conn;
+      let done;
+      inFlight = new Promise((r) => { done = r; });
       try {
         say('saving…');
         await api('/api/connections', { method: 'POST', body: JSON.stringify({
@@ -430,7 +451,15 @@ function wireConns() {
         }) });
         await loadAll();
         say('saved', 'ok');
-      } catch (e) { say(e.message, 'err'); }
+      } catch (e) {
+        say(e.message, 'err');
+      } finally {
+        // loadAll() redraws the rows, so this closure may now belong to a row
+        // that is off the page. Releasing the waiter regardless is what stops a
+        // button waiting forever on a save that cannot report back.
+        inFlight = null;
+        done();
+      }
     };
 
     for (const f of el.querySelectorAll('.ck, .cu, .cm, .cs, .cvoice')) f.addEventListener('change', save);
@@ -447,10 +476,13 @@ function wireConns() {
      * the model is really called. The endpoint knows both.
      */
     el.querySelector('.find').addEventListener('click', async () => {
-      const name = el.dataset.conn || el.querySelector('.cn').value.trim();
-      if (!name) return say('save the row first — it needs a name', 'err');
       const button = el.querySelector('.find');
       button.disabled = true;
+      // Anything typed and not yet saved is saved before we ask the endpoint
+      // about it — otherwise we ask about the row as it was, not as it reads.
+      await settled();
+      const name = el.dataset.conn || el.querySelector('.cn').value.trim();
+      if (!name) { button.disabled = false; return say('save the row first — it needs a name', 'err'); }
       try {
         say(`asking ${name} what it offers…`);
         const found = await api(`/api/connections/${encodeURIComponent(name)}/probe`, {
@@ -510,12 +542,17 @@ function wireConns() {
     });
 
     el.querySelector('.test').addEventListener('click', async () => {
+      await settled();
       const name = el.dataset.conn || el.querySelector('.cn').value.trim();
       if (!name) return say('save the row first', 'err');
       try {
         say(`calling ${name}…`);
         const r = await api(`/api/connections/${encodeURIComponent(name)}/test`, { method: 'POST', body: '{}' });
-        say(`${name}: ${r.said}`, r.untested ? '' : 'ok');
+        // With no model set the test goes and finds one, so the box on screen
+        // is now behind what the server has.
+        if (r.chose) await loadAll();
+        const how = r.chose ? ` (on ${r.model}, which it picked — change it in the box)` : '';
+        say(`${name}: ${r.said}${how}`, r.untested ? '' : 'ok');
       } catch (e) { say(e.message, 'err'); }
     });
 

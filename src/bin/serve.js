@@ -939,7 +939,6 @@ app.post('/api/connections/:name/test', async (req, res) => {
   const conn = connections.resolve(req.params.name);
   if (!conn) return res.status(404).json({ ok: false, error: `no connection named "${req.params.name}"` });
   if (!conn.baseURL) return res.status(400).json({ ok: false, error: 'set a base URL on this connection first' });
-  if (!conn.model) return res.status(400).json({ ok: false, error: 'set a model on this connection first' });
   // Say the obvious thing before making a call that can only fail. A provider
   // error about an unreachable host is a bad way to learn you left the key box
   // empty — and it is the reason this looks like "keys do not work".
@@ -951,16 +950,56 @@ app.post('/api/connections/:name/test', async (req, res) => {
     });
   }
 
+  // An empty model box is not a reason to refuse to test. The endpoint knows
+  // what it serves and the key check already walks that list, so the question
+  // "does this key work" can be answered without making somebody go and find a
+  // model name first — and the one it answers on is worth keeping.
+  let model = conn.model;
+  let baseURL = conn.baseURL;
+  let chose = false;
+  if (!model && conn.kind === 'chat') {
+    const found = await probeEndpoint({ baseURL: conn.baseURL, apiKey: conn.apiKey, extra: conn.extra });
+    if (!found.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: `no model is set, and ${conn.baseURL} could not be asked for one (${found.error})`,
+      });
+    }
+    const usable = await tryKey({
+      baseURL: found.baseURL, apiKey: conn.apiKey, models: found.models, extra: conn.extra,
+    });
+    if (!usable.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: usable.unauthorized
+          ? `the provider refused the key (${usable.error})`
+          : `the key was not refused, but ${usable.exhausted ?? 1} of the ${found.models.length} models`
+            + ` it lists are not enabled for your account — pick one from the model box (${usable.error})`,
+      });
+    }
+    model = usable.model;
+    // The probe repairs the URL as well as finding the model, and calling the
+    // unrepaired one afterwards fails for a reason that has nothing to do with
+    // the key we just proved.
+    baseURL = found.baseURL;
+    chose = true;
+    connections.save({ name: conn.name, kind: conn.kind, baseURL, model });
+  }
+  if (!model) return res.status(400).json({ ok: false, error: 'set a model on this connection first' });
+
   try {
     if (conn.kind === 'chat') {
       const adapter = chatAdapter({
-        apiKey: conn.apiKey, model: conn.model, maxTokens: 512,
-        effort: 'low', effortParam: conn.extra?.effortParam, baseURL: conn.baseURL,
+        apiKey: conn.apiKey, model, maxTokens: 512,
+        effort: 'low', effortParam: conn.extra?.effortParam, baseURL,
       });
       const turn = adapter.startTurn({ system: 'Answer in one word.', tools: [] });
       const step = await turn.send('Reply with the single word: ready');
       if (step.stopReason === 'refusal') throw new Error('the model declined the test request');
-      return res.json({ ok: true, kind: conn.kind, model: conn.model, said: step.text || '(no text, but the call succeeded)' });
+      return res.json({
+        ok: true, kind: conn.kind, model, chose,
+        said: step.text || '(no text, but the call succeeded)',
+      });
     }
 
     if (conn.kind === 'image') {
