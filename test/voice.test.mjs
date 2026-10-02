@@ -144,6 +144,14 @@ test('every voice preset names voices you can actually pick', () => {
   assert.ok(speakable.length >= 4, 'more than one provider should be offered');
   for (const p of speakable) {
     assert.ok(p.baseURL.startsWith('http'), `${p.preset} needs a URL`);
+    // A proxy's voices are whichever TTS provider is behind it today, so it can
+    // no more name a voice than it can name a model. It says so with the same
+    // flag, and is held to saying so rather than quietly shipping empty boxes.
+    if (p.discoverModels) {
+      assert.equal(p.model, '', `${p.preset} discovers its models, so it must not name one`);
+      assert.ok(!p.voices, `${p.preset} cannot know its voices either, so it must not list any`);
+      continue;
+    }
     assert.ok(p.model, `${p.preset} needs a model`);
     // Either a list to choose from, or a shape that says the voice is elsewhere.
     const fixed = p.extra?.voiceKey === null && p.extra?.path?.includes('{voice}') === false;

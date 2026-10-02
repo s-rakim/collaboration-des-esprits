@@ -234,6 +234,27 @@ try {
     return `picked ${r.model} and kept it`;
   });
 
+  await check('a proxy in front of many providers wires itself up', async () => {
+    // My Claude Code serves the paths this app already asks for, so the proof
+    // that it needs no adapter is that the ordinary endpoint code reaches it
+    // and four ordinary rows come out — one per job, no new kind of thing.
+    const r = await api('/api/connections/from-mcc', {
+      method: 'POST', body: JSON.stringify({ baseURL: PROVIDER_ROOT }),
+    });
+    if (!r.ok) throw new Error(r.error);
+    if (!r.verified) throw new Error(`it added rows but proved nothing: ${r.error}`);
+    const names = r.made.filter((m) => m.created).map((m) => m.name);
+    for (const want of ['mcc', 'mcc voice', 'mcc ears', 'mcc images']) {
+      if (!names.includes(want)) throw new Error(`no row for ${want}`);
+    }
+    // Rows that already exist are left alone rather than quietly repointed.
+    const again = await api('/api/connections/from-mcc', {
+      method: 'POST', body: JSON.stringify({ baseURL: PROVIDER_ROOT }),
+    });
+    if (again.made.some((m) => m.created)) throw new Error('it overwrote rows that were already there');
+    return `${names.length} rows, chat proven on ${r.verified}`;
+  });
+
   // --------------------------------------------------------- models in the room
 
   await check('a model takes a seat and answers when addressed', async () => {

@@ -936,6 +936,67 @@ app.post('/api/connections/:name/probe', async (req, res) => {
 });
 
 /**
+ * Wire up My Claude Code in one action.
+ *
+ * MCC is a proxy in front of many providers that speaks the shape this app
+ * already speaks, on the same paths. So there is nothing to adapt: the work is
+ * asking it what it can reach and writing down four rows, which is exactly the
+ * work worth not doing by hand four times.
+ *
+ * It is deliberately not a special kind of connection. Afterwards these are
+ * ordinary rows pointing at an ordinary endpoint, editable and removable like
+ * any other — if MCC goes away, nothing here needs to know.
+ */
+app.post('/api/connections/from-mcc', async (req, res) => {
+  const baseURL = String(req.body?.baseURL ?? 'http://127.0.0.1:8082/v1').trim();
+
+  const found = await probeEndpoint({ baseURL, extra: {} });
+  if (!found.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: `nothing is answering at ${baseURL} (${found.error}).`
+        + ' Start it with "mcc-server" and check its dashboard is up, then try again',
+    });
+  }
+
+  // MCC serves one catalogue for everything it routes, so which model suits
+  // which job has to be read off the names. A guess that is wrong is visible
+  // and one click to change; a blank box is the honest answer when nothing in
+  // the list looks like the job, and "find" will fill it in.
+  const pick = (re) => found.models.find((m) => re.test(m)) ?? '';
+  const chat = await tryKey({ baseURL: found.baseURL, models: found.models, extra: {} });
+
+  const rows = [
+    { name: 'mcc', kind: 'chat', model: chat.ok ? chat.model : (found.models[0] ?? '') },
+    { name: 'mcc voice', kind: 'speak', model: pick(/tts|speech|audio|aura|kokoro|playai/i) },
+    { name: 'mcc ears', kind: 'transcribe', model: pick(/whisper|transcri|nova-\d|scribe/i) },
+    { name: 'mcc images', kind: 'image', model: pick(/image|dall-?e|imagen|flux|sd3|stable/i) },
+  ];
+
+  const made = [];
+  for (const row of rows) {
+    // An existing row of that name is left alone rather than overwritten: it may
+    // be pointing somewhere deliberate, and silently moving it is the kind of
+    // thing you only notice much later.
+    if (connections.resolve(row.name)) {
+      made.push({ ...row, skipped: 'a connection of that name already exists' });
+      continue;
+    }
+    connections.save({ name: row.name, kind: row.kind, baseURL: found.baseURL, model: row.model, apiKey: '' });
+    made.push({ ...row, created: true });
+  }
+
+  res.json({
+    ok: true,
+    baseURL: found.baseURL,
+    models: found.models.length,
+    verified: chat.ok ? chat.model : null,
+    error: chat.ok ? null : (chat.error ?? null),
+    made,
+  });
+});
+
+/**
  * Describe the credential the way the server holds it.
  *
  * "The provider refused the key" is true and useless: the question it leaves is

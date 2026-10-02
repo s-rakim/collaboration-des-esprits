@@ -133,7 +133,15 @@ test('every preset is usable as-is and every kind is reachable', () => {
   for (const p of PRESETS) {
     assert.ok(KINDS[p.kind], `${p.preset} has an unknown kind`);
     assert.match(p.baseURL, /^https?:\/\//, `${p.preset} needs a usable URL`);
-    assert.ok(p.model, `${p.preset} needs a starting model`);
+    // A preset names a model so the row works the moment you paste a key. The
+    // exception is an endpoint whose catalogue is not ours to predict — a proxy
+    // serves whatever its owner configured — and that has to be declared rather
+    // than left as an empty box nobody can tell from an oversight.
+    if (p.discoverModels) {
+      assert.equal(p.model, '', `${p.preset} discovers its models, so it must not name one`);
+    } else {
+      assert.ok(p.model, `${p.preset} needs a starting model`);
+    }
   }
   // The capabilities the app offers all have at least one starting point.
   for (const kind of ['chat', 'transcribe', 'image', 'video', 'speak']) {
@@ -243,4 +251,19 @@ test('a key ending in base64 padding keeps its padding', () => {
   // But "=" is not allowed to swallow the one in KEY=value.
   assert.equal(cleanKey('AZURE_OPENAI_KEY=abcdef0123456789abcdef0123456789'),
     'abcdef0123456789abcdef0123456789');
+});
+
+test('My Claude Code is not a special case — it is an endpoint', () => {
+  // The whole reason it needs no adapter: it serves the paths this app already
+  // asks for. If that ever stops being true the presets are a lie, so the
+  // claim is pinned here rather than left in a comment.
+  const mcc = PRESETS.filter((p) => p.preset.includes('My Claude Code'));
+  assert.ok(mcc.length >= 4, 'it should cover chat, voice, ears and images');
+  for (const p of mcc) {
+    assert.equal(p.baseURL, 'http://127.0.0.1:8082/v1');
+    assert.equal(p.keyOptional, true, `${p.kind} must not demand a key — MCC holds them`);
+    assert.ok(KINDS[p.kind], `${p.kind} is not a kind this app has`);
+  }
+  // The four jobs it is offered for are four jobs it serves.
+  assert.deepEqual(mcc.map((p) => p.kind).sort(), ['chat', 'image', 'speak', 'transcribe']);
 });
