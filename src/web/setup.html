@@ -367,7 +367,9 @@ function connRow(c, isNew = false) {
         spellcheck="false" list="models-${esc(c.name || 'new')}">
       <datalist id="models-${esc(c.name || 'new')}">${(offered.get(c.name) ?? [])
         .map((m) => `<option value="${esc(m)}"></option>`).join('')}</datalist>
-      <input class="cs" type="password" autocomplete="off" placeholder="${esc(keyPlaceholder)}"
+      <input class="cs" type="password" name="esprits-key-${esc(c.name || 'new')}"
+        autocomplete="new-password" data-1p-ignore data-lpignore="true" data-form-type="other"
+        placeholder="${esc(keyPlaceholder)}"
         title="${esc(c.keySet ? `${c.keyLength} characters, ending ${c.keyPreview}. Paste a new one to replace it; blank keeps it.`
           : 'Paste the key. A whole line copied from the docs is fine — the key is picked out of it.')}">
       ${voicePicker}

@@ -231,3 +231,16 @@ test('what is stored is the cleaned key, and its length is reported', () => {
   assert.equal(view.keyLength, key.length);
   assert.equal(JSON.stringify(view).includes(key), false);
 });
+
+test('a key ending in base64 padding keeps its padding', () => {
+  // Trimming the "=" off a padded key corrupts it silently: it saves, it shows
+  // the right length minus two, and every provider says it is wrong.
+  const padded = 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkw==';
+  assert.equal(cleanKey(padded), padded);
+  assert.equal(cleanKey(`  ${padded}  `), padded);
+  assert.equal(cleanKey(`Authorization: Bearer ${padded}`), padded);
+
+  // But "=" is not allowed to swallow the one in KEY=value.
+  assert.equal(cleanKey('AZURE_OPENAI_KEY=abcdef0123456789abcdef0123456789'),
+    'abcdef0123456789abcdef0123456789');
+});

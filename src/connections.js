@@ -150,7 +150,9 @@ export function cleanKey(raw) {
   if (!text) return '';
 
   // Whatever it was wrapped in, the key is in there as one unbroken run.
-  const tokens = text.match(/[A-Za-z0-9_\-.~+/]{8,}/g) ?? [];
+  // "=" only at the end, where base64 padding lives. Allowing it anywhere
+  // would swallow the "=" of KEY=value and hand back the whole line.
+  const tokens = text.match(/[A-Za-z0-9_\-.~+/]{8,}={0,2}/g) ?? [];
   const candidates = tokens.filter((t) => !NOISE.has(t.toLowerCase().replace(/[_-]/g, '')));
   if (candidates.length) {
     // A credential has digits in it; the words around one — OPENAI_API_KEY,

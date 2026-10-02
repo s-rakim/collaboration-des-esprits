@@ -889,7 +889,8 @@ app.post('/api/connections/:name/probe', async (req, res) => {
     return res.status(400).json({
       ...found,
       error: found.unauthorized
-        ? `${found.baseURL} is the right address, but the key was refused (${found.error})`
+        ? `${found.baseURL} is the right address, but the key was refused (${found.error}).`
+          + ` For comparison, it ${asSent(conn)}`
         : `${found.error} — tried ${found.tried.map((t) => t.baseURL).join(', ') || 'nothing'}`,
     });
   }
@@ -934,6 +935,23 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   res.json({ ...found, clearedModel: keepsModel ? null : conn.model, key: usable });
 });
 
+/**
+ * Describe the credential the way the server holds it.
+ *
+ * "The provider refused the key" is true and useless: the question it leaves is
+ * whether the key that went out is the key you pasted, and nothing on the page
+ * could answer it. The length and last four do, without printing a secret the
+ * page does not already show — and the header name catches the other half of
+ * it, a provider that wanted its key somewhere other than Authorization.
+ */
+function asSent(conn) {
+  if (!conn.apiKey) return 'no key was sent — the box is empty';
+  const where = conn.extra?.keyHeader
+    ? `${conn.extra.keyHeader}: `
+    : `authorization: ${conn.extra?.keyScheme ?? 'Bearer'} `;
+  return `sent ${conn.apiKey.length} characters ending "${conn.apiKey.slice(-4)}" as "${where}…"`;
+}
+
 /** One real call, so a wrong key or base URL fails here and not in a loop. */
 app.post('/api/connections/:name/test', async (req, res) => {
   const conn = connections.resolve(req.params.name);
@@ -972,7 +990,7 @@ app.post('/api/connections/:name/test', async (req, res) => {
       return res.status(400).json({
         ok: false,
         error: usable.unauthorized
-          ? `the provider refused the key (${usable.error})`
+          ? `the provider refused the key — ${usable.error}. For comparison, it ${asSent(conn)}`
           : `the key was not refused, but ${usable.exhausted ?? 1} of the ${found.models.length} models`
             + ` it lists are not enabled for your account — pick one from the model box (${usable.error})`,
       });
@@ -1029,7 +1047,13 @@ app.post('/api/connections/:name/test', async (req, res) => {
       untested: true,
     });
   } catch (err) {
-    res.status(400).json({ ok: false, error: err.message });
+    // A refusal is the one error where what went out matters as much as what
+    // came back, so it says both.
+    const refused = /401|403|unauthoriz|invalid.*(key|token|credential)|incorrect api key/i.test(err.message);
+    res.status(400).json({
+      ok: false,
+      error: refused ? `${err.message} — for comparison, it ${asSent(conn)}` : err.message,
+    });
   }
 });
 
