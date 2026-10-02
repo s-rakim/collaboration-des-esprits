@@ -140,16 +140,27 @@ body{display:flex;min-height:100vh}
 #shell-rail .action{margin-bottom:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
 #shell-rail .action:hover{border-color:var(--accent)}
 
+#shell-rail .head.row{display:flex;align-items:center;justify-content:space-between;
+  text-transform:none;letter-spacing:0;font-size:11.5px}
 #shell-rail .head{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);
   padding:14px 10px 5px;white-space:nowrap;overflow:hidden}
 #shell-rail .ideas{display:flex;flex-direction:column;gap:1px}
-#shell-rail .ideas a{font-size:12.5px;padding:6px 9px 6px 12px;color:var(--dim)}
-#shell-rail .ideas a .dot{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
+#shell-rail .ideas a{font-size:12.5px;padding:6px 9px 6px 10px;color:var(--dim)}
+/* Filled when the thread wants you, a ring when it does not. Both are the same
+   size, so the list stays a column rather than shifting as threads change. */
+#shell-rail .thread .dot{width:7px;height:7px;border-radius:50%;flex:none;margin:0 5px;
+  border:1.4px solid var(--faint);background:none;transition:background .15s,border-color .15s}
+#shell-rail .thread .dot.live{background:var(--accent);border-color:var(--accent)}
+#shell-rail .thread:hover .dot{border-color:var(--dim)}
+#shell-rail .thread.on .dot{border-color:var(--text)}
 #shell-rail .head.sub{padding:9px 10px 3px;letter-spacing:.06em;text-transform:none;font-size:11px;color:var(--faint)}
 #shell-rail .none{font-size:12px;color:var(--faint);padding:4px 10px 2px;white-space:nowrap;overflow:hidden}
 #shell-rail .foot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}
 #shell-rail .who{display:flex;align-items:center;gap:9px;padding:7px 9px;font-size:12.5px;color:var(--dim);
   white-space:nowrap;overflow:hidden}
+#shell-rail .who .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#shell-rail .who .chip{color:var(--faint);padding:4px;border-radius:6px;display:flex;flex:none}
+#shell-rail .who .chip:hover{color:var(--text);background:var(--panel2)}
 #shell-rail .who i{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;flex:none;
   display:flex;align-items:center;justify-content:center;font-size:11px;font-style:normal;font-weight:600}
 
@@ -161,7 +172,8 @@ body.rail-folded #shell-rail .t,
 body.rail-folded #shell-rail .kbd,
 body.rail-folded #shell-rail .head,
 body.rail-folded #shell-rail .none,
-body.rail-folded #shell-rail .who span{display:none}
+body.rail-folded #shell-rail .who span,
+body.rail-folded #shell-rail .who .chip{display:none}
 body.rail-folded #shell-rail .seg{flex-direction:column;width:100%}
 body.rail-folded #shell-rail a.item,body.rail-folded #shell-rail button.item{justify-content:center;padding:8px 0}
 body.rail-folded #shell-rail .ideas a{padding:6px 0}
@@ -277,11 +289,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  * fourteen titles is a list you stop reading.
  */
 function threads(ideas) {
+  // A dot rather than the same icon fourteen times. Repeating one glyph down a
+  // list tells you nothing; a dot that is filled when a thread wants you and
+  // hollow when it does not tells you where to look, in the space of a glyph.
   const line = (i) => `
-    <a class="item" href="/?idea=${encodeURIComponent(i.slug)}" data-idea="${esc(i.slug)}"
+    <a class="item thread" href="/?idea=${encodeURIComponent(i.slug)}" data-idea="${esc(i.slug)}"
        title="${esc(i.title)}${i.stage ? ` — ${esc(i.stage)}` : ''}${i.needsYou ? ' — waiting on you' : ''}">
-      ${icon('idea')}<span class="t">${esc(i.title)}</span>
-      ${i.needsYou ? '<span class="dot"></span>' : ''}
+      <span class="dot ${i.needsYou ? 'live' : ''}"></span><span class="t">${esc(i.title)}</span>
     </a>`;
 
   const byProject = new Map();
@@ -292,9 +306,9 @@ function threads(ideas) {
     byProject.get(i.project).push(i);
   }
 
-  let out = `<div class="head">Threads</div><div class="ideas">
-    <a class="item" href="/" data-idea="" title="The lobby — cross-cutting chat">
-      ${icon('chat')}<span class="t">Lobby</span>
+  let out = `<div class="head row">Recents</div><div class="ideas">
+    <a class="item thread" href="/" data-idea="" title="The lobby — cross-cutting chat">
+      <span class="dot"></span><span class="t">Lobby</span>
     </a>`;
   for (const [project, list] of byProject) {
     out += `<div class="head sub" title="${esc(project)}">${esc(project)}</div>${list.map(line).join('')}`;
@@ -338,9 +352,11 @@ function render(rail, mode, ideas, me) {
     ${threads(ideas)}
 
     <div class="foot">
-      <a class="item" href="/setup" title="Setup"> ${icon('setup')}<span class="t">Setup</span></a>
       <div class="who" title="${me ? esc(me) : 'not identified'}">
-        <i>${me ? esc(me.slice(0, 2).toUpperCase()) : '—'}</i><span>${me ? esc(me) : 'not identified'}</span>
+        <i>${me ? esc(me.slice(0, 1).toUpperCase()) : '—'}</i>
+        <span class="t">${me ? esc(me) : 'not identified'}</span>
+        <a class="chip" href="/dashboard" title="What the room has been doing">${icon('dashboard')}</a>
+        <a class="chip" href="/setup" title="Setup">${icon('setup')}</a>
       </div>
     </div>`;
 
