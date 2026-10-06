@@ -8,7 +8,7 @@ import { Hub, NotFound, Invalid } from '../core.js';
 import { buildServer } from '../mcp/tools.js';
 import { createConfig } from '../settings.js';
 import { createSeats } from '../seats.js';
-import { createConnections, PRESETS, KINDS } from '../connections.js';
+import { createConnections, PRESETS, KINDS, parseSnippet } from '../connections.js';
 import { chatAdapter } from '../participants/chat.js';
 import { createSwarmRunner } from '../swarm.js';
 import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
@@ -936,6 +936,61 @@ app.post('/api/connections/:name/probe', async (req, res) => {
 });
 
 /**
+ * Fill a row in from the provider's own example.
+ *
+ * The snippet on the page where you made the key holds the base URL, the key, a
+ * model that exists on that account, and the parameter names that endpoint
+ * takes — every box on the row, already correct and already together. Typing
+ * them one at a time is a transcription exercise with four chances to go subtly
+ * wrong, and none of them announce themselves.
+ */
+app.post('/api/connections/from-snippet', (req, res) => {
+  const parsed = parseSnippet(req.body?.snippet ?? '');
+  if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error });
+
+  const name = String(req.body?.name ?? '').trim() || hostName(parsed.baseURL);
+  if (!name) return res.status(400).json({ ok: false, error: 'give the connection a name' });
+
+  const existing = connections.resolve(name);
+  const saved = connections.save({
+    name,
+    kind: parsed.kind,
+    baseURL: parsed.baseURL,
+    model: parsed.model,
+    // A snippet with no key in it is a snippet showing the shape, not the
+    // credential. Leaving what is already stored alone is kinder than wiping it.
+    ...(parsed.apiKey ? { apiKey: parsed.apiKey } : {}),
+    extra: { ...(existing?.extra ?? {}), ...parsed.extra },
+  });
+
+  res.json({
+    ok: true,
+    name: saved.name,
+    replaced: Boolean(existing),
+    found: {
+      baseURL: parsed.baseURL,
+      model: parsed.model,
+      kind: parsed.kind,
+      // Never the key itself: the page is told how much of one arrived, which
+      // is what tells somebody whether the paste was complete.
+      key: parsed.apiKey ? `${parsed.apiKey.length} characters ending "${parsed.apiKey.slice(-4)}"` : null,
+      tokenParam: parsed.extra.tokenParam ?? null,
+    },
+  });
+});
+
+/** A connection name from a host: integrate.api.nvidia.com becomes "nvidia". */
+function hostName(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^(www|api|integrate)\./, '');
+    const parts = host.split('.').filter((p) => !['com', 'ai', 'io', 'net', 'org', 'co', 'api'].includes(p));
+    return (parts.pop() ?? host).toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Wire up My Claude Code in one action.
  *
  * MCC is a proxy in front of many providers that speaks the shape this app
@@ -1071,6 +1126,7 @@ app.post('/api/connections/:name/test', async (req, res) => {
       const adapter = chatAdapter({
         apiKey: conn.apiKey, model, maxTokens: 512,
         effort: 'low', effortParam: conn.extra?.effortParam, baseURL,
+        tokenParam: conn.extra?.tokenParam,
         // Somebody is watching this one. A minute is long enough to prove the
         // endpoint works and short enough that a hung one is reported rather
         // than waited on, and a retry here only triples that wait.
@@ -1116,10 +1172,28 @@ app.post('/api/connections/:name/test', async (req, res) => {
     // came back, so it says both.
     const refused = err.unauthorized === true
       || /401|403|unauthoriz|rejected the api key|invalid.*(key|token|credential)|incorrect api key/i.test(err.message);
-    res.status(400).json({
-      ok: false,
-      error: refused ? `${err.message} — for comparison, it ${asSent(conn)}` : err.message,
-    });
+    if (refused) {
+      return res.status(400).json({ ok: false, error: `${err.message} — for comparison, it ${asSent(conn)}` });
+    }
+
+    // Nothing came back in time. That is two very different situations wearing
+    // the same face — an endpoint that is stuck, or one that is working and
+    // merely slower than the patience it was given — and the smallest possible
+    // call tells them apart in seconds. Asking is better than leaving somebody
+    // to guess at which, because the two have opposite remedies.
+    if (/sent no reply within/i.test(err.message)) {
+      const quick = await tryKey({
+        baseURL, apiKey: conn.apiKey, model, extra: conn.extra,
+      });
+      const verdict = quick.ok
+        ? 'A one-token call to the same model answered fine, so the endpoint and the key are'
+          + ' both good — this model is simply slower than the minute allowed. Give it a'
+          + ' smaller model, or let a seat use it, which waits three minutes.'
+        : `A one-token call to it failed too: ${quick.error}.`;
+      return res.status(400).json({ ok: false, error: `${err.message} ${verdict}` });
+    }
+
+    res.status(400).json({ ok: false, error: err.message });
   }
 });
 

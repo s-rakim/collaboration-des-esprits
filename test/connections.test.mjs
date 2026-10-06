@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../src/db.js';
-import { createConnections, cleanKey, PRESETS, KINDS } from '../src/connections.js';
+import { createConnections, cleanKey, parseSnippet, PRESETS, KINDS } from '../src/connections.js';
 import { createSeats } from '../src/seats.js';
 
 const fresh = () => {
@@ -334,4 +334,138 @@ test('an endpoint that accepts the connection and then says nothing is reported'
 
   for (const res of held) res.destroy();
   server.close();
+});
+
+test('the length limit is sent in the spelling the endpoint takes', async () => {
+  // Sending max_completion_tokens to a server that wants max_tokens does not
+  // fail — it is ignored, so no cap applies and a reasoning model writes until
+  // its own default. From the outside that is indistinguishable from the
+  // endpoint hanging, which is exactly how it was read.
+  const { chatAdapter } = await import('../src/participants/chat.js');
+  const http = await import('node:http');
+
+  const bodies = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    bodies.push(body);
+
+    // A server of the newer kind: it refuses max_tokens and names its
+    // replacement, the way OpenAI's reasoning models do.
+    if (body.strict !== undefined) { /* unused branch guard */ }
+    if (server.strict && body.max_tokens !== undefined) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      return res.end('{"error":{"message":"Use max_completion_tokens instead of max_tokens"}}');
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+
+  // The ordinary case: the spelling nearly every endpoint takes.
+  const plain = chatAdapter({ apiKey: 'k', model: 'm', maxTokens: 512, baseURL: base, maxRetries: 0 });
+  await plain.startTurn({ system: 'x', tools: [] }).send('hi');
+  assert.equal(bodies[0].max_tokens, 512, 'the cap must actually be sent');
+  assert.equal(bodies[0].max_completion_tokens, undefined);
+  // A turn with no tools must not mention tools at all: an empty list beside
+  // tool_choice:'auto' asks a server to choose from nothing.
+  assert.equal(bodies[0].tools, undefined);
+  assert.equal(bodies[0].tool_choice, undefined);
+
+  // The newer kind: it says which it wants, and that is taken as the answer
+  // rather than handed to a person to go and look up.
+  bodies.length = 0;
+  server.strict = true;
+  const strict = chatAdapter({ apiKey: 'k', model: 'm', maxTokens: 256, baseURL: base, maxRetries: 0 });
+  const step = await strict.startTurn({ system: 'x', tools: [] }).send('hi');
+  assert.equal(step.text, 'ok');
+  assert.equal(bodies.length, 2, 'it should have been told once and then got it right');
+  assert.equal(bodies[1].max_completion_tokens, 256);
+  assert.equal(bodies[1].max_tokens, undefined);
+
+  // And it remembers, rather than being told again every turn.
+  bodies.length = 0;
+  await strict.startTurn({ system: 'x', tools: [] }).send('again');
+  assert.equal(bodies.length, 1, 'it asked to be corrected twice');
+  assert.equal(bodies[0].max_completion_tokens, 256);
+
+  server.close();
+});
+
+test("a provider's own example fills the whole row", () => {
+  // The snippet on the page where you made the key has every box on the row in
+  // it, already correct and already together. Typing them in one at a time is a
+  // transcription exercise with four chances to go subtly wrong — a truncated
+  // key, a model id off a different vendor's page, a base URL missing its /v1 —
+  // and not one of them announces itself.
+  const key = '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';
+
+  const python = parseSnippet(`from openai import OpenAI
+
+client = OpenAI(
+  base_url = "https://integrate.api.nvidia.com/v1",
+  api_key = "${key}"
+)
+
+completion = client.chat.completions.create(
+  model="openai/gpt-oss-20b",
+  messages=[{"role":"user","content":"Which number is larger, 9.11 or 9.8?"}],
+  temperature=1,
+  max_tokens=4096,
+  stream=False
+)`);
+  assert.equal(python.ok, true);
+  assert.equal(python.baseURL, 'https://integrate.api.nvidia.com/v1');
+  assert.equal(python.apiKey, key);
+  assert.equal(python.model, 'openai/gpt-oss-20b');
+  assert.equal(python.kind, 'chat');
+  // The one thing no amount of looking at the URL can settle, and the one that
+  // silently uncaps the request when it is wrong.
+  assert.equal(python.extra.tokenParam, 'max_tokens');
+
+  const js = parseSnippet(`import OpenAI from 'openai';
+const client = new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: '${key}' });
+const r = await client.chat.completions.create({ model: 'llama-4-maverick', max_completion_tokens: 512 });`);
+  assert.equal(js.baseURL, 'https://api.groq.com/openai/v1');
+  assert.equal(js.apiKey, key);
+  assert.equal(js.model, 'llama-4-maverick');
+  assert.equal(js.extra.tokenParam, 'max_completion_tokens');
+
+  // curl names nothing: the URL is simply there, as a full path rather than a
+  // base, and the key is in a header.
+  const curl = parseSnippet(`curl https://api.deepseek.com/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${key}" \\
+  -d '{"model": "deepseek-chat", "messages": [{"role":"user","content":"hi"}], "max_tokens": 100}'`);
+  assert.equal(curl.baseURL, 'https://api.deepseek.com/v1', 'the endpoint tail must come off');
+  assert.equal(curl.apiKey, key);
+  assert.equal(curl.model, 'deepseek-chat');
+
+  // The job comes from the path the example calls, so an audio example does
+  // not arrive filed as a chat model.
+  const speech = parseSnippet(`client.audio.speech.create(model="gpt-4o-mini-tts", voice="nova", input="hello")
+client = OpenAI(base_url="https://api.openai.com/v1", api_key="${key}")`);
+  assert.equal(speech.kind, 'speak');
+  assert.equal(speech.extra.voice, 'nova');
+
+  const image = parseSnippet(`curl https://api.openai.com/v1/images/generations -H "Authorization: Bearer ${key}" -d '{"model":"gpt-image-1"}'`);
+  assert.equal(image.kind, 'image');
+  assert.equal(image.baseURL, 'https://api.openai.com/v1');
+});
+
+test('a snippet with nothing in it says so rather than saving a blank row', () => {
+  assert.equal(parseSnippet('').ok, false);
+  assert.equal(parseSnippet('just some prose about api keys').ok, false);
+  assert.match(parseSnippet('hello').error, /paste the whole example/i);
+
+  // A snippet showing the shape rather than the credential is still useful:
+  // the address and model are taken and whatever key is stored is left alone.
+  const shape = parseSnippet(`client = OpenAI(base_url="https://api.x.ai/v1", api_key=os.environ["XAI_KEY"])
+r = client.chat.completions.create(model="grok-4")`);
+  assert.equal(shape.ok, true);
+  assert.equal(shape.baseURL, 'https://api.x.ai/v1');
+  assert.equal(shape.model, 'grok-4');
+  assert.equal(shape.apiKey, '', 'an env lookup is not a key');
 });

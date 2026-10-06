@@ -144,6 +144,98 @@ export const PRESETS = [
     keyHint: 'platform.openai.com' },
 ];
 
+/**
+ * Read a provider's own example and fill the row in from it.
+ *
+ * Every provider hands you a snippet on the page where you make the key — four
+ * lines of Python or JavaScript or curl holding the base URL, the key, a model
+ * that actually exists on that account, and the parameter names that endpoint
+ * takes. That is every box on this row, already correct, already together.
+ *
+ * Typing them in one at a time is a transcription exercise with four chances to
+ * get something subtly wrong, and the wrongness does not announce itself: a
+ * truncated key, a model id from a different vendor's page, a base URL missing
+ * its /v1. So take the snippet.
+ *
+ * It reads whatever shape it is given rather than knowing providers, because
+ * the snippets vary far less than the providers do: a quoted URL, a quoted
+ * key-shaped string, a quoted model.
+ */
+export function parseSnippet(raw) {
+  const text = String(raw ?? '');
+  if (!text.trim()) return { ok: false, error: 'there is nothing pasted' };
+
+  // A quoted value for any of the names a thing goes by, in any of the
+  // languages' punctuation: name = "v", name: 'v', "name": `v`.
+  const valueFor = (...names) => {
+    for (const name of names) {
+      const re = new RegExp(
+        `["'\`]?\\b${name}\\b["'\`]?\\s*[:=]\\s*["'\`]([^"'\`]+)["'\`]`,
+        'i',
+      );
+      const hit = text.match(re);
+      if (hit) return hit[1].trim();
+    }
+    return '';
+  };
+
+  // The key, from a named field or from the header a curl example puts it in.
+  const apiKey =
+    valueFor('api_key', 'apiKey', 'apikey', 'key', 'token')
+    || (text.match(/Authorization\s*:\s*["'`]?\s*Bearer\s+([^\s"'`\\]+)/i) ?? [])[1]
+    || (text.match(/[-\w]*api[-_]?key\s*:\s*["'`]?\s*([A-Za-z0-9_\-.~+/]{16,}={0,2})/i) ?? [])[1]
+    || '';
+
+  let baseURL = valueFor('base_url', 'baseURL', 'baseurl', 'endpoint', 'host');
+
+  // curl gives no named field: the URL is simply there, and it is the full
+  // path rather than the base, so the known endpoint tails come off.
+  if (!baseURL) {
+    const urls = text.match(/https?:\/\/[^\s"'`\\)]+/g) ?? [];
+    const api = urls.find((u) => /\/v\d|\/api|\/openai/i.test(u)) ?? urls[0];
+    if (api) baseURL = api;
+  }
+  baseURL = baseURL
+    .replace(/\/(chat\/completions|completions|responses|embeddings|models)\/?$/i, '')
+    .replace(/\/(audio\/(speech|transcriptions|translations)|images\/(generations|edits)|videos)\/?$/i, '')
+    .replace(/\/+$/, '');
+
+  const model = valueFor('model', 'model_id', 'modelId', 'deployment');
+
+  // What this endpoint calls the length limit is in the snippet, which settles
+  // the one question that cannot be settled by looking at the URL — and which,
+  // got wrong, makes a capped request into an uncapped one.
+  const tokenParam = /max_completion_tokens/i.test(text)
+    ? 'max_completion_tokens'
+    : (/max_tokens/i.test(text) ? 'max_tokens' : '');
+
+  // The job is in the path the example calls, so an audio example does not
+  // arrive filed as a chat model.
+  const kind = /audio\/speech|text-to-speech|\.speech\./i.test(text) ? 'speak'
+    : /audio\/transcriptions|\.transcriptions\./i.test(text) ? 'transcribe'
+    : /images\/(generations|edits)|\.images\./i.test(text) ? 'image'
+    : /\/videos|\.videos\./i.test(text) ? 'video'
+    : 'chat';
+
+  const extra = {};
+  if (tokenParam) extra.tokenParam = tokenParam;
+  // Only the ones that change what comes back, and only when stated.
+  const effort = valueFor('reasoning_effort', 'effort');
+  if (effort) { extra.effortParam = 'reasoning_effort'; extra.effort = effort; }
+  const voice = valueFor('voice');
+  if (voice) extra.voice = voice;
+
+  if (!baseURL && !apiKey) {
+    return {
+      ok: false,
+      error: 'nothing in that looked like a base URL or a key — paste the whole example,'
+        + " including the lines that set them",
+    };
+  }
+
+  return { ok: true, baseURL, apiKey, model, kind, extra };
+}
+
 const mask = (v) => (!v ? null : v.length <= 8 ? '•'.repeat(v.length) : `${'•'.repeat(8)}${v.slice(-4)}`);
 
 /**

@@ -174,6 +174,9 @@ function render() {
         <select id="presetPick" style="width:auto">
           <option value="">start from a preset…</option>
         </select>
+        <button id="fromSnippet" title="Paste the example from your provider's page">
+          Paste a provider's example
+        </button>
         <button id="fromMcc" title="Ask My Claude Code what it can reach and add a row for each job">
           Use My Claude Code
         </button>
@@ -600,6 +603,53 @@ function addConnRow(seed) {
 
 $('#body').addEventListener('click', (e) => {
   if (e.target.closest('#addConn')) addConnRow();
+
+  // Every provider gives you four lines holding all of this, already right and
+  // already together. Reading them beats transcribing them four times.
+  if (e.target.closest('#fromSnippet')) {
+    const box = document.createElement('dialog');
+    box.innerHTML = `
+      <form method="dialog" style="min-width:min(640px,86vw)">
+        <h3 style="margin:0 0 6px">Paste the example from your provider</h3>
+        <p class="hint" style="margin:0 0 10px">
+          The snippet on the page where you made the key — Python, JavaScript or curl.
+          The address, the key, the model and the parameter names that endpoint takes
+          are all in it.
+        </p>
+        <textarea id="snipText" rows="11" spellcheck="false"
+          style="width:100%;font-family:var(--mono,monospace);font-size:12px"
+          placeholder="from openai import OpenAI&#10;&#10;client = OpenAI(&#10;  base_url = &quot;https://…/v1&quot;,&#10;  api_key = &quot;…&quot;&#10;)"></textarea>
+        <label class="hint" style="display:block;margin:8px 0 0">
+          Call it (optional — otherwise named after the host)
+          <input id="snipName" style="width:100%;margin-top:4px" placeholder="nvidia">
+        </label>
+        <div class="row" style="justify-content:flex-end;margin-top:12px">
+          <button value="cancel">Cancel</button>
+          <button id="snipGo" value="go" class="primary">Read it</button>
+        </div>
+      </form>`;
+    document.body.append(box);
+    box.showModal();
+    box.querySelector('#snipText').focus();
+    box.addEventListener('close', async () => {
+      const snippet = box.querySelector('#snipText').value;
+      const name = box.querySelector('#snipName').value.trim();
+      box.remove();
+      if (box.returnValue !== 'go' || !snippet.trim()) return;
+      try {
+        say('reading it…');
+        const r = await api('/api/connections/from-snippet', {
+          method: 'POST', body: JSON.stringify({ snippet, name }),
+        });
+        await loadAll();
+        const bits = [`${r.replaced ? 'updated' : 'added'} ${r.name}`, r.found.baseURL];
+        if (r.found.model) bits.push(r.found.model);
+        bits.push(r.found.key ? `key: ${r.found.key}` : 'no key in it — paste one on the row');
+        if (r.found.tokenParam) bits.push(`it wants ${r.found.tokenParam}`);
+        say(bits.join(' · '), 'ok');
+      } catch (err) { say(err.message, 'err'); }
+    });
+  }
 
   // One proxy in front of many providers, so one action rather than four rows
   // typed out by hand with the same address in each.

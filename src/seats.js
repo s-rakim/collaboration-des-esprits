@@ -70,6 +70,10 @@ export function createSeats(db, connections) {
         baseURL: conn.baseURL,
         apiKey: conn.apiKey,
         effortParam: conn.extra?.effortParam ?? null,
+        // What this endpoint calls the length limit. Wrong, it is ignored
+        // rather than refused, so no cap applies and a reasoning model writes
+        // until its own default — which reads as the endpoint hanging.
+        tokenParam: conn.extra?.tokenParam ?? null,
       };
     },
 

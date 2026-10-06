@@ -80,6 +80,7 @@ export function createSwarmRunner({ hub, seats, log = () => {}, createClient = n
       maxTokens,
       effort: resolved.effort ?? 'medium',
       effortParam: resolved.effortParam,
+      tokenParam: resolved.tokenParam,
       baseURL: resolved.baseURL,
       createClient,
     });

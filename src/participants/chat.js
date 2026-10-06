@@ -24,8 +24,24 @@ const TURN_TIMEOUT_MS = 180_000;
 
 export function chatAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
-  timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1,
+  timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam,
 }) {
+  /**
+   * What this endpoint calls the length limit.
+   *
+   * OpenAI renamed it to max_completion_tokens for the reasoning models and
+   * requires that spelling there. Nearly everything else — and OpenAI itself
+   * for everything else — wants max_tokens. The two are not interchangeable
+   * and the failure is not symmetric: a server that does not know
+   * max_completion_tokens generally IGNORES it rather than refusing, so the
+   * cap silently does not apply and a reasoning model writes until it hits its
+   * own default. From the outside that looks exactly like the endpoint hanging.
+   *
+   * So the default is the spelling almost everyone takes, and the other one is
+   * learned from the only thing that can actually settle it: the server saying
+   * so.
+   */
+  let lengthKey = tokenParam || 'max_tokens';
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
@@ -53,19 +69,34 @@ export function chatAdapter({
       // is in flight rather than only the next one that has not started.
       const ctl = new AbortController();
 
+      const body = () => ({
+        model,
+        [lengthKey]: maxTokens,
+        messages,
+        // An empty tools array alongside tool_choice:'auto' asks some servers
+        // to choose from nothing, which they are entitled to find confusing.
+        // A turn with no tools should simply not mention them.
+        ...(toolDefs.length ? { tools: toolDefs, tool_choice: 'auto' } : {}),
+        // Omitted entirely unless the provider declared the field, since an
+        // unknown parameter fails the request rather than being ignored.
+        ...(effortParam && effort ? { [effortParam]: effort } : {}),
+      });
+
       const request = async () => {
         let response;
         try {
-          response = await client.chat.completions.create({
-            model,
-            max_completion_tokens: maxTokens,
-            messages,
-            tools: toolDefs,
-            tool_choice: 'auto',
-            // Omitted entirely unless the provider declared the field, since an
-            // unknown parameter fails the request rather than being ignored.
-            ...(effortParam && effort ? { [effortParam]: effort } : {}),
-          }, { signal: ctl.signal });
+          try {
+            response = await client.chat.completions.create(body(), { signal: ctl.signal });
+          } catch (first) {
+            // The one case worth retrying automatically: the server naming the
+            // length parameter it wanted. It has told us the answer, so asking
+            // a person to go and find it would be a strange thing to do.
+            const named = first?.status === 400
+              && /max_completion_tokens|max_tokens/i.test(first.message ?? '');
+            if (!named) throw first;
+            lengthKey = lengthKey === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+            response = await client.chat.completions.create(body(), { signal: ctl.signal });
+          }
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.
           // What a person needs here is the next thing to do, so a connection

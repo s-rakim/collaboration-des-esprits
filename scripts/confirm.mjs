@@ -234,6 +234,34 @@ try {
     return `picked ${r.model} and kept it`;
   });
 
+  await check("a provider's own example fills a row in", async () => {
+    // Four boxes typed one at a time is four chances to get something subtly
+    // wrong, and none of them announce themselves. The snippet has all four.
+    const r = await api('/api/connections/from-snippet', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'from example',
+        snippet: `client = OpenAI(
+  base_url = "${PROVIDER}",
+  api_key = "sk-pasted-from-their-page-01234"
+)
+completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)`,
+      }),
+    });
+    if (!r.ok) throw new Error(r.error);
+    const saved = (await api('/api/connections')).connections.find((c) => c.name === 'from example');
+    if (!saved) throw new Error('it reported success but saved nothing');
+    if (saved.model !== 'vendor/big') throw new Error(`the model did not come across: ${saved.model}`);
+    if (!saved.keySet) throw new Error('the key did not come across');
+    // The spelling of the length limit is in the snippet and nowhere else, and
+    // getting it wrong uncaps the request rather than failing it.
+    if (saved.extra?.tokenParam !== 'max_tokens') throw new Error('it missed which length parameter to use');
+    // And it really works, not just parses.
+    const test = await api('/api/connections/from%20example/test', { method: 'POST', body: '{}' });
+    if (!test.ok) throw new Error(`the row it built does not work: ${test.error}`);
+    return `${saved.model} · ${r.found.key}`;
+  });
+
   await check('a proxy in front of many providers wires itself up', async () => {
     // My Claude Code serves the paths this app already asks for, so the proof
     // that it needs no adapter is that the ordinary endpoint code reaches it

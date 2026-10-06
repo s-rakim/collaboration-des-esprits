@@ -471,6 +471,7 @@ export function createModelParticipant({
       maxTokens: seat?.maxTokens ?? 64000,
       effort,
       effortParam: r.effortParam,
+      tokenParam: r.tokenParam,
       baseURL: r.baseURL,
       createClient,
     });
