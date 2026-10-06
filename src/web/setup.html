@@ -550,6 +550,14 @@ function wireConns() {
       await settled();
       const name = el.dataset.conn || el.querySelector('.cn').value.trim();
       if (!name) return say('save the row first', 'err');
+      // A frozen "calling…" is indistinguishable from a dead page, and a model
+      // that thinks before it answers can take a while. Counting makes the
+      // difference between waiting and hanging visible without saying anything.
+      const started = Date.now();
+      const tick = setInterval(() => {
+        const secs = Math.round((Date.now() - started) / 1000);
+        say(`calling ${name}… ${secs}s${secs > 20 ? ' — some models take a while to think' : ''}`);
+      }, 1000);
       try {
         say(`calling ${name}…`);
         const r = await api(`/api/connections/${encodeURIComponent(name)}/test`, { method: 'POST', body: '{}' });
@@ -558,7 +566,11 @@ function wireConns() {
         if (r.chose) await loadAll();
         const how = r.chose ? ` (on ${r.model}, which it picked — change it in the box)` : '';
         say(`${name}: ${r.said}${how}`, r.untested ? '' : 'ok');
-      } catch (e) { say(e.message, 'err'); }
+      } catch (e) {
+        say(e.message, 'err');
+      } finally {
+        clearInterval(tick);
+      }
     });
 
     el.querySelector('.del').addEventListener('click', async () => {

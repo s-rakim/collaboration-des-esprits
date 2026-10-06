@@ -11,12 +11,31 @@ import OpenAI from 'openai';
  * on any such endpoint can take a seat without touching this file.
  */
 
-export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, baseURL, createClient }) {
+/**
+ * How long to wait, and how many times.
+ *
+ * The SDK's own defaults are ten minutes and two retries, which multiply to
+ * half an hour before anything is reported. A seat mid-turn can afford to wait
+ * a while; somebody sitting in front of a Test button cannot, and "calling…"
+ * that never finishes is the least useful thing a button can do. So the caller
+ * says which situation it is in, and neither gets the SDK's answer.
+ */
+const TURN_TIMEOUT_MS = 180_000;
+
+export function chatAdapter({
+  apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
+  timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1,
+}) {
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
     // insists on a non-empty string.
-    : new OpenAI({ apiKey: apiKey || 'not-needed', baseURL: baseURL || undefined });
+    : new OpenAI({
+        apiKey: apiKey || 'not-needed',
+        baseURL: baseURL || undefined,
+        timeout: timeoutMs,
+        maxRetries,
+      });
 
   const asTools = (tools) =>
     tools.map((t) => ({
@@ -57,6 +76,18 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
             const stop = new Error('stopped');
             stop.interrupted = true;
             throw stop;
+          }
+          // A timeout is not the provider saying no; it is the provider saying
+          // nothing. Those need different answers, and lumping them together
+          // sends somebody to check a key that was never looked at.
+          if (err instanceof OpenAI.APIConnectionTimeoutError
+              || err.name === 'APIConnectionTimeoutError') {
+            throw new Error(
+              `${baseURL || 'the provider'} accepted the connection but sent no reply within `
+              + `${Math.round(timeoutMs / 1000)}s. The address is reachable, so this is the model `
+              + 'taking too long or the endpoint hanging — try a smaller model, or check the '
+              + "provider's status page.",
+            );
           }
           if (err instanceof OpenAI.AuthenticationError) {
             // Flagged, not just worded. Whoever wants to react to "the key was

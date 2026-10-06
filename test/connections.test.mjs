@@ -296,3 +296,42 @@ test('a key pasted on its own is never altered', () => {
   assert.equal(cleanKey(`"Authorization": "Bearer ${key}",`), key);
   assert.equal(cleanKey(`curl -H "Authorization: Bearer ${key}" https://x/v1`), key);
 });
+
+test('an endpoint that accepts the connection and then says nothing is reported', async () => {
+  // The failure that looked like "it is calling but not connecting": the SDK's
+  // own defaults are ten minutes and two retries, which multiply to half an
+  // hour of a button saying "calling…" before anything at all is reported.
+  const { chatAdapter } = await import('../src/participants/chat.js');
+  const http = await import('node:http');
+
+  // Accepts the socket, reads the request, and never answers — which is what a
+  // hung endpoint does, and is not the same as refusing or being unreachable.
+  const held = [];
+  const server = http.createServer((req, res) => { held.push(res); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+
+  const adapter = chatAdapter({
+    apiKey: 'k', model: 'm', maxTokens: 8, baseURL: base,
+    timeoutMs: 700, maxRetries: 0,
+  });
+  const turn = adapter.startTurn({ system: 'x', tools: [] });
+
+  const began = Date.now();
+  await assert.rejects(
+    () => turn.send('hello'),
+    (err) => {
+      // It names what happened — nothing came back — rather than blaming the
+      // key, which was never looked at.
+      assert.match(err.message, /sent no reply within/i);
+      assert.match(err.message, /0\.7s|1s/);
+      assert.doesNotMatch(err.message, /key/i);
+      return true;
+    },
+  );
+  // And it gave up when it said it would, rather than on the SDK's schedule.
+  assert.ok(Date.now() - began < 5000, 'it waited far longer than the timeout it was given');
+
+  for (const res of held) res.destroy();
+  server.close();
+});

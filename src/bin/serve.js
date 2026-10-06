@@ -1071,6 +1071,10 @@ app.post('/api/connections/:name/test', async (req, res) => {
       const adapter = chatAdapter({
         apiKey: conn.apiKey, model, maxTokens: 512,
         effort: 'low', effortParam: conn.extra?.effortParam, baseURL,
+        // Somebody is watching this one. A minute is long enough to prove the
+        // endpoint works and short enough that a hung one is reported rather
+        // than waited on, and a retry here only triples that wait.
+        timeoutMs: 60_000, maxRetries: 0,
       });
       const turn = adapter.startTurn({ system: 'Answer in one word.', tools: [] });
       const step = await turn.send('Reply with the single word: ready');
