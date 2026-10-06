@@ -172,6 +172,22 @@ export function cleanKey(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return '';
 
+  // One word, pasted on its own, is the key. Return it untouched.
+  //
+  // Everything below hunts for a credential inside a line of other stuff, and
+  // hunting means deciding which characters a key is made of — which is a guess
+  // about every provider that exists and every one that does not exist yet. A
+  // key containing one character the guess did not allow comes back shortened,
+  // saves, shows a length nobody checks, and is refused everywhere. There is no
+  // reason to run any of that against something with no line around it.
+  if (!/\s/.test(text) && !/^["'`]|["'`,]$/.test(text)) {
+    // NAME=value has no spaces in it either, and the key is the right-hand
+    // side. The "=" has to be a separator rather than base64 padding, which
+    // only ever sits at the very end.
+    const assigned = text.match(/^[A-Za-z0-9_.-]+=(?!=*$)(.+)$/);
+    return (assigned ? assigned[1] : text).replace(/^(bearer|token|basic)\s+/i, '');
+  }
+
   // Whatever it was wrapped in, the key is in there as one unbroken run.
   // "=" only at the end, where base64 padding lives. Allowing it anywhere
   // would swallow the "=" of KEY=value and hand back the whole line.

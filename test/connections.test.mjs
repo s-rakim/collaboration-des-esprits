@@ -267,3 +267,32 @@ test('My Claude Code is not a special case — it is an endpoint', () => {
   // The four jobs it is offered for are four jobs it serves.
   assert.deepEqual(mcc.map((p) => p.kind).sort(), ['chat', 'image', 'speak', 'transcribe']);
 });
+
+test('a key pasted on its own is never altered', () => {
+  // The hunting below decides which characters a key is made of, which is a
+  // guess about every provider that exists and every one that does not yet. A
+  // key holding one character the guess disallows came back shortened, saved,
+  // showed a length nobody checks, and was refused everywhere — with the row
+  // reporting fewer characters than the key really has, the only clue.
+  for (const odd of [
+    'sk-abc123!def456ghi789jkl012',
+    'user:0123456789abcdef0123456789',
+    'key%2Fwith%2Fescapes0123456789',
+    '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',
+    'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkw==',
+  ]) {
+    assert.equal(cleanKey(odd), odd, `${odd.slice(0, 12)}… was changed`);
+  }
+
+  // NAME=value has no spaces in it either, and the key is the right-hand side.
+  const key = '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';
+  assert.equal(cleanKey(`NVIDIA_API_KEY=${key}`), key);
+  assert.equal(cleanKey(`NVIDIA_API_KEY="${key}"`), key);
+  // But the "=" of base64 padding is not a separator, and only ever trails.
+  const padded = 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkw==';
+  assert.equal(cleanKey(`AZURE_KEY=${padded}`), padded);
+
+  // And a key inside a line of other stuff is still found.
+  assert.equal(cleanKey(`"Authorization": "Bearer ${key}",`), key);
+  assert.equal(cleanKey(`curl -H "Authorization: Bearer ${key}" https://x/v1`), key);
+});

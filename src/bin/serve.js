@@ -1110,7 +1110,8 @@ app.post('/api/connections/:name/test', async (req, res) => {
   } catch (err) {
     // A refusal is the one error where what went out matters as much as what
     // came back, so it says both.
-    const refused = /401|403|unauthoriz|invalid.*(key|token|credential)|incorrect api key/i.test(err.message);
+    const refused = err.unauthorized === true
+      || /401|403|unauthoriz|rejected the api key|invalid.*(key|token|credential)|incorrect api key/i.test(err.message);
     res.status(400).json({
       ok: false,
       error: refused ? `${err.message} — for comparison, it ${asSent(conn)}` : err.message,

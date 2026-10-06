@@ -58,7 +58,15 @@ export function chatAdapter({ apiKey, model, maxTokens, effort, effortParam, bas
             stop.interrupted = true;
             throw stop;
           }
-          if (err instanceof OpenAI.AuthenticationError) throw new Error('the provider rejected the API key');
+          if (err instanceof OpenAI.AuthenticationError) {
+            // Flagged, not just worded. Whoever wants to react to "the key was
+            // refused" should not have to pattern-match this sentence, because
+            // the sentence is allowed to change and the matcher silently stops
+            // firing when it does — which is exactly what happened.
+            const refused = new Error('the provider rejected the API key');
+            refused.unauthorized = true;
+            throw refused;
+          }
           if (err instanceof OpenAI.RateLimitError) throw new Error('rate limited by the provider — backing off');
           if (err instanceof OpenAI.APIError) {
             if (err.status === undefined || err.status === null) {
