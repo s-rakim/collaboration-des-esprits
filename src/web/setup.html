@@ -1166,7 +1166,12 @@ async function renderRouters() {
                <a class="btn" href="${esc(r.admin)}" target="_blank" rel="noreferrer">Its dashboard</a>
                ${st.ours ? `<button data-stop="1">Stop it</button>` : ''}`
             : `<button data-start="${esc(id)}">Start it</button>
-               <span class="hint">${esc(st.error ?? 'not running')}</span>`}
+               <span class="hint">${esc(st.error ?? 'not running')}</span>
+               <details class="install">
+                 <summary>not installed?</summary>
+                 <code>${esc(r.install)}</code>
+                 <a href="${esc(r.home)}" target="_blank" rel="noreferrer">its page</a>
+               </details>`}
         </div>
       </div>`;
   }).join('');

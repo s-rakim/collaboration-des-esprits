@@ -68,8 +68,10 @@ test('a router that dies on startup says what it said, and how to install it', a
   await assert.rejects(child, (err) => {
     assert.match(err.message, /stopped straight away/);
     assert.match(err.message, /exit 127/);
-    // The next thing to do, rather than only what went wrong.
-    assert.match(err.message, /uv tool install free-claude-code/);
+    // The next thing to do, rather than only what went wrong — and the real
+    // installer, since the command it installs is fcc-server and "fcc" is not
+    // a command it ships at all.
+    assert.match(err.message, /install\.ps1|install\.sh/);
     return true;
   });
   assert.equal(routers.running, null, 'a router that died must not be left marked as running');
@@ -245,4 +247,15 @@ test('a refused key is flagged rather than only worded, in this shape too', asyn
     },
   );
   server.close();
+});
+
+test('each router is started by a command it actually installs', () => {
+  // "fcc" is not a command Free Claude Code ships — its own pyproject names the
+  // server entry point fcc-server — so starting it would have failed with the
+  // same "not recognized" a missing program gives, and looked like our bug.
+  assert.equal(ROUTERS.fcc.command, 'fcc-server');
+  assert.equal(ROUTERS.mcc.command, 'mcc-server');
+  assert.equal(ROUTERS['9router'].command, '9router');
+  // And every card can say how to get the thing it cannot find.
+  for (const id of ROUTER_ORDER) assert.ok(ROUTERS[id].install.trim().length > 10, id);
 });

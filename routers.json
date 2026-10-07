@@ -19,11 +19,11 @@
     "fcc": {
       "label": "Free Claude Code",
       "base": "http://127.0.0.1:8082/v1",
-      "command": "fcc",
+      "command": "fcc-server",
       "home": "https://github.com/Alishahryar1/free-claude-code",
       "admin": "http://127.0.0.1:8082/admin",
       "note": "Anthropic shape only \u2014 it serves no /chat/completions.",
-      "install": "curl -LsSf https://astral.sh/uv/install.sh | sh  &&  uv tool install free-claude-code",
+      "install": "& ([scriptblock]::Create((irm \"https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.ps1\")))",
       "shape": "messages",
       "media": false
     },
