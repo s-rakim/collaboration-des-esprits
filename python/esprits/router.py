@@ -2,20 +2,24 @@
 The way out of the room.
 
 Everything this app needs from the outside world — a model that talks, a voice,
-an ear, a picture — is one HTTP call to My Claude Code, which stands in front of
-whatever providers you have given it and speaks the OpenAI shape on the usual
-paths. So this file is the whole connector layer, and it is thin on purpose.
+an ear, a picture — goes to a local router standing in front of whatever
+providers you have given it. There are several of these and they are
+interchangeable in principle, so the room asks one address and stops guessing
+about keys, headers and the spelling of "model".
 
-It replaces four files that used to be here: a table of per-provider presets, a
-prober that guessed at base URLs, a media module that knew which provider wanted
-its voice in the path and which in the body, and an adapter wrapping a vendor
-SDK. All of that was this app carrying a problem that was never its own — which
-key, which header, which spelling of "model" — and getting it wrong in ways that
-looked like the app being broken. MCC does that job and does it better, so the
-room asks one address and stops guessing.
+In practice they are not quite interchangeable, which is the one thing this
+file has to know. Two request shapes are in use:
 
-What remains here is only what the room genuinely needs to know: where MCC is,
-what it can reach today, and how to take one turn with it.
+* **chat** — OpenAI's ``/chat/completions``. 9Router and My Claude Code serve it.
+* **messages** — Anthropic's ``/v1/messages``. Free Claude Code serves only
+  this one and ``/responses``; it has no ``/chat/completions`` at all.
+
+So the shape is discovered rather than assumed, and a turn is built for
+whichever one answered. Everything above this file sees the same ``Turn``
+either way.
+
+**Nothing here holds an API key for a provider.** The router does, in its own
+dashboard, where it can validate and rotate them.
 """
 
 from __future__ import annotations
@@ -29,7 +33,39 @@ from typing import Any, Iterable
 
 import httpx
 
-DEFAULT_BASE = "http://127.0.0.1:8082/v1"
+#: The routers this room knows how to start from, and where each listens.
+#: Not a closed list — any address can be typed in — but these are the three
+#: worth offering by name, and their ports differ enough to be worth writing
+#: down rather than looking up every time. MCC and FCC both default to 8082,
+#: so they cannot both be running as shipped.
+ROUTERS = {
+    "9router": {
+        "label": "9Router",
+        "base": "http://127.0.0.1:20128/v1",
+        "command": "9router",
+        "home": "https://github.com/decolua/9router",
+        "admin": "http://127.0.0.1:20128/",
+        "note": "Serves both request shapes, plus speech, images and video.",
+    },
+    "fcc": {
+        "label": "Free Claude Code",
+        "base": "http://127.0.0.1:8082/v1",
+        "command": "fcc",
+        "home": "https://github.com/Alishahryar1/free-claude-code",
+        "admin": "http://127.0.0.1:8082/admin",
+        "note": "Anthropic shape only — it serves no /chat/completions.",
+    },
+    "mcc": {
+        "label": "My Claude Code",
+        "base": "http://127.0.0.1:8082/v1",
+        "command": "mcc-server",
+        "home": "https://github.com/FiredMosquito831/my-claude-code",
+        "admin": "http://127.0.0.1:8082/admin",
+        "note": "Serves both request shapes, plus speech, images and video.",
+    },
+}
+
+DEFAULT_BASE = ROUTERS["9router"]["base"]
 TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 
 # Long enough for a model that thinks before it speaks, short enough that a dead
@@ -39,7 +75,8 @@ PROBE_TIMEOUT = httpx.Timeout(12.0)
 
 def base_url() -> str:
     """Where MCC is listening, overridable for a non-default install."""
-    return (os.environ.get("ESPRITS_MCC") or DEFAULT_BASE).rstrip("/")
+    return (os.environ.get("ESPRITS_ROUTER") or os.environ.get("ESPRITS_MCC")
+            or DEFAULT_BASE).rstrip("/")
 
 
 class Unreachable(RuntimeError):
@@ -149,20 +186,12 @@ class Turn:
         if self._stopped:
             raise Interrupted("stopped")
 
-        payload: dict[str, Any] = {
-            "model": self._model,
-            "messages": self._messages,
-            "max_completion_tokens": self._client.max_tokens,
-        }
-        if self._tools:
-            payload["tools"] = self._tools
-            payload["tool_choice"] = "auto"
-        if self._client.effort:
-            # MCC owns reasoning controls, so the room asks in one spelling and
-            # lets it translate — which is the whole point of it being there.
-            payload["reasoning_effort"] = self._client.effort
+        shape = await self._client.shape()
+        path, payload = (
+            self._as_chat() if shape == "chat" else self._as_messages()
+        )
 
-        task = asyncio.ensure_future(self._client.post("/chat/completions", payload))
+        task = asyncio.ensure_future(self._client.post(path, payload))
         self._in_flight = task
         try:
             body = await task
@@ -174,6 +203,27 @@ class Turn:
         if self._stopped:
             raise Interrupted("stopped")
 
+        return self._read_chat(body) if shape == "chat" else self._read_messages(body)
+
+    # ------------------------------------------------------- the OpenAI shape
+
+    def _as_chat(self):
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": self._messages,
+            # The spelling nearly every endpoint takes. Wrong, it is ignored
+            # rather than refused, so no cap applies and a reasoning model
+            # writes until its own default — which reads as the endpoint hanging.
+            "max_tokens": self._client.max_tokens,
+        }
+        if self._tools:
+            payload["tools"] = self._tools
+            payload["tool_choice"] = "auto"
+        if self._client.effort:
+            payload["reasoning_effort"] = self._client.effort
+        return "/chat/completions", payload
+
+    def _read_chat(self, body) -> Step:
         choices = body.get("choices") or []
         if not choices:
             raise ProviderError("the model returned no choices")
@@ -210,14 +260,115 @@ class Turn:
             calls,
         )
 
+    # ---------------------------------------------------- the Anthropic shape
 
-class MCC:
+    def _as_messages(self):
+        """
+        The same turn, in the shape Free Claude Code serves.
+
+        Three differences do the work. The system prompt is a top-level field
+        rather than the first message. Tool results are content blocks on a user
+        message rather than messages of their own. And a tool's schema is
+        ``input_schema`` rather than nested under ``function``.
+        """
+        system = ""
+        turns: list[dict[str, Any]] = []
+        for m in self._messages:
+            role = m.get("role")
+            if role == "system":
+                system = m.get("content") or ""
+            elif role == "tool":
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": m.get("tool_call_id"),
+                    "content": m.get("content") or "",
+                }
+                # Consecutive results belong to one user message, because
+                # Anthropic alternates roles strictly and a run of user
+                # messages is refused.
+                if turns and turns[-1]["role"] == "user" and isinstance(turns[-1]["content"], list):
+                    turns[-1]["content"].append(block)
+                else:
+                    turns.append({"role": "user", "content": [block]})
+            elif role == "assistant":
+                content: list[dict[str, Any]] = []
+                if m.get("content"):
+                    content.append({"type": "text", "text": m["content"]})
+                for c in m.get("tool_calls") or []:
+                    fn = c.get("function") or {}
+                    raw = fn.get("arguments") or "{}"
+                    try:
+                        parsed = json.loads(raw) if isinstance(raw, str) else raw
+                    except ValueError:
+                        parsed = {}
+                    content.append({
+                        "type": "tool_use", "id": c.get("id"),
+                        "name": fn.get("name"), "input": parsed,
+                    })
+                turns.append({"role": "assistant", "content": content or [{"type": "text", "text": ""}]})
+            else:
+                turns.append({"role": "user", "content": m.get("content") or ""})
+
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": turns,
+            "max_tokens": self._client.max_tokens,
+        }
+        if system:
+            payload["system"] = system
+        if self._tools:
+            payload["tools"] = [
+                {
+                    "name": t["function"]["name"],
+                    "description": t["function"].get("description", ""),
+                    "input_schema": t["function"].get("parameters") or {"type": "object"},
+                }
+                for t in self._tools
+            ]
+        return "/messages", payload
+
+    def _read_messages(self, body) -> Step:
+        blocks = body.get("content") or []
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        uses = [b for b in blocks if b.get("type") == "tool_use"]
+
+        # Kept in the OpenAI shape internally, so one transcript serves both and
+        # a router swapped mid-conversation does not lose the history.
+        echoed: dict[str, Any] = {"role": "assistant", "content": text or None}
+        if uses:
+            echoed["tool_calls"] = [
+                {
+                    "id": u.get("id"),
+                    "type": "function",
+                    "function": {"name": u.get("name"), "arguments": json.dumps(u.get("input") or {})},
+                }
+                for u in uses
+            ]
+        self._messages.append(echoed)
+
+        stop = body.get("stop_reason")
+        if stop == "max_tokens":
+            return Step("max_tokens")
+        if stop == "refusal":
+            return Step("refusal")
+
+        calls = [
+            {"id": u.get("id"), "name": u.get("name"), "input": u.get("input") or {}}
+            for u in uses
+        ]
+        return Step("tool_use" if calls else "end_turn", text, calls)
+
+
+class Router:
     """
-    A client for one MCC instance.
+    A client for one local router.
 
-    There is no API key here, and that is the point: MCC holds the provider
-    credentials, in its own dashboard, where it can validate and rotate them.
-    Nothing in this room ever stores one.
+    There is no provider API key here, and that is the point: the router holds
+    those, in its own dashboard, where it can validate and rotate them. Nothing
+    in this room ever stores one.
+
+    Some routers want a token of their own on the way in — that is a different
+    thing from a provider key, and it is the only credential this class carries.
     """
 
     def __init__(
@@ -226,13 +377,52 @@ class MCC:
         *,
         max_tokens: int = 4096,
         effort: str | None = None,
+        token: str | None = None,
+        shape: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base = (base or base_url()).rstrip("/")
         self.max_tokens = max_tokens
         self.effort = effort
+        self.token = token or os.environ.get("ESPRITS_ROUTER_TOKEN") or None
+        self._shape = shape
         self._client = client
         self._owned = client is None
+
+    def headers(self) -> dict[str, str]:
+        if not self.token:
+            return {}
+        # Both spellings, because which one a router reads depends on which
+        # shape it is imitating, and sending the pair costs nothing.
+        return {"authorization": f"Bearer {self.token}", "x-api-key": self.token}
+
+    async def shape(self) -> str:
+        """
+        Which request shape this router serves.
+
+        Asked once and remembered. It cannot be assumed from the address: Free
+        Claude Code and My Claude Code both listen on 8082 as shipped, and one
+        of them has no /chat/completions at all.
+        """
+        if self._shape:
+            return self._shape
+
+        http = await self._http()
+        try:
+            # Asked with GET, which is the one question whose answer cannot mean
+            # anything else. A path that exists but takes POST answers 405
+            # "method not allowed"; a path that does not exist answers 404. A
+            # POST would have been ambiguous — a 404 could equally be the router
+            # saying it has no such model — and nothing is generated either way.
+            res = await http.get(
+                f"{self.base}/chat/completions", headers=self.headers(), timeout=PROBE_TIMEOUT,
+            )
+            self._shape = "messages" if res.status_code == 404 else "chat"
+        except httpx.RequestError:
+            # Unreachable is not an answer about shape, so nothing is cached and
+            # the real call reports the real problem.
+            return "chat"
+        return self._shape
 
     async def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -249,11 +439,12 @@ class MCC:
     async def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         http = await self._http()
         try:
-            res = await http.post(f"{self.base}{path}", json=payload)
+            res = await http.post(f"{self.base}{path}", json=payload, headers=self.headers())
         except httpx.RequestError as exc:
             raise Unreachable(
-                f"nothing is answering at {self.base} — start My Claude Code"
-                f' with "mcc-server" and check its dashboard is up ({exc.__class__.__name__})'
+                f"nothing is answering at {self.base} — start your router"
+                f" (9router, fcc or mcc-server) and check its dashboard is up"
+                f" ({exc.__class__.__name__})"
             ) from exc
         if res.status_code >= 400:
             raise ProviderError(_explain(res.status_code, res.text))
@@ -263,11 +454,11 @@ class MCC:
         """Everything MCC can reach today, which is its owner's business."""
         http = await self._http()
         try:
-            res = await http.get(f"{self.base}/models", timeout=PROBE_TIMEOUT)
+            res = await http.get(f"{self.base}/models", headers=self.headers(), timeout=PROBE_TIMEOUT)
         except httpx.RequestError as exc:
             raise Unreachable(
-                f"nothing is answering at {self.base} — start My Claude Code"
-                f' with "mcc-server" ({exc.__class__.__name__})'
+                f"nothing is answering at {self.base} — start your router"
+                f" (9router, fcc or mcc-server) ({exc.__class__.__name__})"
             ) from exc
         if res.status_code >= 400:
             raise ProviderError(_explain(res.status_code, res.text))
@@ -303,6 +494,7 @@ class MCC:
         try:
             res = await http.post(
                 f"{self.base}/audio/speech",
+                headers=self.headers(),
                 json={
                     "model": model,
                     "input": text[:4000],
@@ -329,6 +521,7 @@ class MCC:
         try:
             res = await http.post(
                 f"{self.base}/audio/transcriptions",
+                headers=self.headers(),
                 files={"file": (filename, audio)},
                 data={"model": model},
             )
