@@ -158,6 +158,13 @@
   .chip button{border:0;background:none;color:var(--dim);padding:0 3px;font-size:14px;line-height:1}
   .headlink{color:var(--dim);text-decoration:none;font-size:12px;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
   .headlink:hover{border-color:var(--accent);color:var(--text)}
+  .fcc{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);text-decoration:none;
+    border:1px solid var(--line);padding:4px 9px;border-radius:7px;background:none;max-width:320px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fcc:hover{border-color:var(--accent);color:var(--text)}
+  .fcc i{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  .fcc.on i{background:var(--good)}
+  .fcc.off i{background:var(--warn)}
 </style>
 </head>
 <body>
@@ -165,6 +172,7 @@
   <nav id="nav"></nav>
   <h1 id="title">The lobby <small>cross-cutting chat</small></h1>
   <div class="stats" id="stats"></div>
+  <button class="fcc" id="fcc" hidden></button>
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
@@ -1593,6 +1601,52 @@ $('#stop').addEventListener('click', async () => {
     await renderBusy();
   } catch (e) { toast(e.message); }
 });
+
+/**
+ * fcc-2.0: where the room stands with Free Claude Code, the way out for every
+ * model in it. Connected, it names the model FCC is answering on and opens
+ * FCC's admin page, where models and keys are chosen. Not connected, it is the
+ * one button that wires it up.
+ */
+const fcc = { state: null };
+async function loadFcc() {
+  try { fcc.state = await api('/api/fcc'); } catch { return; }
+  const s = fcc.state;
+  const el = $('#fcc');
+  el.hidden = false;
+  el.className = `fcc ${s.connection ? (s.running ? 'on' : 'off') : ''}`;
+  if (!s.connection) {
+    el.innerHTML = '<i></i>Connect Free Claude Code';
+    el.title = s.running
+      ? `Free Claude Code is running at ${s.baseURL} — connect the room to it`
+      : `Start Free Claude Code (fcc-server), then press this`;
+  } else if (!s.running) {
+    el.innerHTML = '<i></i>FCC offline — start fcc-server';
+    el.title = `Nothing is answering at ${s.baseURL}`;
+  } else {
+    const seated = s.seats.filter((x) => x.enabled).map((x) => x.name);
+    el.innerHTML = `<i></i>FCC · ${esc(s.connection.model || 'no model')}`;
+    el.title = `${seated.length ? `${seated.join(', ')} in the chat via Free Claude Code` : 'no seat uses it yet'}`
+      + ' — open its admin page to change models or keys';
+  }
+}
+$('#fcc').addEventListener('click', async () => {
+  const s = fcc.state;
+  if (s?.connection && s.running) return window.open(s.admin, '_blank', 'noopener');
+  if (s?.connection) return toast(`Free Claude Code is not answering at ${s.baseURL} — start it with fcc-server`);
+  const el = $('#fcc');
+  el.disabled = true;
+  el.innerHTML = '<i></i>connecting…';
+  try {
+    const r = await api('/api/connections/from-fcc', { method: 'POST', body: '{}' });
+    toast(`${r.seated.join(', ') || 'Free Claude Code'} in the chat on ${r.model || '?'} — @all to talk to them`, 'ok');
+  } catch (e) { toast(e.message); }
+  el.disabled = false;
+  await loadFcc();
+  await refresh();
+});
+loadFcc();
+setInterval(() => { loadFcc(); }, 30000);
 
 // Live updates: the server tells us the high-water mark moved, we pull the delta.
 function listen() {

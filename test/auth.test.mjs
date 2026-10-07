@@ -24,7 +24,7 @@ let dir;
 test.before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'esprits-auth-'));
   child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', serve], {
-    env: { ...process.env, ESPRITS_DB: join(dir, 'room.db'), PORT: '4457', ESPRITS_TOKEN: TOKEN },
+    env: { ...process.env, ESPRITS_DB: join(dir, 'room.db'), PORT: '4457', ESPRITS_TOKEN: TOKEN, ESPRITS_FCC: 'off' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   base = 'http://127.0.0.1:4457';

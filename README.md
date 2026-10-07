@@ -266,7 +266,7 @@ polling. That is what makes the room feel live.
 Everything the room can reach is a **connection** you define: a name, a URL, a
 key, and what it is for. Nothing is a fixed list. Presets fill the boxes in for
 OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, xAI, NVIDIA, Ollama, LM
-Studio and My Claude Code,
+Studio, My Claude Code and Free Claude Code,
 but you can type your own URL and model for anything that isn't there — a
 provider that launches next month needs no change to this code.
 
@@ -275,7 +275,7 @@ names. A connection is used for one of:
 
 | Kind | Endpoint shape | What it does |
 |---|---|---|
-| **Chat model** | `/chat/completions` | takes a seat in the room and talks |
+| **Chat model** | `/chat/completions`, or `/messages` for Free Claude Code | takes a seat in the room and talks |
 | **Speech to text** | `/audio/transcriptions` | turns what you say into messages |
 | **Text to speech** | `/audio/speech` | reads replies back |
 | **Image generation** | `/images/generations` | makes images, for you or an agent |
@@ -290,6 +290,53 @@ key set in your shell needs no typing.
 need a model first: with the box empty it asks the endpoint what it serves,
 proves the key against the first model your account can actually reach, and
 keeps that one.
+
+### Adding a model by pasting its example
+
+The setup page has one box for this: **Add a model — paste the example.** Paste
+the whole code sample from the page where you made the key — Python, JavaScript
+or curl, as it comes — and press **Add it to the chat**. The address, the key,
+the model and settings such as `max_tokens` and `reasoning_effort` are read out
+of it, the connection is saved, and a seat takes it straight away. The box is
+emptied as soon as the key is stored.
+
+A key written as `$NVIDIA_API_KEY` or `<your key>` is a placeholder, not a key,
+and is not stored; paste the real one on the row instead.
+
+### fcc-2.0: Free Claude Code as the way out
+
+On this branch the room is a chat window for
+[Free Claude Code](https://github.com/Alishahryar1/free-claude-code) (FCC): what
+you would otherwise do in a terminal with `fcc-claude`, you do here, with
+several models in one conversation.
+
+FCC holds your provider keys in its own admin page and routes every call to the
+model chosen there. It speaks Anthropic's `/v1/messages`, and has no
+`/chat/completions` at all, so connections to it carry `api: "messages"` and use
+an adapter for that shape (`src/participants/messages.js`). Nothing above the
+adapter can tell the two shapes apart.
+
+```bash
+fcc-server            # or open the Free Claude Code app; pick models at :8082/admin
+npm start             # then open http://127.0.0.1:4300/
+```
+
+A room with no chat connection yet looks for FCC on `http://127.0.0.1:8082/v1`
+at startup and, if it answers, wires itself up: one `fcc` connection on FCC's
+default model, and the starter seats pointed at it. After that:
+
+- the header of the room shows **FCC · <model>**, green while FCC answers;
+  clicking it opens FCC's admin page to change models or keys. When it is not
+  connected, the same chip is a **Connect Free Claude Code** button.
+- **Connect Free Claude Code** on the setup page does the same by hand, with a
+  box for a different address and one for FCC's proxy token if you turned on
+  Proxy Authentication there.
+- Talk to the models with `@all` or `@<seat>`. As everywhere in the room, a
+  message with no mention is left for whoever wants it.
+
+`ESPRITS_FCC=off` turns the startup check off; `ESPRITS_FCC=<url>` looks
+somewhere else. My Claude Code also listens on 8082 as shipped, so run one or
+the other.
 
 ### Using My Claude Code as the way out
 

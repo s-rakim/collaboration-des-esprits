@@ -13,7 +13,21 @@
  * once: the URL that answered is the right URL, and the list is the list.
  */
 
+import { messagesHeaders } from './participants/messages.js';
+
 const TIMEOUT_MS = 12_000;
+
+/** The headers for a call, in whichever shape the endpoint speaks. */
+function headersFor(apiKey, extra, base) {
+  if (extra.api === 'messages') return messagesHeaders(apiKey, extra);
+  const headers = { ...base, ...(extra.headers ?? {}) };
+  if (apiKey) {
+    const named = extra.keyHeader;
+    if (named) headers[named] = apiKey;
+    else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
+  }
+  return headers;
+}
 
 /**
  * The base URLs worth trying, given what somebody typed.
@@ -81,14 +95,12 @@ async function askModels(base, apiKey, extra = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const headers = { accept: 'application/json', ...(extra.headers ?? {}) };
-    if (apiKey) {
-      const named = extra.keyHeader;
-      if (named) headers[named] = apiKey;
-      else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
-    }
+    const headers = headersFor(apiKey, extra, { accept: 'application/json' });
 
-    const res = await fetch(`${base}/models`, { headers, signal: ctl.signal });
+    // Free Claude Code lists Claude Code's own shortcuts by default; the
+    // "messages" view is the real catalogue, by the ids /messages accepts.
+    const listing = extra.api === 'messages' ? `${base}/models?view=messages` : `${base}/models`;
+    const res = await fetch(listing, { headers, signal: ctl.signal });
     const text = await res.text();
     if (!res.ok) {
       const why = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
@@ -107,7 +119,9 @@ async function askModels(base, apiKey, extra = {}) {
       .filter(Boolean);
 
     if (!models.length) return { ok: false, error: 'that answered, but listed no models' };
-    return { ok: true, models: [...new Set(models)].sort() };
+    // The router's own choice, where it says one: the model it is set up for.
+    const preferred = typeof body?.default_model_id === 'string' ? body.default_model_id : null;
+    return { ok: true, models: [...new Set(models)].sort(), preferred };
   } catch (err) {
     if (err.name === 'AbortError') return { ok: false, error: `no answer within ${TIMEOUT_MS / 1000}s` };
     return { ok: false, error: err.message };
@@ -179,14 +193,9 @@ export async function tryKey({ baseURL, apiKey, model, models, extra = {} }) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
     try {
-      const headers = { 'content-type': 'application/json', ...(extra.headers ?? {}) };
-      if (apiKey) {
-        const named = extra.keyHeader;
-        if (named) headers[named] = apiKey;
-        else headers.authorization = `${extra.keyScheme ?? 'Bearer'} ${apiKey}`;
-      }
+      const headers = headersFor(apiKey, extra, { 'content-type': 'application/json' });
 
-      const res = await fetch(`${baseURL}/chat/completions`, {
+      const res = await fetch(`${baseURL}/${extra.api === 'messages' ? 'messages' : 'chat/completions'}`, {
         method: 'POST',
         headers,
         signal: ctl.signal,
@@ -246,6 +255,7 @@ export async function probe({ baseURL, apiKey, extra = {} }) {
         baseURL: base,
         changed: base !== String(baseURL ?? '').trim().replace(/\/+$/, ''),
         models: result.models,
+        preferred: result.preferred ?? null,
         tried,
       };
     }

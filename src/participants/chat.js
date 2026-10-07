@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { messagesAdapter } from './messages.js';
 
 /**
  * The chat adapter, on the official OpenAI SDK.
@@ -22,7 +23,14 @@ import OpenAI from 'openai';
  */
 const TURN_TIMEOUT_MS = 180_000;
 
-export function chatAdapter({
+export function chatAdapter(options) {
+  // An endpoint that serves only Anthropic's /v1/messages — Free Claude Code —
+  // gets the adapter for that shape, with the same face as this one.
+  if (options.api === 'messages') return messagesAdapter(options);
+  return completionsAdapter(options);
+}
+
+function completionsAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
   timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam,
 }) {

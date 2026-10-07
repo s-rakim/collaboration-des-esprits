@@ -7,6 +7,9 @@
  * accepts, you can type.
  */
 
+/** An endpoint on this machine: a local router such as Free Claude Code. */
+export const isLocal = (url) => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)([:/]|$)/i.test(String(url ?? ''));
+
 const VALID_EFFORT = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
@@ -29,8 +32,9 @@ export function createSeats(db, connections) {
       effort: r.effort,
       maxTokens: r.max_tokens,
       enabled: Boolean(r.enabled),
-      // A seat is only runnable when its connection exists and has a key.
-      ready: Boolean(conn?.keySet),
+      // A seat is only runnable when its connection exists and has a key — or
+      // points at a router on this machine, which holds the keys itself.
+      ready: Boolean(conn?.keySet || (conn && isLocal(conn.baseURL))),
       connectionMissing: Boolean(r.connection) && !conn,
       baseURL: conn?.baseURL ?? '',
     };
@@ -74,6 +78,10 @@ export function createSeats(db, connections) {
         // rather than refused, so no cap applies and a reasoning model writes
         // until its own default — which reads as the endpoint hanging.
         tokenParam: conn.extra?.tokenParam ?? null,
+        // Which request shape the endpoint serves: 'messages' for Anthropic's
+        // (Free Claude Code), otherwise OpenAI's /chat/completions.
+        api: conn.extra?.api ?? null,
+        extra: conn.extra ?? {},
       };
     },
 

@@ -82,6 +82,8 @@ export function createSwarmRunner({ hub, seats, log = () => {}, createClient = n
       effortParam: resolved.effortParam,
       tokenParam: resolved.tokenParam,
       baseURL: resolved.baseURL,
+      api: resolved.api,
+      extra: resolved.extra,
       createClient,
     });
     const turn = adapter.startTurn({ system, tools: [] });

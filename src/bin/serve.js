@@ -8,7 +8,7 @@ import { Hub, NotFound, Invalid } from '../core.js';
 import { buildServer } from '../mcp/tools.js';
 import { createConfig } from '../settings.js';
 import { createSeats } from '../seats.js';
-import { createConnections, PRESETS, KINDS, parseSnippet } from '../connections.js';
+import { createConnections, PRESETS, KINDS, parseSnippet, FCC } from '../connections.js';
 import { chatAdapter } from '../participants/chat.js';
 import { createSwarmRunner } from '../swarm.js';
 import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
@@ -964,10 +964,16 @@ app.post('/api/connections/from-snippet', (req, res) => {
     extra: { ...(existing?.extra ?? {}), ...parsed.extra },
   });
 
+  // A pasted example is the whole of setting up a model, so it goes straight
+  // into the chat rather than waiting on a second form.
+  const seated = parsed.kind === 'chat' && req.body?.seat !== false ? seatOn(saved.name) : [];
+  if (seated.length) syncSeats();
+
   res.json({
     ok: true,
     name: saved.name,
     replaced: Boolean(existing),
+    seated,
     found: {
       baseURL: parsed.baseURL,
       model: parsed.model,
@@ -1053,6 +1059,119 @@ app.post('/api/connections/from-mcc', async (req, res) => {
 });
 
 /**
+ * Put a connection in the chat without a second form to fill in.
+ *
+ * Adding a connection used to be half the job: a seat still had to be pointed
+ * at it before anything spoke. The starter seats are there for exactly this, so
+ * the first one with nowhere to go takes it (or every one, when `all`); with
+ * none spare, a new seat is made under the connection's name. A connection some
+ * seat already uses is left as it is.
+ */
+function seatOn(connection, { all = false } = {}) {
+  const list = seats.all();
+  if (list.some((s) => s.connection === connection)) return [];
+  const spare = list.filter((s) => !s.connection);
+  const chosen = all ? spare : spare.slice(0, 1);
+  if (chosen.length) {
+    return chosen.map((s) => seats.save({
+      name: s.name, connection, model: '', role: s.role, effort: s.effort,
+      maxTokens: s.maxTokens, enabled: true,
+    }).name);
+  }
+  let name = String(connection).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'model';
+  for (let n = 2; seats.get(name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`;
+  return [seats.save({ name, connection, role: 'generalist', enabled: true }).name];
+}
+
+/**
+ * Wire up Free Claude Code — the way out for fcc-2.0 — in one action.
+ *
+ * FCC holds every provider key in its own admin page and routes to whichever
+ * model is chosen there, so the room needs one row: its address, the Anthropic
+ * shape it speaks, and a model it lists. The starter seats are pointed at it,
+ * so the chat has somebody to talk to the moment this returns.
+ */
+async function connectFcc({ baseURL = FCC, apiKey = '', name = 'fcc' } = {}) {
+  const extra = { api: 'messages' };
+  const found = await probeEndpoint({ baseURL, apiKey, extra });
+  if (!found.ok) {
+    return {
+      ok: false,
+      unauthorized: Boolean(found.unauthorized),
+      error: found.unauthorized
+        ? `Free Claude Code is at ${found.baseURL} but refused the token — Proxy Authentication is on`
+          + ' in its admin page, so paste that token in the box and try again'
+        : `Free Claude Code is not answering at ${baseURL} (${found.error}). Start it with`
+          + ' "fcc-server" (or open the Free Claude Code app), then try again',
+    };
+  }
+
+  // Its own default first: it is the model somebody picked in FCC's admin page.
+  const ordered = found.preferred
+    ? [found.preferred, ...found.models.filter((m) => m !== found.preferred)]
+    : found.models;
+  const chat = await tryKey({ baseURL: found.baseURL, apiKey, models: ordered, extra });
+
+  const existing = connections.resolve(name);
+  connections.save({
+    name,
+    kind: 'chat',
+    baseURL: found.baseURL,
+    model: chat.ok ? chat.model : (ordered[0] ?? ''),
+    // Only a token that was typed replaces one already stored.
+    ...(apiKey ? { apiKey } : {}),
+    extra: { ...(existing?.extra ?? {}), ...extra },
+  });
+  const seated = seatOn(name, { all: true });
+  syncSeats();
+
+  return {
+    ok: true,
+    name,
+    baseURL: found.baseURL,
+    models: found.models,
+    model: chat.ok ? chat.model : (ordered[0] ?? ''),
+    verified: chat.ok ? chat.model : null,
+    error: chat.ok ? null : (chat.error ?? null),
+    seated,
+    admin: found.baseURL.replace(/\/v1$/, '') + '/admin',
+  };
+}
+
+app.post('/api/connections/from-fcc', async (req, res) => {
+  const result = await connectFcc({
+    baseURL: String(req.body?.baseURL ?? '').trim() || FCC,
+    apiKey: String(req.body?.apiKey ?? '').trim(),
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+/**
+ * Where the room stands with Free Claude Code, for the home page.
+ *
+ * Cheap enough to ask on load: one GET to FCC's /health, which needs no token.
+ */
+app.get('/api/fcc', async (_req, res) => {
+  const conn = connections.all().find((c) => c.kind === 'chat' && c.extra?.api === 'messages') ?? null;
+  const base = conn?.baseURL || FCC;
+  let running = false;
+  try {
+    const ctl = AbortSignal.timeout(3000);
+    const r = await fetch(`${base.replace(/\/v1$/, '')}/health`, { signal: ctl });
+    running = r.ok;
+  } catch { running = false; }
+  const on = conn ? seats.all().filter((s) => s.connection === conn.name) : [];
+  res.json({
+    running,
+    baseURL: base,
+    admin: `${base.replace(/\/v1$/, '')}/admin`,
+    connection: conn ? { name: conn.name, model: conn.model } : null,
+    seats: on.map((s) => ({ name: s.name, enabled: s.enabled, model: s.model || conn.model })),
+    inChat: seats.enabled().length,
+  });
+});
+
+/**
  * Describe the credential the way the server holds it.
  *
  * "The provider refused the key" is true and useless: the question it leaves is
@@ -1127,7 +1246,7 @@ app.post('/api/connections/:name/test', async (req, res) => {
       const adapter = chatAdapter({
         apiKey: conn.apiKey, model, maxTokens: 512,
         effort: 'low', effortParam: conn.extra?.effortParam, baseURL,
-        tokenParam: conn.extra?.tokenParam,
+        tokenParam: conn.extra?.tokenParam, api: conn.extra?.api, extra: conn.extra,
         // Somebody is watching this one. A minute is long enough to prove the
         // endpoint works and short enough that a hung one is reported rather
         // than waited on, and a retry here only triples that wait.
@@ -1697,6 +1816,18 @@ function startScheduler() {
 
 function startParticipants() {
   syncSeats();
+  // fcc-2.0: Free Claude Code is the way out. A room with no chat connection
+  // yet looks for it on its usual port and, if it is there, is wired to it —
+  // so starting fcc-server and then this is the whole of the setup.
+  // ESPRITS_FCC=off skips it; ESPRITS_FCC=<url> looks somewhere else.
+  const fccAt = process.env.ESPRITS_FCC ?? '';
+  if (fccAt !== 'off' && !connections.ofKind('chat').length) {
+    connectFcc({ baseURL: fccAt || FCC }).then((r) => {
+      process.stdout.write(r.ok
+        ? `fcc: connected to ${r.baseURL} — ${r.models.length} models, ${r.seated.join(', ') || 'no seats'} on ${r.model || '?'}\n`
+        : `fcc: ${r.error}\n`);
+    }).catch((err) => process.stderr.write(`fcc: ${err.message}\n`));
+  }
   startScheduler();
 
   const token = config.secret('telegram_token');

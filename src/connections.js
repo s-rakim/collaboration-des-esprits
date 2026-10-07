@@ -55,6 +55,17 @@ export const KINDS = {
  * whatever it reaches is its business, not this app's.
  */
 const MCC = 'http://127.0.0.1:8082/v1';
+
+/**
+ * Free Claude Code, the way out for fcc-2.0.
+ *
+ * Also a proxy in front of many providers, holding their keys in its own admin
+ * page — but it speaks Anthropic's /v1/messages and has no /chat/completions,
+ * so its rows carry `api: 'messages'` and get the adapter for that shape.
+ */
+export const FCC = 'http://127.0.0.1:8082/v1';
+const FCC_HINT = 'no key needed here — FCC holds the provider keys, in its admin page (/admin). '
+  + 'Paste its proxy token only if you turned on Proxy Authentication there';
 const MCC_HINT = 'no key needed here — MCC holds the provider keys, in its own dashboard';
 
 export const PRESETS = [
@@ -79,6 +90,8 @@ export const PRESETS = [
     keyHint: 'no key needed', keyOptional: true },
   { preset: 'LM Studio (local)', kind: 'chat', baseURL: 'http://127.0.0.1:1234/v1', model: 'local-model',
     keyHint: 'no key needed', keyOptional: true },
+  { preset: 'Free Claude Code (local proxy)', kind: 'chat', baseURL: FCC, model: '',
+    keyHint: FCC_HINT, keyOptional: true, discoverModels: true, extra: { api: 'messages' } },
   // My Claude Code: a proxy in front of many providers, speaking the same shape
   // this app already speaks. One row here reaches everything it is configured
   // with, and its keys stay in its own dashboard rather than being pasted twice.
@@ -179,14 +192,20 @@ export function parseSnippet(raw) {
     return '';
   };
 
-  // The key, from a named field or from the header a curl example puts it in.
-  const apiKey =
+  // The key, from a named field or from the header the example puts it in.
+  // The header is written three ways — curl's -H "Authorization: Bearer …",
+  // a dict's "Authorization": "Bearer …", JavaScript's Authorization: `Bearer …`
+  // — and the quote that may sit between the name and the colon is what the
+  // first version of this missed, which lost the key from every Python example.
+  const found =
     valueFor('api_key', 'apiKey', 'apikey', 'key', 'token')
-    || (text.match(/Authorization\s*:\s*["'`]?\s*Bearer\s+([^\s"'`\\]+)/i) ?? [])[1]
-    || (text.match(/[-\w]*api[-_]?key\s*:\s*["'`]?\s*([A-Za-z0-9_\-.~+/]{16,}={0,2})/i) ?? [])[1]
+    || (text.match(/Authorization["'`]?\s*[:=]\s*["'`]?\s*Bearer\s+([^\s"'`\\,]+)/i) ?? [])[1]
+    || (text.match(/[-\w]*api[-_]?key["'`]?\s*[:=]\s*["'`]?\s*([A-Za-z0-9_\-.~+/]{16,}={0,2})/i) ?? [])[1]
     || '';
+  // "$NVIDIA_API_KEY" or "<your key>" is where a key goes, not a key.
+  const apiKey = /^(\$|<|\{|os\.environ|process\.env)/i.test(found) ? '' : found;
 
-  let baseURL = valueFor('base_url', 'baseURL', 'baseurl', 'endpoint', 'host');
+  let baseURL = valueFor('base_url', 'baseURL', 'baseurl', 'endpoint', 'host', 'invoke_url');
 
   // curl gives no named field: the URL is simply there, and it is the full
   // path rather than the base, so the known endpoint tails come off.
