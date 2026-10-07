@@ -257,6 +257,49 @@ try {
     else if (!mine.keySet) note('setup', 'the key was not stored');
     if (JSON.stringify(saved).includes(GOOD_KEY)) note('setup', 'the raw key was sent back to the page');
 
+    // ------------------------------------------ pasting a provider's example
+    //
+    // The way in. Four boxes typed one at a time is four chances to get
+    // something subtly wrong — a truncated key, a model id off a different
+    // vendor's page, a base URL missing its /v1 — and not one of them
+    // announces itself. So the box has to actually build a working row.
+    {
+      await page.fill('#snipName', 'from the docs');
+      await page.fill('#snipText', [
+        'from openai import OpenAI',
+        '',
+        'client = OpenAI(',
+        `  base_url = "${PROVIDER}/v1",`,
+        `  api_key = "${GOOD_KEY}"`,
+        ')',
+        '',
+        'completion = client.chat.completions.create(',
+        '  model="vendor/model-b-instruct",',
+        '  max_tokens=4096,',
+        ')',
+      ].join('\n'));
+      await page.click('#fromSnippet');
+      await page.waitForFunction(
+        () => !/…$/.test((document.querySelector('#msg')?.textContent ?? '').trim()),
+        null, { timeout: 25000 },
+      ).catch(() => {});
+      await page.waitForTimeout(800);
+
+      const made = await page.evaluate(async () =>
+        (await (await fetch('/api/connections')).json()).connections.find((c) => c.name === 'from the docs'));
+      if (!made) note('setup', 'pasting an example built no connection');
+      else {
+        if (!made.baseURL.endsWith('/v1')) note('setup', `the address did not come across: ${made.baseURL}`);
+        if (made.model !== 'vendor/model-b-instruct') note('setup', `the model did not come across: ${made.model}`);
+        if (!made.keySet) note('setup', 'the key did not come across');
+        // The one thing no amount of looking at the URL can settle, and the one
+        // that silently uncaps the request when it is wrong.
+        if (made.extra?.tokenParam !== 'max_tokens') note('setup', 'it missed which length parameter that endpoint takes');
+      }
+      // Emptied once read, so the next paste starts clean.
+      if (await page.inputValue('#snipText')) note('setup', 'the paste box was not cleared after a successful read');
+    }
+
     // ------------------------------------- typing a key and pressing a button
     //
     // One gesture, two events. The key box saves on blur and that save is a
