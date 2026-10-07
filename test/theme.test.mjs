@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TOKENS, FONTS, PRESETS, DEFAULTS, DEFAULT_PRESET,
-  isColor, cleanTheme, resolveTheme, themeCss,
+  isColor, cleanTheme, resolveTheme, themeCss, defaultsCss,
 } from '../src/theme.js';
 
 /**
@@ -115,4 +115,45 @@ test('every token is described, because --panel2 helps nobody choose', () => {
     assert.ok(t.label && t.hint, `${t.key} needs a label and a hint`);
     assert.ok(DEFAULTS.dark[t.key] && DEFAULTS.light[t.key], `${t.key} needs a default in both modes`);
   }
+});
+
+test('dark is what you get unless you ask for otherwise', () => {
+  // Following the machine sounds like the considerate default and is not: this
+  // is a room you sit in for hours while models talk, and the machine's setting
+  // is usually about everything else.
+  const plain = defaultsCss({});
+  assert.match(plain, /^:root \{/, 'the base must be the dark palette');
+  assert.ok(plain.includes(DEFAULTS.dark.bg), 'dark colours must be the base');
+  assert.doesNotMatch(plain, /prefers-color-scheme/,
+    'by default it must not ask the machine at all');
+  // Both attributes still work, so a page can be flipped without a reload.
+  assert.match(plain, /:root\[data-theme="light"\]/);
+  assert.match(plain, /:root\[data-theme="dark"\]/);
+
+  // Light, for somebody who wants it, is the same arrangement the other way up.
+  const light = defaultsCss({ appearance: 'light' });
+  assert.ok(light.indexOf(DEFAULTS.light.bg) < light.indexOf(DEFAULTS.dark.bg),
+    'the light palette must come first when light is chosen');
+  assert.doesNotMatch(light, /prefers-color-scheme/);
+
+  // And asking the machine is still available to anybody who wants it.
+  const system = defaultsCss({ appearance: 'system' });
+  assert.match(system, /@media \(prefers-color-scheme: light\)/);
+});
+
+test('the appearance is kept only when it is not the default', () => {
+  // Storing a value equal to the default freezes this room against a later
+  // change to it, which is the same reason colours equal to the default are
+  // dropped rather than written down.
+  assert.equal(cleanTheme({ appearance: 'dark' }).theme.appearance, undefined);
+  assert.equal(cleanTheme({ appearance: 'light' }).theme.appearance, 'light');
+  assert.equal(cleanTheme({ appearance: 'system' }).theme.appearance, 'system');
+
+  const bad = cleanTheme({ appearance: 'sepia' });
+  assert.equal(bad.theme.appearance, undefined);
+  assert.match(bad.rejected.join(' '), /not one of dark, light or system/);
+
+  // And whatever was saved, something sensible is always resolved.
+  assert.equal(resolveTheme({}).appearance, 'dark');
+  assert.equal(resolveTheme({ appearance: 'system' }).appearance, 'system');
 });

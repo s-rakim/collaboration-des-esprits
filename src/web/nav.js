@@ -161,7 +161,7 @@ body{display:flex;min-height:100vh}
 #shell-rail .who .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #shell-rail .who .chip{color:var(--faint);padding:4px;border-radius:6px;display:flex;flex:none}
 #shell-rail .who .chip:hover{color:var(--text);background:var(--panel2)}
-#shell-rail .who i{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;flex:none;
+#shell-rail .who i{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--bg);flex:none;
   display:flex;align-items:center;justify-content:center;font-size:11px;font-style:normal;font-weight:600}
 
 /* Folded: icons only, with the label as a tooltip. */

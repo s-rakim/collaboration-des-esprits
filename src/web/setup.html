@@ -281,6 +281,7 @@ function render() {
         happened to set it in.
       </p>
       <div class="row" style="margin-bottom:12px">
+        <select id="themeAppearance" style="width:auto" title="Which of the two you actually see"></select>
         <select id="themePreset" style="width:auto"><option value="">start from…</option></select>
         <select id="themeMode" style="width:auto">
           <option value="dark">editing the dark theme</option>
@@ -954,6 +955,11 @@ function renderTheme() {
   $('#themePreset').innerHTML = '<option value="">start from…</option>' +
     Object.entries(theme.meta.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('');
 
+  const look = theme.draft.appearance ?? theme.meta.defaultAppearance;
+  $('#themeAppearance').innerHTML = Object.entries(theme.meta.appearances ?? {})
+    .map(([id, a]) => `<option value="${esc(id)}" ${look === id ? 'selected' : ''}
+      title="${esc(a.hint)}">${esc(a.label)}</option>`).join('');
+
   // "24 changes, not saved yet" after you have just saved them is a lie that
   // makes somebody press save again to be sure. The two facts are separate.
   const changed = Object.keys(theme.draft.dark).length + Object.keys(theme.draft.light).length
@@ -969,6 +975,7 @@ async function loadTheme() {
     dark: { ...(theme.meta.saved.dark ?? {}) },
     light: { ...(theme.meta.saved.light ?? {}) },
     fonts: { ...(theme.meta.saved.fonts ?? {}) },
+    appearance: theme.meta.saved.appearance ?? theme.meta.defaultAppearance,
   };
   theme.dirty = false;
   renderTheme();
@@ -1015,6 +1022,19 @@ $('#body').addEventListener('change', (e) => {
 
   if (e.target.id === 'themeMode') { theme.mode = e.target.value; renderTheme(); return; }
 
+  if (e.target.id === 'themeAppearance') {
+    theme.draft.appearance = e.target.value;
+    theme.dirty = true;
+    // Shown at once rather than on save, because the whole question this
+    // answers is "what does it look like", and an answer you have to commit to
+    // before seeing is not much of one. data-theme wins over the stylesheet, so
+    // "match the machine" means taking the attribute back off.
+    if (e.target.value === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', e.target.value);
+    renderTheme();
+    return;
+  }
+
   if (e.target.id === 'themePreset' && e.target.value) {
     const preset = theme.meta.presets[e.target.value];
     e.target.value = '';
@@ -1035,7 +1055,7 @@ $('#body').addEventListener('change', (e) => {
 
 $('#body').addEventListener('click', async (e) => {
   if (e.target.id === 'themeReset') {
-    theme.draft = { dark: {}, light: {}, fonts: {} };
+    theme.draft = { dark: {}, light: {}, fonts: {}, appearance: theme.meta.defaultAppearance };
     theme.dirty = true;
     renderTheme();
     say('back to the default — press save to keep it', '');

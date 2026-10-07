@@ -18,7 +18,8 @@ import { createSkills } from '../skills.js';
 import { probe as probeEndpoint, tryKey } from '../probe.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
-  DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss,
+  DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
+  APPEARANCES as THEME_APPEARANCES, DEFAULT_APPEARANCE,
 } from '../theme.js';
 import { mediaDir, transcribe, speak, generateImage, generateVideo } from '../media.js';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -1215,7 +1216,10 @@ const readTheme = () => {
  */
 app.get('/theme.css', (_req, res) => {
   const base = readFileSync(join(here, '..', 'web', 'theme.css'), 'utf8');
-  res.type('css').set('Cache-Control', 'no-cache').send(base + themeCss(readTheme()));
+  const saved = readTheme();
+  // Defaults, then the layout that uses them, then whatever has been changed.
+  res.type('css').set('Cache-Control', 'no-cache')
+    .send(defaultsCss(saved) + base + themeCss(saved));
 });
 
 app.get('/api/theme', (_req, res) =>
@@ -1226,6 +1230,8 @@ app.get('/api/theme', (_req, res) =>
     fonts: THEME_FONTS,
     presets: THEME_PRESETS,
     defaultPreset: DEFAULT_PRESET,
+    appearances: THEME_APPEARANCES,
+    defaultAppearance: DEFAULT_APPEARANCE,
     defaults: THEME_DEFAULTS,
   })),
 );

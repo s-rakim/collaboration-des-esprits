@@ -62,8 +62,30 @@ export const FONTS = {
 
 /** The palettes that ship. The first is the default. */
 export const PRESETS = {
+  mono: {
+    label: 'Mono — black and white, the default',
+    // Nearly colourless on purpose. Everything on screen here was written by
+    // somebody — you or a model — and the colour that survives is the one doing
+    // a job: a thing failed, a thing needs you, a thing is the one to press.
+    // The accent is simply the page inverted, which is why it reads as emphasis
+    // rather than as decoration.
+    dark: {
+      bg: '#212121', panel: '#171717', panel2: '#2f2f2f', line: '#3f3f3f',
+      text: '#ececec', dim: '#b4b4b4', faint: '#8f8f8f',
+      accent: '#ffffff',
+      // Kept, and kept distinguishable. Red and green carry meaning that grey
+      // cannot, and somebody reading "failed" should not have to read it twice.
+      good: '#7bb98a', warn: '#d8a657', bad: '#f06a5d', human: '#a8a8ff',
+    },
+    light: {
+      bg: '#ffffff', panel: '#f9f9f9', panel2: '#f4f4f4', line: '#e5e5e5',
+      text: '#0d0d0d', dim: '#5d5d5d', faint: '#8f8f8f',
+      accent: '#0d0d0d',
+      good: '#2f7a46', warn: '#8a6111', bad: '#c0362c', human: '#4b4bb5',
+    },
+  },
   clay: {
-    label: 'Clay — warm, the default',
+    label: 'Clay — warm',
     dark: {
       bg: '#262624', panel: '#1f1e1d', panel2: '#30302e', line: '#3d3d3a',
       text: '#faf9f5', dim: '#b7b5ad', faint: '#8a8880',
@@ -116,7 +138,7 @@ export const PRESETS = {
   },
 };
 
-export const DEFAULT_PRESET = 'clay';
+export const DEFAULT_PRESET = 'mono';
 export const DEFAULTS = PRESETS[DEFAULT_PRESET];
 
 /**
@@ -144,6 +166,21 @@ const KEYS = new Set(TOKENS.map((t) => t.key));
  * Returns the cleaned theme and what was thrown away, because silently dropping
  * somebody's input is how you get a bug report that says "it did not save".
  */
+/**
+ * Dark, light, or whichever the machine is set to.
+ *
+ * Following the system sounds like the considerate default and is not: this is
+ * a room you sit in for hours while models talk, and the machine's setting is
+ * usually about everything else. Dark is what it is for, and the other two are
+ * a choice away.
+ */
+export const APPEARANCES = {
+  dark: { label: 'Dark', hint: 'Always dark, whatever the machine is set to.' },
+  light: { label: 'Light', hint: 'Always light.' },
+  system: { label: 'Match the machine', hint: 'Follow the system setting, and change when it does.' },
+};
+export const DEFAULT_APPEARANCE = 'dark';
+
 export function cleanTheme(raw) {
   const out = { dark: {}, light: {}, fonts: {} };
   const rejected = [];
@@ -157,6 +194,12 @@ export function cleanTheme(raw) {
       if (String(value).toLowerCase() === DEFAULTS[mode][key]) continue;
       out[mode][key] = String(value).trim();
     }
+  }
+
+  const look = raw?.appearance;
+  if (look !== undefined && look !== null && look !== '') {
+    if (!APPEARANCES[look]) rejected.push(`appearance: ${JSON.stringify(look)} is not one of dark, light or system`);
+    else if (look !== DEFAULT_APPEARANCE) out.appearance = look;
   }
 
   for (const [role, def] of Object.entries(FONTS)) {
@@ -180,6 +223,7 @@ export function resolveTheme(saved) {
     const choice = saved?.fonts?.[role] ?? 'system';
     applied.fonts[role] = def.choices[choice] ? choice : 'system';
   }
+  applied.appearance = APPEARANCES[saved?.appearance] ? saved.appearance : DEFAULT_APPEARANCE;
   return applied;
 }
 
@@ -191,6 +235,59 @@ export function resolveTheme(saved) {
  * what differs from the default is written, so a room with no theme set adds
  * nothing at all.
  */
+/**
+ * The default palette, as CSS.
+ *
+ * It used to be written out twice — once here as data, once in theme.css as
+ * declarations — and the second copy is the one the browser believed. Changing
+ * the default did nothing at all, visibly, which is the kind of bug that makes
+ * somebody doubt the change rather than the stylesheet.
+ *
+ * So the stylesheet keeps the layout and this keeps the colours, and there is
+ * one place to change them.
+ */
+export function defaultsCss(saved) {
+  const block = (mode, pad = '  ') => TOKENS
+    .map(({ key }) => `${pad}--${key}:${DEFAULTS[mode][key]};`)
+    .join('\n');
+
+  const look = APPEARANCES[saved?.appearance] ? saved.appearance : DEFAULT_APPEARANCE;
+
+  // Either way round, the data-theme attribute still wins, so a page can be
+  // flipped without reloading and without the stylesheet being rebuilt.
+  if (look === 'system') {
+    return `:root {
+${block('dark')}
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+${block('light')}
+  }
+}
+
+:root[data-theme="light"] {
+${block('light')}
+}
+`;
+  }
+
+  const base = look === 'light' ? 'light' : 'dark';
+  const other = base === 'light' ? 'dark' : 'light';
+  return `:root {
+${block(base)}
+}
+
+:root[data-theme="${other}"] {
+${block(other)}
+}
+
+:root[data-theme="${base}"] {
+${block(base)}
+}
+`;
+}
+
 export function themeCss(saved) {
   const dark = [];
   const light = [];

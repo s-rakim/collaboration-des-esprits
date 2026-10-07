@@ -17,23 +17,6 @@
  */
 
 :root {
-  /* Surfaces, from the deepest to the most raised. */
-  --bg:#262624;
-  --panel:#1f1e1d;
-  --panel2:#30302e;
-  --line:#3d3d3a;
-
-  --text:#faf9f5;
-  --dim:#b7b5ad;
-  --faint:#8a8880;
-
-  /* The one saturated colour. */
-  --accent:#d97757;
-  --good:#8fbc6d;
-  --warn:#e0a458;
-  --bad:#e0685c;
-  --human:#c9a3d4;
-
   --radius:10px;
 
   /* A serif for the things you read as titles, a sans for the rest. Both are
@@ -43,27 +26,9 @@
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    /* The rail is the tinted surface and the page you read is the plain one,
-       which is the way round it sits in the dark theme too: the thing you look
-       at longest is the calmest. */
-    --bg:#ffffff;
-    --panel:#faf9f5;
-    --panel2:#f0eee6;
-    --line:#e5e3da;
-
-    --text:#3d3d3a;
-    --dim:#6b6a65;
-    --faint:#93918a;
-
-    --accent:#c96442;
-    --good:#4e7a3a;
-    --warn:#9a6a1c;
-    --bad:#b5483c;
-    --human:#7a4e94;
-  }
-}
+/* The colours are not here. They are in src/theme.js and served in front of
+   this file, because a palette written out in two places is a palette where
+   changing one of them does nothing and nobody can see why. */
 
 /* ------------------------------------------------------------------ the page */
 
@@ -104,7 +69,7 @@ button {
   transition:border-color .12s ease, background .12s ease;
 }
 button:hover:not(:disabled) { border-color:var(--accent) }
-button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:550 }
+button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:550 }
 button.primary:hover:not(:disabled) { filter:brightness(1.07) }
 button:disabled { opacity:.5; cursor:not-allowed }
 
@@ -224,7 +189,9 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 .composer .box .go.ready, .jobbox .box .go.ready {
   border-color:var(--accent);
   background:var(--accent);
-  color:#fff;
+  /* Whatever the page is, inverted — so this reads on a dark accent and on a
+     light one, rather than only on the one it was written against. */
+  color:var(--bg);
 }
 
 /* The stop button: only there while there is something to stop. */
