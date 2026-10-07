@@ -331,8 +331,10 @@ default model, and the starter seats pointed at it. After that:
 - **Connect Free Claude Code** on the setup page does the same by hand, with a
   box for a different address and one for FCC's proxy token if you turned on
   Proxy Authentication there.
-- Talk to the models with `@all` or `@<seat>`. As everywhere in the room, a
-  message with no mention is left for whoever wants it.
+- Just type. A message from you with no `@` goes to every model in the room;
+  `@<seat>` asks one of them. If a model cannot answer — FCC not running, a
+  provider key refused, a model that is down — it says why in the chat rather
+  than only in the terminal.
 
 `ESPRITS_FCC=off` turns the startup check off; `ESPRITS_FCC=<url>` looks
 somewhere else. My Claude Code also listens on 8082 as shipped, so run one or

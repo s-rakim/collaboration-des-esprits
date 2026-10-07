@@ -129,7 +129,11 @@ test('a placeholder where the key goes is not taken for a key', () => {
 
 const serve = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'bin', 'serve.js');
 
-test('a fresh room finds Free Claude Code, seats it, and answers in the chat', async (t) => {
+/**
+ * A stand-in Free Claude Code and a real room pointed at it.
+ * `answer(body)` decides what /v1/messages says to a seat's turn.
+ */
+async function roomOnFcc(t, port, answer) {
   const seen = [];
   const fcc = http.createServer((req, res) => {
     let raw = '';
@@ -144,13 +148,8 @@ test('a fresh room finds Free Claude Code, seats it, and answers in the chat', a
       if (req.url === '/v1/messages' && req.method === 'POST') {
         const body = JSON.parse(raw);
         seen.push(body);
-        if (body.max_tokens === 1) return json(200, { content: [{ type: 'text', text: 'h' }], stop_reason: 'max_tokens' });
-        const answered = body.messages.some((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result'));
-        if (answered) return json(200, { content: [{ type: 'text', text: '' }], stop_reason: 'end_turn' });
-        return json(200, {
-          content: [{ type: 'tool_use', id: `tu_${seen.length}`, name: 'reply', input: { body: 'hello from fcc' } }],
-          stop_reason: 'tool_use',
-        });
+        const [status, out] = answer(body, seen.length);
+        return json(status, out);
       }
       json(404, { detail: 'Not Found' });
     });
@@ -160,14 +159,15 @@ test('a fresh room finds Free Claude Code, seats it, and answers in the chat', a
 
   const dir = mkdtempSync(join(tmpdir(), 'esprits-fcc-'));
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', serve], {
-    env: { ...process.env, ESPRITS_DB: join(dir, 'room.db'), PORT: '4461', ESPRITS_FCC: fccBase, ESPRITS_TOKEN: '' },
+    env: { ...process.env, ESPRITS_DB: join(dir, 'room.db'), PORT: String(port), ESPRITS_FCC: fccBase, ESPRITS_TOKEN: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
   child.stdout.on('data', (c) => { log += c; });
   child.stderr.on('data', (c) => { log += c; });
   t.after(() => { if (process.env.DEBUG_FCC) writeFileSync(process.env.DEBUG_FCC, log); child.kill(); fcc.close(); rmSync(dir, { recursive: true, force: true }); });
-  const base = 'http://127.0.0.1:4461';
+
+  const base = `http://127.0.0.1:${port}`;
   const get = async (p) => (await fetch(base + p)).json();
   const post = async (p, body) => (await fetch(base + p, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -179,25 +179,60 @@ test('a fresh room finds Free Claude Code, seats it, and answers in the chat', a
     }
     throw new Error(`timed out waiting for ${what}`);
   };
+  const feed = async () => (await get('/api/feed?since=0')).messages;
+  return { seen, get, post, until, feed };
+}
 
-  const status = await until('the room to connect to FCC', async () => {
-    const s = await get('/api/fcc');
+const answered = (body) => body.messages.some((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result'));
+
+test('a fresh room finds Free Claude Code, seats it, and answers a plain hello', async (t) => {
+  const room = await roomOnFcc(t, 4461, (body, n) => {
+    if (body.max_tokens === 1) return [200, { content: [{ type: 'text', text: 'h' }], stop_reason: 'max_tokens' }];
+    if (answered(body)) return [200, { content: [{ type: 'text', text: '' }], stop_reason: 'end_turn' }];
+    return [200, {
+      content: [{ type: 'tool_use', id: `tu_${n}`, name: 'reply', input: { body: 'hello from fcc' } }],
+      stop_reason: 'tool_use',
+    }];
+  });
+
+  const status = await room.until('the room to connect to FCC', async () => {
+    const s = await room.get('/api/fcc');
     return s.connection && s.seats.length ? s : null;
   });
   assert.equal(status.running, true);
   assert.equal(status.connection.model, 'nvidia_nim/test-model', "FCC's own default is the model used");
   assert.ok(status.seats.every((s) => s.enabled), 'the starter seats are in the chat');
 
-  await post('/api/join', { name: 'rakim', role: 'human', kind: 'human' });
-  await post('/api/post', { body: '@all hello room', as: 'rakim' });
+  await room.post('/api/join', { name: 'rakim', role: 'human', kind: 'human' });
+  // No @mention: talking in the room is talking to the room.
+  await room.post('/api/post', { body: 'hello room', as: 'rakim' });
 
-  const reply = await until('a model to answer', async () => {
-    const feed = await get('/api/feed?since=0');
-    return feed.messages.find((m) => m.authorKind !== 'human' && m.body === 'hello from fcc');
-  });
+  const reply = await room.until('a model to answer', async () =>
+    (await room.feed()).find((m) => m.authorKind !== 'human' && m.body === 'hello from fcc'));
   assert.ok(reply);
-  const turn = seen.find((b) => b.max_tokens !== 1);
+  const turn = room.seen.find((b) => b.max_tokens !== 1);
   assert.equal(turn.model, 'nvidia_nim/test-model');
   assert.ok(turn.system, 'the system prompt went as a field');
   assert.ok(turn.tools.every((tool) => tool.input_schema), 'tools went in Anthropic shape');
+});
+
+test('a model that cannot answer says why in the chat, once', async (t) => {
+  const room = await roomOnFcc(t, 4462, () =>
+    [401, { type: 'error', error: { type: 'authentication_error', message: 'NVIDIA_NIM_API_KEY was rejected' } }]);
+
+  await room.until('the room to connect to FCC', async () => (await room.get('/api/fcc')).seats.length);
+  await room.post('/api/join', { name: 'rakim', role: 'human', kind: 'human' });
+  await room.post('/api/post', { body: 'anyone there?', as: 'rakim' });
+
+  const notes = await room.until('the failure to be said in the room', async () => {
+    const said = (await room.feed()).filter((m) => /could not answer/.test(m.body));
+    return said.length >= 2 ? said : null;
+  });
+  assert.ok(notes.every((m) => m.authorKind === 'system'));
+  assert.match(notes[0].body, /rejected the API key/);
+  assert.match(notes[0].body, /Free Claude Code's admin page/);
+  // A retry with the same failure is not said again.
+  await new Promise((r) => setTimeout(r, 6000));
+  const again = (await room.feed()).filter((m) => /could not answer/.test(m.body));
+  assert.equal(again.length, notes.length);
 });

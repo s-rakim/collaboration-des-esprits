@@ -27,6 +27,15 @@ test('join is idempotent and keeps identity across reconnects', () => {
   assert.ok(again.role.houseRules.length > 0);
 });
 
+test('a person talking with nobody named is talking to the whole room', () => {
+  const h = staffed();
+  h.post({ body: 'hello', by: 'rakim' });
+  assert.equal(h.read({ by: 'crit', since: 0, mentioningMe: true }).messages.length, 1);
+  // An agent speaking unaddressed wakes nobody, or two agents would answer each other forever.
+  h.post({ body: 'noted', by: 'archie' });
+  assert.equal(h.read({ by: 'crit', mentioningMe: true }).messages.length, 0);
+});
+
 test('agent names cannot contain spaces, because they are @mention handles', () => {
   const h = hub();
   assert.throws(() => h.join({ name: 'the architect' }), Invalid);

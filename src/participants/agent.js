@@ -861,6 +861,9 @@ export function createModelParticipant({
     log(`${name} (${role}) joined on ${currentModel()}${r?.connection ? ` via ${r.connection}` : ''}`);
 
     let backoff = 5000;
+    // The last failure said in the room, so a retry loop says it once rather
+    // than every backoff, and says it again only when it changes.
+    let reported = '';
     while (!stopped) {
       try {
         if (!usable()) {
@@ -902,9 +905,21 @@ export function createModelParticipant({
         else if (result.truncated) log(`${name}: response hit max_tokens`);
         else log(`${name}: ${result.actions.join(', ') || 'no action'}`);
         backoff = 5000;
+        reported = '';
       } catch (err) {
         if (stopped) break;
         log(`${name}: ${err.message} — retrying in ${Math.round(backoff / 1000)}s`);
+        // Said in the chat, not only in the terminal: a model that cannot
+        // answer otherwise looks exactly like a model ignoring you.
+        if (!err.interrupted && err.message !== reported) {
+          reported = err.message;
+          try {
+            hub.notice({
+              body: `${name} could not answer: ${err.message}`
+                + (err.unauthorized ? ' — check the key in Free Claude Code\'s admin page, or on /setup' : ''),
+            });
+          } catch { /* the room itself is closing */ }
+        }
         // Always drop the floor on the way out; holding it through a backoff
         // would stall every other agent for as long as the error persists.
         try { hub.yieldFloor({ by: name }); } catch { /* not queued */ }

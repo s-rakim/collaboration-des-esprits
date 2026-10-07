@@ -484,6 +484,16 @@ export class Hub {
       .run(ideaId, body, now());
   }
 
+  /**
+   * A line from the room itself, such as a seat saying why it cannot answer.
+   * Kept as a system message so it never wakes anyone or counts as speech.
+   */
+  notice({ idea = null, body }) {
+    if (!body || !String(body).trim()) return;
+    const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+    this.#systemPost(ideaId, String(body));
+  }
+
   /** Post into an idea's thread, or into the lobby when idea is omitted. */
   post({ idea = null, body, by, kind = 'message', replyTo = null, refKind = null, refId = null }) {
     if (!body || !String(body).trim()) throw new Invalid('body is required');
@@ -522,6 +532,10 @@ export class Hub {
 
     const ts = now();
     const mentions = parseMentions(body);
+    // You talking with nobody named is you talking to the room. Left
+    // unaddressed, nothing would wake for it and a plain "hello" went
+    // unanswered — which is not what a chat window is for.
+    if (agent.kind === 'human' && kind === 'message' && !mentions.length) mentions.push('all');
     let id;
     const tx = this.db.transaction(() => {
       const info = this.db

@@ -723,7 +723,7 @@ function setTarget(agent, messageId) {
     $('#body').placeholder = `Ask ${agent} directly. Only ${agent} can answer this.`;
     $('#body').focus();
   } else {
-    $('#body').placeholder = 'Say something. @mention an agent by name, or @all for everyone.';
+    $('#body').placeholder = 'Say something — every model in the room hears it. @name to ask just one.';
   }
 }
 $('#targetClear').addEventListener('click', () => setTarget(null));

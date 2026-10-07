@@ -154,6 +154,10 @@ export function messagesAdapter({
             message = parsed.error?.message ?? parsed.detail ?? parsed.message ?? message;
             if (typeof message !== 'string') message = JSON.stringify(message);
           } catch { /* not JSON, keep the text */ }
+          // Free Claude Code explains a failure as a traceback of causes, one
+          // per line. The first few say what happened; the rest is for its log.
+          message = message.split('\n').map((l) => l.trim())
+            .filter((l) => l && !l.endsWith(':')).slice(0, 3).join(' — ');
           if (res.status === 401 || res.status === 403) {
             const refused = new Error('the provider rejected the API key');
             refused.unauthorized = true;
