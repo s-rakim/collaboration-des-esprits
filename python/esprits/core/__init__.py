@@ -32,9 +32,19 @@ from .floor import FloorMixin
 from .ideas import IdeasMixin
 from .messages import MessagesMixin
 from .presence import PresenceMixin
+from .proposals import ProposalsMixin
+from .record import DecisionsMixin, QuestionsMixin
 
 
-class Hub(PresenceMixin, IdeasMixin, FloorMixin, MessagesMixin):
+class Hub(
+    PresenceMixin,
+    IdeasMixin,
+    FloorMixin,
+    MessagesMixin,
+    QuestionsMixin,
+    DecisionsMixin,
+    ProposalsMixin,
+):
     def __init__(self, *, db=None, db_path=None, roles=None):
         self.db = db if db is not None else open_db(db_path)
         self.roles = roles if roles is not None else load_roles()
