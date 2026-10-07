@@ -16,6 +16,8 @@ import { createWebBridge } from '../web.js';
 import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
 import { probe as probeEndpoint, tryKey } from '../probe.js';
+import { detectShape } from '../participants/anthropic.js';
+import { createRouters } from '../routers.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
@@ -302,9 +304,18 @@ app.all('/mcp', async (req, res) => {
 // ------------------------------------------------------------------- JSON API
 
 /** Map domain errors onto status codes once, rather than in every route. */
-const send = (res, fn) => {
+/**
+ * Answer with whatever the function returns, and turn a thrown error into the
+ * status it deserves.
+ *
+ * It awaits, because a handler that happens to be async otherwise serialises a
+ * Promise as `{}` and the page gets an empty object with no error anywhere —
+ * which is a silent wrong answer rather than a loud one, and took a page check
+ * to notice.
+ */
+const send = async (res, fn) => {
   try {
-    res.json(fn());
+    res.json(await fn());
   } catch (err) {
     const status = err instanceof NotFound ? 404 : err instanceof Invalid ? 400 : 500;
     res.status(status).json({ error: err.message, code: err.code });
@@ -913,6 +924,21 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   // Listing models often needs no credential at all, so an endpoint that
   // answered is not yet an endpoint you can use. One tiny call settles it here
   // rather than leaving somebody to find out at the next step.
+  // Which language this endpoint speaks cannot be read off its address: two of
+  // the routers people point this at listen on the same port as shipped and
+  // only one of them serves /chat/completions. So it is asked once, here, where
+  // the answer can be written down — not inside probe(), which is contracted to
+  // cost one request and is called far more often than this.
+  const shape = await detectShape(found.baseURL, { apiKey: conn.apiKey });
+  if (shape && shape !== conn.extra?.shape) {
+    connections.save({
+      name: conn.name, kind: conn.kind, baseURL: found.baseURL,
+      model: keepsModel ? conn.model : '',
+      extra: { ...(conn.extra ?? {}), shape },
+    });
+    conn.extra = { ...(conn.extra ?? {}), shape };
+  }
+
   const chosen = keepsModel && conn.model ? conn.model : null;
   const usable = conn.kind === 'chat'
     ? await tryKey({
@@ -935,6 +961,75 @@ app.post('/api/connections/:name/probe', async (req, res) => {
 
   res.json({ ...found, clearedModel: keepsModel ? null : conn.model, key: usable });
 });
+
+// --------------------------------------------------------------------- routers
+
+/**
+ * The routers, run from this page rather than from a terminal.
+ *
+ * A second terminal window that has to stay open is a thing to remember and so
+ * a thing to forget. Started here, a router lives exactly as long as the room.
+ */
+const routers = createRouters();
+
+app.get('/api/routers', async (_req, res) =>
+  send(res, async () => ({ ...routers.catalogue(), status: await routers.all(), running: routers.running })),
+);
+
+app.post('/api/routers/:id/start', async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await routers.start(req.params.id)) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message, output: routers.output() });
+  }
+});
+
+app.post('/api/routers/stop', (_req, res) => res.json({ ok: true, ...routers.stop() }));
+
+/**
+ * Add the row that points at a router, with the language it speaks already
+ * worked out. This is the one action between a fresh install and a working room.
+ */
+app.post('/api/routers/:id/use', async (req, res) => {
+  const r = routers.catalogue().routers[req.params.id];
+  if (!r) return res.status(404).json({ ok: false, error: `no router called "${req.params.id}"` });
+
+  const health = await routers.health(req.params.id);
+  if (!health.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: `${r.label} is not answering at ${r.base} — start it first`,
+    });
+  }
+
+  const shape = await detectShape(r.base);
+  const found = await probeEndpoint({ baseURL: r.base, extra: {} });
+  if (!found.ok) return res.status(400).json({ ok: false, error: found.error });
+
+  // A model is only chosen for the shape we can actually prove against. The
+  // Anthropic shape has no cheap one-token probe here, so its row is left for
+  // the model box rather than being given a guess dressed up as a check.
+  let model = '';
+  let proven = null;
+  if (shape === 'chat') {
+    const usable = await tryKey({ baseURL: found.baseURL, models: found.models, extra: {} });
+    if (usable.ok) { model = usable.model; proven = usable.model; }
+  }
+  if (!model) model = found.models[0] ?? '';
+
+  const name = req.body?.name?.trim() || req.params.id;
+  connections.save({
+    name, kind: 'chat', baseURL: found.baseURL, model, apiKey: '',
+    extra: { shape },
+  });
+
+  res.json({
+    ok: true, name, base: found.baseURL, shape, model, proven,
+    models: found.models.length,
+    media: r.media,
+  });
+});
+
 
 /**
  * Fill a row in from the provider's own example.
@@ -1128,6 +1223,7 @@ app.post('/api/connections/:name/test', async (req, res) => {
         apiKey: conn.apiKey, model, maxTokens: 512,
         effort: 'low', effortParam: conn.extra?.effortParam, baseURL,
         tokenParam: conn.extra?.tokenParam,
+        shape: conn.extra?.shape,
         // Somebody is watching this one. A minute is long enough to prove the
         // endpoint works and short enough that a hung one is reported rather
         // than waited on, and a retry here only triples that wait.

@@ -472,6 +472,7 @@ export function createModelParticipant({
       effort,
       effortParam: r.effortParam,
       tokenParam: r.tokenParam,
+      shape: r.shape,
       baseURL: r.baseURL,
       createClient,
     });

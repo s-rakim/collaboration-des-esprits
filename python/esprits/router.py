@@ -27,45 +27,25 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 import httpx
 
-#: The routers this room knows how to start from, and where each listens.
-#: Not a closed list — any address can be typed in — but these are the three
-#: worth offering by name, and their ports differ enough to be worth writing
-#: down rather than looking up every time. MCC and FCC both default to 8082,
-#: so they cannot both be running as shipped.
-ROUTERS = {
-    "9router": {
-        "label": "9Router",
-        "base": "http://127.0.0.1:20128/v1",
-        "command": "9router",
-        "home": "https://github.com/decolua/9router",
-        "admin": "http://127.0.0.1:20128/",
-        "note": "Serves both request shapes, plus speech, images and video.",
-    },
-    "fcc": {
-        "label": "Free Claude Code",
-        "base": "http://127.0.0.1:8082/v1",
-        "command": "fcc",
-        "home": "https://github.com/Alishahryar1/free-claude-code",
-        "admin": "http://127.0.0.1:8082/admin",
-        "note": "Anthropic shape only — it serves no /chat/completions.",
-    },
-    "mcc": {
-        "label": "My Claude Code",
-        "base": "http://127.0.0.1:8082/v1",
-        "command": "mcc-server",
-        "home": "https://github.com/FiredMosquito831/my-claude-code",
-        "admin": "http://127.0.0.1:8082/admin",
-        "note": "Serves both request shapes, plus speech, images and video.",
-    },
-}
+#: The routers this room knows how to start from, read from routers.json so the
+#: two runtimes cannot disagree about where each listens or which shape it
+#: speaks. Not a closed list — any address can be typed in — but these three are
+#: worth offering by name, and MCC and FCC both default to 8082 as shipped, so
+#: they cannot both be running untouched.
+_CATALOGUE = json.loads(
+    (Path(__file__).resolve().parent.parent.parent / "routers.json").read_text(encoding="utf-8")
+)
+ROUTERS: dict[str, dict] = _CATALOGUE["routers"]
+ROUTER_ORDER: list[str] = _CATALOGUE["order"]
 
-DEFAULT_BASE = ROUTERS["9router"]["base"]
+DEFAULT_BASE = ROUTERS[ROUTER_ORDER[0]]["base"]
 TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 
 # Long enough for a model that thinks before it speaks, short enough that a dead

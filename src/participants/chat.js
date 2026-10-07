@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { anthropicAdapter } from './anthropic.js';
 
 /**
  * The chat adapter, on the official OpenAI SDK.
@@ -24,8 +25,15 @@ const TURN_TIMEOUT_MS = 180_000;
 
 export function chatAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
-  timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam,
+  timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam, shape,
 }) {
+  // A router that serves no /chat/completions needs the other language
+  // entirely, not a different parameter. Which one it is gets discovered once
+  // and stored on the connection; this only honours the answer.
+  if (shape === 'messages') {
+    return anthropicAdapter({ apiKey, model, maxTokens, effort, baseURL, timeoutMs });
+  }
+
   /**
    * What this endpoint calls the length limit.
    *

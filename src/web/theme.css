@@ -339,3 +339,26 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   color:var(--dim);
 }
 .composer .chips .chip button { background:none; border:0; color:var(--faint); padding:0 2px; font-size:14px; line-height:1 }
+
+/* ------------------------------------------------------- the routers panel */
+/* Three cards in a row on a wide screen, stacked on a narrow one. Each says
+   what it is, whether it is answering, and the one thing to press. */
+.routers { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)) }
+.router {
+  border:1px solid var(--line); border-radius:var(--radius);
+  padding:12px 13px; background:var(--panel2);
+}
+.router.up { border-color:var(--accent) }
+.router .rname { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.router .rname .hint { font-size:11.5px }
+.router .dot {
+  width:8px; height:8px; border-radius:50%; flex:none;
+  border:1.4px solid var(--faint); background:none;
+}
+.router .dot.live { background:var(--good); border-color:var(--good) }
+.router .row { gap:8px; flex-wrap:wrap; align-items:center }
+.router a.btn {
+  font-size:12.5px; padding:5px 10px; border:1px solid var(--line);
+  border-radius:7px; color:var(--dim); text-decoration:none;
+}
+.router a.btn:hover { color:var(--text); border-color:var(--dim) }

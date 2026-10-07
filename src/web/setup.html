@@ -155,6 +155,16 @@ function toggleField(key, s) {
 function render() {
   const { settings: st, secrets: sec } = state;
   $('#body').innerHTML = `
+    <h2>The way out</h2>
+    <div class="card">
+      <p class="hint" style="margin:0 0 12px">
+        A <strong>router</strong> stands in front of many providers, holds their keys in its own
+        dashboard, and falls back when one is down. Start one here and the room has everything
+        it can reach — no key in this page at all, and no second terminal window to keep open.
+      </p>
+      <div id="routers" class="routers"></div>
+    </div>
+
     <h2>Connections — your API keys</h2>
     <div class="card">
       <p class="hint" style="margin:0 0 12px">
@@ -177,9 +187,7 @@ function render() {
         <button id="fromSnippet" title="Paste the example from your provider's page">
           Paste a provider's example
         </button>
-        <button id="fromMcc" title="Ask My Claude Code what it can reach and add a row for each job">
-          Use My Claude Code
-        </button>
+
         <span class="modelnote" id="connNote"></span>
       </div>
     </div>
@@ -318,6 +326,7 @@ function render() {
 
 // ------------------------------------------- connections and the model roster
 
+let routerState = { order: [], routers: {} };
 let roster = null;
 
 /**
@@ -602,7 +611,53 @@ function addConnRow(seed) {
   row.querySelector(seed?.name ? '.cs' : '.cn').focus();
 }
 
-$('#body').addEventListener('click', (e) => {
+$('#body').addEventListener('click', async (e) => {
+  const start = e.target.closest('[data-start]');
+  if (start) {
+    const id = start.dataset.start;
+    start.disabled = true;
+    // Starting a router takes a while and saying nothing for a minute reads as
+    // a dead page, so it counts while it waits.
+    const began = Date.now();
+    const tick = setInterval(() => {
+      say(`starting ${routerState.routers[id].label}… ${Math.round((Date.now() - began) / 1000)}s`);
+    }, 1000);
+    say(`starting ${routerState.routers[id].label}…`);
+    try {
+      const r = await api(`/api/routers/${encodeURIComponent(id)}/start`, { method: 'POST', body: '{}' });
+      await renderRouters();
+      say(r.note ?? `${routerState.routers[id].label} is up — ${r.models} model(s)`, 'ok');
+    } catch (err) {
+      await renderRouters();
+      say(err.message, 'err');
+    } finally { clearInterval(tick); }
+    return;
+  }
+
+  const stopIt = e.target.closest('[data-stop]');
+  if (stopIt) {
+    try { await api('/api/routers/stop', { method: 'POST', body: '{}' }); await renderRouters(); say('stopped', 'ok'); }
+    catch (err) { say(err.message, 'err'); }
+    return;
+  }
+
+  const use = e.target.closest('[data-use]');
+  if (use) {
+    const id = use.dataset.use;
+    use.disabled = true;
+    try {
+      say(`asking ${routerState.routers[id].label} what it can reach…`);
+      const r = await api(`/api/routers/${encodeURIComponent(id)}/use`, { method: 'POST', body: '{}' });
+      await loadAll();
+      const bits = [`added "${r.name}"`, `${r.models} model(s)`];
+      bits.push(r.shape === 'messages' ? 'Anthropic shape' : 'OpenAI shape');
+      bits.push(r.proven ? `proven on ${r.proven}` : `start with ${r.model || 'a model you pick'}`);
+      say(bits.join(' · '), 'ok');
+    } catch (err) { say(err.message, 'err'); }
+    finally { use.disabled = false; }
+    return;
+  }
+
   if (e.target.closest('#addConn')) addConnRow();
 
   // Every provider gives you four lines holding all of this, already right and
@@ -1076,11 +1131,57 @@ $('#body').addEventListener('click', async (e) => {
   } catch (err) { say(err.message, 'err'); }
 });
 
+/**
+ * The routers, and what each one is doing.
+ *
+ * Status is asked of the address rather than of a process, because a router
+ * somebody started themselves is just as good as one we started — and offering
+ * to start a second would only collide with the first.
+ */
+async function renderRouters() {
+  const box = $('#routers');
+  if (!box) return;
+  let data;
+  try {
+    data = await api('/api/routers');
+  } catch (err) {
+    box.innerHTML = `<p class="hint">could not read the routers: ${esc(err.message)}</p>`;
+    return;
+  }
+  routerState = data;
+
+  const status = Object.fromEntries(data.status.map((s) => [s.id, s]));
+  box.innerHTML = data.order.map((id) => {
+    const r = data.routers[id];
+    const st = status[id] ?? {};
+    const up = st.ok;
+    return `
+      <div class="router ${up ? 'up' : ''}" data-router="${esc(id)}">
+        <div class="rname">
+          <span class="dot ${up ? 'live' : ''}"></span>
+          <strong>${esc(r.label)}</strong>
+          <span class="hint">${esc(r.base)}</span>
+        </div>
+        <p class="hint" style="margin:4px 0 8px">${esc(r.note)}</p>
+        <div class="row">
+          ${up
+            ? `<span class="tag ok">answering · ${st.models} model(s)</span>
+               <button data-use="${esc(id)}" class="primary">Use it</button>
+               <a class="btn" href="${esc(r.admin)}" target="_blank" rel="noreferrer">Its dashboard</a>
+               ${st.ours ? `<button data-stop="1">Stop it</button>` : ''}`
+            : `<button data-start="${esc(id)}">Start it</button>
+               <span class="hint">${esc(st.error ?? 'not running')}</span>`}
+        </div>
+      </div>`;
+  }).join('');
+}
+
 async function loadAll() {
   roster = await api('/api/seats');
   if (roster.roles?.length) ROLES = roster.roles;
   renderConns();
   renderSeats();
+  await renderRouters();
   await loadScheds();
 }
 

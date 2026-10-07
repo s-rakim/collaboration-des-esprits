@@ -81,6 +81,7 @@ export function createSwarmRunner({ hub, seats, log = () => {}, createClient = n
       effort: resolved.effort ?? 'medium',
       effortParam: resolved.effortParam,
       tokenParam: resolved.tokenParam,
+      shape: resolved.shape,
       baseURL: resolved.baseURL,
       createClient,
     });

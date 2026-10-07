@@ -74,6 +74,10 @@ export function createSeats(db, connections) {
         // rather than refused, so no cap applies and a reasoning model writes
         // until its own default — which reads as the endpoint hanging.
         tokenParam: conn.extra?.tokenParam ?? null,
+        // Which request language this endpoint speaks. Discovered by find/test
+        // rather than guessed, because two of the routers listen on the same
+        // port as shipped and only one of them has /chat/completions.
+        shape: conn.extra?.shape ?? null,
       };
     },
 

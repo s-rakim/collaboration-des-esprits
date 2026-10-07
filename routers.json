@@ -1,0 +1,42 @@
+{
+  "order": [
+    "fcc",
+    "9router",
+    "mcc"
+  ],
+  "routers": {
+    "9router": {
+      "label": "9Router",
+      "base": "http://127.0.0.1:20128/v1",
+      "command": "9router",
+      "home": "https://github.com/decolua/9router",
+      "admin": "http://127.0.0.1:20128/",
+      "note": "Serves both request shapes, plus speech, images and video.",
+      "install": "npm install -g 9router",
+      "shape": "chat",
+      "media": true
+    },
+    "fcc": {
+      "label": "Free Claude Code",
+      "base": "http://127.0.0.1:8082/v1",
+      "command": "fcc",
+      "home": "https://github.com/Alishahryar1/free-claude-code",
+      "admin": "http://127.0.0.1:8082/admin",
+      "note": "Anthropic shape only \u2014 it serves no /chat/completions.",
+      "install": "curl -LsSf https://astral.sh/uv/install.sh | sh  &&  uv tool install free-claude-code",
+      "shape": "messages",
+      "media": false
+    },
+    "mcc": {
+      "label": "My Claude Code",
+      "base": "http://127.0.0.1:8082/v1",
+      "command": "mcc-server",
+      "home": "https://github.com/FiredMosquito831/my-claude-code",
+      "admin": "http://127.0.0.1:8082/admin",
+      "note": "Serves both request shapes, plus speech, images and video.",
+      "install": "npm install -g @firedmosquito831/my-claude-code",
+      "shape": "chat",
+      "media": true
+    }
+  }
+}
