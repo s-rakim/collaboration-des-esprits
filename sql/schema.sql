@@ -593,3 +593,88 @@ CREATE TABLE IF NOT EXISTS cursors (
   updated_at       TEXT NOT NULL,
   PRIMARY KEY (agent_id, scope)
 );
+
+-- ------------------------------------------------------------ doing the work
+
+-- Every command run in the project folder, by whom. The terminal is shared: a
+-- person and the agents type into the same one, so the record of who ran what
+-- is the only thing that keeps it legible afterwards.
+CREATE TABLE IF NOT EXISTS terminal_runs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  command      TEXT NOT NULL,
+  cwd          TEXT NOT NULL,
+  actor        TEXT NOT NULL,
+  actor_kind   TEXT NOT NULL DEFAULT 'human',      -- human | agent
+  thread_id    INTEGER,
+  exit_code    INTEGER,                            -- NULL while it is running
+  output       TEXT NOT NULL DEFAULT '',
+  timed_out    INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_terminal_thread ON terminal_runs(thread_id, id);
+
+-- Where the shared browser has been, and who took it there.
+CREATE TABLE IF NOT EXISTS browser_visits (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  url          TEXT NOT NULL,
+  title        TEXT NOT NULL DEFAULT '',
+  query        TEXT NOT NULL DEFAULT '',           -- set when it was a search
+  actor        TEXT NOT NULL,
+  actor_kind   TEXT NOT NULL DEFAULT 'human',
+  thread_id    INTEGER,
+  created_at   TEXT NOT NULL
+);
+
+-- An approved idea, handed to the coordinator to be built.
+CREATE TABLE IF NOT EXISTS builds (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  idea_id      INTEGER REFERENCES ideas(id) ON DELETE SET NULL,
+  title        TEXT NOT NULL,
+  brief        TEXT NOT NULL,                      -- what was approved, frozen at hand-over
+  -- planning | running | reporting | done | failed | cancelled
+  status       TEXT NOT NULL DEFAULT 'planning',
+  coordinator  TEXT NOT NULL DEFAULT '',           -- the seat overseeing it
+  workers      INTEGER NOT NULL DEFAULT 3,         -- how many threads run at once
+  report       TEXT NOT NULL DEFAULT '',
+  error        TEXT NOT NULL DEFAULT '',
+  created_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  finished_at  TEXT
+);
+
+-- One line of work inside a build. Its model and effort are its own, and can
+-- be changed by a person — the coordinator's allocation is a first answer, not
+-- the last word.
+CREATE TABLE IF NOT EXISTS threads (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  build_id     INTEGER NOT NULL REFERENCES builds(id) ON DELETE CASCADE,
+  seq          INTEGER NOT NULL,
+  title        TEXT NOT NULL,
+  brief        TEXT NOT NULL,
+  necessity    TEXT NOT NULL DEFAULT 'should',     -- must | should | could
+  importance   INTEGER NOT NULL DEFAULT 3,         -- 1..5
+  seat         TEXT NOT NULL DEFAULT '',
+  model        TEXT NOT NULL DEFAULT '',           -- '' = whatever the seat uses
+  effort       TEXT NOT NULL DEFAULT 'medium',     -- low | medium | high
+  -- queued | running | done | failed | cancelled
+  status       TEXT NOT NULL DEFAULT 'queued',
+  result       TEXT NOT NULL DEFAULT '',
+  error        TEXT NOT NULL DEFAULT '',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT,
+  finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_threads_build ON threads(build_id, seq);
+
+-- What happened in a thread, in order: what it said, what it ran, what came
+-- back, and anything a person told it.
+CREATE TABLE IF NOT EXISTS thread_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id    INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL,                      -- say | tool | result | note | status
+  actor        TEXT NOT NULL DEFAULT '',
+  body         TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_thread_events ON thread_events(thread_id, id);

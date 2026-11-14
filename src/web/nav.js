@@ -37,6 +37,9 @@ const ICON = {
   setup: '<circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4"/>',
   coordinator: '<path d="M10 2.5l6 2.5v5c0 4-2.6 6.6-6 7.5-3.4-.9-6-3.5-6-7.5v-5z"/><path d="M7.5 10l2 2 3.5-4"/>',
   idea: '<path d="M7.5 15h5M8 17.5h4"/><path d="M10 2.5a5 5 0 0 1 3 9v1.5H7V11.5a5 5 0 0 1 3-9z"/>',
+  threads: '<path d="M5 3v9a3 3 0 0 0 3 3h7"/><path d="M5 7h10"/><path d="M12.5 4.5L15 7l-2.5 2.5M12.5 12.5L15 15l-2.5 2.5"/>',
+  terminal: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5"/>',
+  browser: '<circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.4 2.2 2.4 12.8 0 15M10 2.5c-2.4 2.2-2.4 12.8 0 15"/>',
   collapse: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M8 3.5v13"/>',
   panelClose: '<path d="M12.5 5.5L8 10l4.5 4.5"/>',
   panelOpen: '<path d="M7.5 5.5L12 10l-4.5 4.5"/>',
@@ -62,6 +65,7 @@ const MODES = {
     links: [
       { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
       { href: '/work', label: 'Tasks', icon: 'tasks' },
+      { href: '/threads', label: 'Threads', icon: 'threads' },
       { href: '/work#swarm', label: 'Swarm', icon: 'swarm' },
       { href: '/plugins', label: 'Plugins', icon: 'plugins' },
       { href: '/plugins#skills', label: 'Skills', icon: 'skills' },
@@ -77,6 +81,7 @@ const MODES = {
     action: { label: 'New idea', icon: 'plus', key: 'new-idea', href: '/', owner: '/' },
     links: [
       { href: '/', label: 'The room', icon: 'room' },
+      { href: '/threads', label: 'Threads', icon: 'threads' },
       { href: '/artifacts', label: 'Artifacts', icon: 'artifacts' },
       { href: '/design', label: 'Design', icon: 'design' },
       { href: '/plugins', label: 'Plugins', icon: 'plugins' },
@@ -95,6 +100,7 @@ const PAGE_MODE = {
   '/dashboard': 'work', '/dashboard.html': 'work',
   '/work': 'work', '/work.html': 'work',
   '/plugins': 'work', '/plugins.html': 'work',
+  '/threads': 'work', '/threads.html': 'work',
 };
 
 const RAIL_WIDE = 232;
@@ -349,6 +355,14 @@ function render(rail, mode, ideas, me) {
 
     ${m.links.map(item).join('')}
 
+    <div class="head">Shared with the agents</div>
+    <button class="item" data-tool="terminal" title="The terminal you and the agents both use (Ctrl \`)">
+      ${icon('terminal')}<span class="t">Terminal</span>
+    </button>
+    <button class="item" data-tool="browser" title="The Firefox window you and the agents both use">
+      ${icon('browser')}<span class="t">Browser</span>
+    </button>
+
     ${threads(ideas)}
 
     <div class="foot">
@@ -375,6 +389,13 @@ function render(rail, mode, ideas, me) {
     try { localStorage.setItem('esprits.rail', nowFolded ? 'folded' : 'wide'); } catch { /* ignore */ }
     render(rail, mode, ideas, me);
   });
+
+  for (const b of rail.querySelectorAll('[data-tool]')) {
+    b.addEventListener('click', () => {
+      document.body.classList.remove('rail-out');
+      openTool(b.dataset.tool);
+    });
+  }
 
   rail.querySelector('[data-action]').addEventListener('click', (e) => {
     const { action } = e.currentTarget.dataset;
@@ -515,6 +536,17 @@ export function collapsiblePanel({ el, name, title = 'panel' }) {
   draw();
 }
 
+/**
+ * The terminal and the browser, from wherever you are.
+ *
+ * Loaded when first asked for rather than with every page: most visits to most
+ * pages never open either, and the drawer is the same one whichever page asks.
+ */
+export async function openTool(tab = 'terminal') {
+  const tools = await import('/tools.js');
+  tools.toggleTools(tab);
+}
+
 /** Show which thread is open, when the page changes it without navigating. */
 export function markIdea(slug) {
   for (const a of document.querySelectorAll('#shell-rail [data-idea]')) {
@@ -570,6 +602,11 @@ fill(rail);
 
 // Ctrl/Cmd-K is the shortcut the rail advertises, so it has to work.
 window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === '`') {
+    e.preventDefault();
+    openTool('terminal');
+    return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     document.querySelector('#shell-rail [data-action]')?.click();

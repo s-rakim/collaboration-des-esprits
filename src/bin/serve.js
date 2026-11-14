@@ -19,6 +19,9 @@ import { exportSkill } from '../skillpack.js';
 import { probe as probeEndpoint, tryKey } from '../probe.js';
 import { detectShape } from '../participants/messages.js';
 import { createRouters } from '../routers.js';
+import { createTerminal } from '../workspace.js';
+import { createBrowser } from '../browser.js';
+import { createThreads } from '../threads.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
@@ -59,6 +62,11 @@ const seats = createSeats(hub.db, connections);
 seats.seedIfEmpty();
 const MEDIA = mediaDir(hub.db.name);
 const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`${m}\n`) });
+const terminal = createTerminal({ db: hub.db, config });
+const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA) });
+const threads = createThreads({
+  db: hub.db, hub, seats, terminal, browser, log: (m) => process.stdout.write(`${m}\n`),
+});
 const plugins = createPlugins(hub.db, { log: (m) => process.stdout.write(`${m}\n`) });
 const web = createWebBridge({ connections, log: (m) => process.stdout.write(`${m}\n`) });
 // A skill's binary files are kept next to the generated media, so a skill that
@@ -589,6 +597,138 @@ app.get('/api/dashboard', (_req, res) =>
     };
   }),
 );
+
+// ------------------------------------------------------- terminal and browser
+
+/**
+ * These routes run commands and drive a browser on this machine, so they are
+ * held to one more check than the rest: the request has to come from this
+ * app's own pages. A browser will happily send a request to 127.0.0.1 on
+ * behalf of any site that asks it to, and "a web page ran a command on my
+ * computer" is not something a login cookie alone prevents.
+ */
+function fromOurPages(req, res, next) {
+  const origin = req.get('origin');
+  if (origin) {
+    let host = '';
+    try { host = new URL(origin).host; } catch { /* not an origin we can read */ }
+    if (host !== req.get('host')) {
+      return res.status(403).json({ error: 'this can only be asked from the room\'s own pages' });
+    }
+  }
+  next();
+}
+
+/** Who is asking, and that they are a person in the room. */
+function person(name) {
+  const who = hub.db.prepare('SELECT name, kind FROM agents WHERE name = ?').get(String(name ?? '').replace(/^@+/, ''));
+  if (!who) throw new Invalid('say who you are first — join the room');
+  if (who.kind !== 'human') throw new Invalid('this is for the person in the room; agents have their own way in');
+  return who.name;
+}
+
+app.get('/api/workspace', (_req, res) =>
+  send(res, () => ({ ...terminal.folder(), agentsAllowed: terminal.agentsAllowed() })));
+
+app.post('/api/workspace', fromOurPages, (req, res) =>
+  send(res, () => {
+    try {
+      if (req.body?.folder !== undefined) terminal.setFolder(req.body.folder);
+      if (req.body?.agentsAllowed !== undefined) terminal.setAgentsAllowed(Boolean(req.body.agentsAllowed));
+    } catch (err) { throw new Invalid(err.message); }
+    return { ...terminal.folder(), agentsAllowed: terminal.agentsAllowed() };
+  }));
+
+app.get('/api/terminal', (req, res) =>
+  send(res, () => ({
+    ...terminal.folder(),
+    runs: terminal.history({ since: req.query.since, thread: req.query.thread, limit: req.query.limit }),
+  })));
+
+app.post('/api/terminal/run', fromOurPages, (req, res) =>
+  send(res, async () => {
+    const by = person(req.body?.as);
+    try { return await terminal.run({ command: req.body?.command, by, kind: 'human' }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
+app.post('/api/terminal/:id/stop', fromOurPages, (req, res) =>
+  send(res, () => ({ stopped: terminal.stop(req.params.id) })));
+
+app.get('/api/browser', (_req, res) =>
+  send(res, () => ({ ...browser.status(), visits: browser.visits({ limit: 30 }) })));
+
+app.post('/api/browser/start', fromOurPages, (_req, res) =>
+  send(res, async () => { try { return await browser.start(); } catch (err) { throw new Invalid(err.message); } }));
+
+app.post('/api/browser/stop', fromOurPages, (_req, res) => send(res, () => browser.stop()));
+
+app.post('/api/browser/open', fromOurPages, (req, res) =>
+  send(res, async () => {
+    const by = person(req.body?.as);
+    const typed = String(req.body?.go ?? '').trim();
+    if (!typed) throw new Invalid('type an address, or something to search for');
+    // One box, the way a browser's own works: an address goes there, anything
+    // else is searched for.
+    const looksLikeAddress = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) || (/^[^\s]+\.[a-z]{2,}(\/\S*)?$/i.test(typed));
+    try {
+      return looksLikeAddress
+        ? await browser.open({ url: typed, by })
+        : await browser.search({ query: typed, by });
+    } catch (err) { throw new Invalid(err.message); }
+  }));
+
+app.get('/api/browser/page', (_req, res) =>
+  send(res, async () => { try { return await browser.read(); } catch (err) { throw new Invalid(err.message); } }));
+
+app.get('/api/browser/shot', async (_req, res) => {
+  try {
+    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }).send(await browser.screenshot());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------ builds, threads
+
+app.get('/api/builds', (_req, res) => send(res, () => ({ builds: threads.builds(), seats: threads.seats() })));
+app.get('/api/builds/:id', (req, res) =>
+  send(res, () => { try { return threads.build(req.params.id); } catch (err) { throw new NotFound(err.message); } }));
+
+/** The approval: a person hands an idea to the coordinator to be built. */
+app.post('/api/ideas/:ref/handover', (req, res) =>
+  send(res, () => {
+    try {
+      return threads.handOver({
+        idea: req.params.ref, by: String(req.body?.as ?? '').replace(/^@+/, ''),
+        coordinator: req.body?.coordinator, workers: req.body?.workers,
+      });
+    } catch (err) {
+      if (err instanceof NotFound || err instanceof Invalid) throw err;
+      throw new Invalid(err.message);
+    }
+  }));
+
+app.post('/api/builds/:id/cancel', (req, res) =>
+  send(res, () => { try { return threads.cancel(req.params.id); } catch (err) { throw new NotFound(err.message); } }));
+
+app.get('/api/threads/:id', (req, res) =>
+  send(res, () => { try { return threads.thread(req.params.id, { since: req.query.since }); } catch (err) { throw new NotFound(err.message); } }));
+
+app.post('/api/threads/:id', (req, res) =>
+  send(res, () => {
+    try { return threads.edit(req.params.id, { seat: req.body?.seat, model: req.body?.model, effort: req.body?.effort }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
+app.post('/api/threads/:id/retry', (req, res) =>
+  send(res, () => { try { return threads.retry(req.params.id); } catch (err) { throw new Invalid(err.message); } }));
+
+app.post('/api/threads/:id/note', (req, res) =>
+  send(res, () => {
+    try { return threads.note(req.params.id, { text: req.body?.text, by: person(req.body?.as) }); }
+    catch (err) { if (err instanceof Invalid) throw err; throw new Invalid(err.message); }
+  }));
 
 // --------------------------------------------------------------------- swarm
 
@@ -1634,7 +1774,7 @@ app.get('/api/events', (req, res) => {
  * link that carries one — /work?do=new-task arrives as a plain /work.html and
  * the thing you asked for never happens, with nothing to show you why.
  */
-for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts']) {
+for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads']) {
   app.get(`/${page}`, (req, res) => {
     const query = req.originalUrl.slice(req.path.length);
     res.redirect(`/${page}.html${query}`);
@@ -1762,6 +1902,8 @@ function syncSeats() {
       web,
       plugins,
       skills,
+      terminal,
+      browser,
     });
     models.set(seat.name, p);
     // One model failing must not take the others, or the server, down.

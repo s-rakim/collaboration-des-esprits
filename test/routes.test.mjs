@@ -11,7 +11,7 @@ import http from 'node:http';
  * query string, so every link that carries one arrives stripped and whatever it
  * asked for silently does not happen.
  */
-const PAGES = ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts'];
+const PAGES = ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads'];
 
 function app() {
   const a = express();

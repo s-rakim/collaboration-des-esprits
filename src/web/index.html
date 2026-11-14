@@ -168,6 +168,9 @@
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
+    <button id="toolTerminal" title="The terminal you and the agents both use, in the project folder">Terminal</button>
+    <button id="toolBrowser" title="The Firefox window you and the agents both use">Browser</button>
+    <button id="handover" hidden title="Approve this idea and hand it to the coordinator to be built as threads">Hand over to build</button>
     <button class="primary" id="newIdea">Drop an idea</button>
   </div>
 </header>
@@ -321,7 +324,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { markIdea, refreshNav, dialogMessage, collapsiblePanel } from '/nav.js';
+import { markIdea, refreshNav, dialogMessage, collapsiblePanel, openTool } from '/nav.js';
 
 const $ = (s) => document.querySelector(s);
 const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null };
@@ -347,6 +350,33 @@ function toast(msg, kind = 'err') {
   t.textContent = msg; t.classList.add('on');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 4000);
 }
+
+$('#toolTerminal').addEventListener('click', () => openTool('terminal'));
+$('#toolBrowser').addEventListener('click', () => openTool('browser'));
+
+/**
+ * The approval. Asked for twice on purpose: this is the one button in the chat
+ * that starts models working without anybody typing to them, and it freezes
+ * what the room has agreed so far as the thing to build.
+ */
+$('#handover').addEventListener('click', async () => {
+  const open = state.overview?.ideas.find((i) => i.slug === state.idea);
+  if (!open) return;
+  if (!state.me) return toast('say who you are first — it is your approval that starts a build');
+  const ok = confirm(
+    `Hand “${open.title}” to the coordinator to be built?\n\n`
+    + 'What the room has agreed so far becomes the brief. The coordinator cuts it into threads, '
+    + 'gives each a model and an effort by how necessary and how important it is, and starts them. '
+    + 'You can change any of that on the Threads page.',
+  );
+  if (!ok) return;
+  try {
+    const build = await api(`/api/ideas/${encodeURIComponent(open.slug)}/handover`, {
+      method: 'POST', body: JSON.stringify({ as: state.me }),
+    });
+    location.href = `/threads?build=${build.id}`;
+  } catch (e) { toast(e.message); }
+});
 
 async function api(path, opts) {
   const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
@@ -394,6 +424,8 @@ function renderIdeas() {
   $('#title').innerHTML = open
     ? `${esc(open.title)} <small>${esc(open.stage)}${open.project ? ` · ${esc(open.project)}` : ''}</small>`
     : 'The lobby <small>cross-cutting chat</small>';
+  // Only an idea can be handed over; the lobby is talk that belongs to none.
+  $('#handover').hidden = !open;
 
   // Inside a thread this says where you are; at the lobby the header already
   // does, and a card repeating it is just furniture.

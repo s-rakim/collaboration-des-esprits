@@ -1,5 +1,6 @@
 import { describeRole } from '../roles.js';
 import { chatAdapter } from './chat.js';
+import { pageForModel } from '../browser.js';
 
 /**
  * One model's seat in the room, on whichever provider that seat uses.
@@ -361,6 +362,48 @@ function toolDefs() {
       },
     },
     {
+      name: 'run_command',
+      description:
+        'Run one shell command in the project folder and get its output and exit code. The person ' +
+        'in the room uses the same terminal and sees everything you run. Use it to look at the ' +
+        'project, run its tests, or check a claim about the code by executing it — not to make ' +
+        'changes nobody asked for.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          command: { type: 'string', description: 'The command, exactly as you would type it.' },
+          timeout_seconds: { type: 'integer', minimum: 1, maximum: 600 },
+        },
+        required: ['command'],
+      },
+    },
+    {
+      name: 'browser_search',
+      description:
+        'Search the web in the shared browser — a real window on the person\'s screen, so they see ' +
+        'the results you see — and read the results page.',
+      parameters: {
+        type: 'object', additionalProperties: false,
+        properties: { query: { type: 'string' } }, required: ['query'],
+      },
+    },
+    {
+      name: 'browser_open',
+      description: 'Open a web address in the shared browser and read the page.',
+      parameters: {
+        type: 'object', additionalProperties: false,
+        properties: { url: { type: 'string' } }, required: ['url'],
+      },
+    },
+    {
+      name: 'browser_read',
+      description:
+        'Read whatever page the shared browser is showing now. The person may have gone somewhere ' +
+        'and want you to look at what they found.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    {
       name: 'say_nothing',
       description:
         'End your turn without speaking. Use this when the room does not need you — somebody already ' +
@@ -409,6 +452,10 @@ export function createModelParticipant({
   // The human's standing instructions, read fresh so an edit takes effect on
   // the next turn rather than needing a restart.
   custom = () => ({ houseStyle: '', aboutMe: '' }),
+  // The project's shared terminal and browser. The person uses the same ones,
+  // so everything done through them is on the record under this seat's name.
+  terminal = null,
+  browser = null,
 }) {
   const name = seat?.name ?? 'model';
   const role = seat?.role ?? 'generalist';
@@ -749,6 +796,34 @@ export function createModelParticipant({
         if (!plugins) return { text: 'FAILED: no plugins are connected', ends: false };
         const out = await plugins.call({ name: String(input.name ?? ''), args: input.args ?? {}, agent: name });
         return { text: String(out).slice(0, 20_000), ends: false };
+      }
+
+      case 'run_command': {
+        if (!terminal) return { text: 'FAILED: this room has no terminal', ends: false };
+        try {
+          const r = await terminal.run({
+            command: input.command, by: name, kind: 'agent',
+            ...(input.timeout_seconds ? { timeoutMs: Number(input.timeout_seconds) * 1000 } : {}),
+          });
+          const head = `exit ${r.exitCode}${r.timedOut ? ' (stopped: it ran too long)' : ''}`;
+          return { text: `${head}\n${r.output || '(no output)'}`.slice(0, 12_000), ends: false };
+        } catch (err) {
+          return { text: `FAILED: ${err.message}`, ends: false };
+        }
+      }
+
+      case 'browser_search':
+      case 'browser_open':
+      case 'browser_read': {
+        if (!browser) return { text: 'FAILED: this room has no browser', ends: false };
+        try {
+          const page = tool === 'browser_search' ? await browser.search({ query: input.query, by: name, kind: 'agent' })
+            : tool === 'browser_open' ? await browser.open({ url: input.url, by: name, kind: 'agent' })
+            : await browser.read();
+          return { text: pageForModel(page), ends: false };
+        } catch (err) {
+          return { text: `FAILED: ${err.message}`, ends: false };
+        }
       }
 
       case 'use_skill': {

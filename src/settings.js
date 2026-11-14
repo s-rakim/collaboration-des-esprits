@@ -22,6 +22,14 @@ export const SETTINGS = {
     env: 'ESPRITS_HOUSE_STYLE', default: '',
     label: 'Standing instructions for every model',
   },
+  workspace: {
+    env: 'ESPRITS_WORKSPACE', default: '',
+    label: 'Project folder — where the terminal starts',
+  },
+  terminal_agents: {
+    env: 'ESPRITS_TERMINAL_AGENTS', default: 'true',
+    label: 'Agents may use the terminal',
+  },
   about_me: {
     env: 'ESPRITS_ABOUT_ME', default: '',
     label: 'About you — what the room should assume',

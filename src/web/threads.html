@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threads — Collaboration des Esprits</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
+  .spacer{margin-left:auto}
+  main{display:grid;grid-template-columns:290px minmax(0,1fr);height:calc(100vh - 53px)}
+  @media (max-width:980px){main{grid-template-columns:1fr;height:auto}}
+  aside,.mid{overflow-y:auto;padding:14px}
+  aside{border-right:1px solid var(--line)}
+  .mid{max-width:1040px;width:100%}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .build{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:4px}
+  .build:hover{background:var(--panel2)}
+  .build.on{background:var(--panel2);border-color:var(--accent)}
+  .build .g{font-size:13px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .build .s{font-size:11px;color:var(--faint);margin-top:3px}
+  .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .badge.running,.badge.planning{color:var(--accent);border-color:var(--accent)}
+  .badge.done{color:var(--good);border-color:var(--good)}
+  .badge.failed{color:var(--bad);border-color:var(--bad)}
+  .badge.cancelled,.badge.queued{color:var(--faint)}
+  .badge.must{color:var(--text);border-color:var(--text)}
+  .badge.should{color:var(--dim)}
+  .badge.could{color:var(--faint);border-style:dashed}
+  .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px}
+  .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .bar i.done{background:var(--good)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:15px}
+  .card .sub{font-size:12px;color:var(--dim);line-height:1.5}
+  .folder{font-size:12px;color:var(--dim);line-height:1.5}
+  .folder code{display:block;color:var(--text);overflow-wrap:anywhere;margin:3px 0 7px}
+  code{font-family:var(--mono);font-size:12px}
+
+  .thread{border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--panel)}
+  .thread.open{border-color:var(--accent)}
+  .thread .h{display:flex;gap:9px;align-items:center;padding:10px 12px;cursor:pointer;font-size:13px}
+  .thread .h b{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .thread .n{color:var(--faint);font-family:var(--mono);font-size:11.5px}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint)}
+  .dot.running{background:var(--accent);animation:pulse 1.3s ease-in-out infinite}
+  .dot.done{background:var(--good)} .dot.failed{background:var(--bad)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .imp{font-size:11px;color:var(--dim);letter-spacing:1px;white-space:nowrap}
+  .imp i{font-style:normal;color:var(--faint)}
+  .ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 12px 10px}
+  .ctl label{font-size:11px;color:var(--faint)}
+  .ctl select,.ctl input{width:auto;font-size:12.5px;padding:5px 8px}
+  .ctl input{flex:1;min-width:150px;font-family:var(--mono)}
+  .ctl button{font-size:12px;padding:5px 10px}
+  .thread .brief,.thread .r{font-size:12.5px;color:var(--dim);white-space:pre-wrap;padding:0 12px 10px;line-height:1.55}
+  .thread .r{color:var(--text);max-height:220px;overflow:auto}
+  .thread .e{font-size:12.5px;color:var(--bad);padding:0 12px 10px}
+  .log{border-top:1px solid var(--line);padding:10px 12px;max-height:440px;overflow:auto}
+  .ev{font-size:12.5px;margin-bottom:9px;line-height:1.5}
+  .ev .who{font-size:11px;color:var(--faint);margin-right:6px}
+  .ev.say{white-space:pre-wrap}
+  .ev.tool code{color:var(--text);overflow-wrap:anywhere}
+  .ev.result pre,.ev.cmd pre{margin:3px 0 0;padding:7px 9px;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+    font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;color:var(--dim)}
+  .ev.status{color:var(--faint);font-size:11.5px}
+  .ev.note{border-left:2px solid var(--accent);padding-left:9px}
+  .tell{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+  .tell input{flex:1}
+  .report{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
+  .empty{color:var(--faint);padding:40px 16px;text-align:center;line-height:1.6}
+  .msg{font-size:13px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(520px,94vw)}
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  dialog label{font-size:12.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <nav id="nav"></nav>
+  <h1>Threads <small>what was approved, being built</small></h1>
+  <div class="spacer"></div>
+  <span class="msg" id="msg"></span>
+  <button id="toolTerminal" title="The terminal you and the agents both use">Terminal</button>
+  <button id="toolBrowser" title="The Firefox window you and the agents both use">Browser</button>
+</header>
+
+<main>
+  <aside>
+    <button id="hand" class="primary" style="width:100%">Hand over an idea…</button>
+    <h2>Project folder</h2>
+    <div class="folder" id="folder"></div>
+    <h2>Builds</h2>
+    <div id="builds"></div>
+  </aside>
+  <div class="mid" id="mid">
+    <div class="empty">Nothing has been handed over yet.</div>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <h3 style="margin:0 0 6px;font-size:15px">Hand an idea to the coordinator</h3>
+  <p class="msg" style="margin:0 0 12px;line-height:1.5">This is the approval. What the room has agreed about the idea
+    is frozen as the brief; the coordinator cuts it into threads, gives each a model and an effort by how necessary
+    and how important it is, and starts them.</p>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div class="row"><label style="width:92px">Idea</label><select id="idea" style="flex:1"></select></div>
+    <div class="row"><label style="width:92px">Coordinator</label><select id="coordinator" style="flex:1"></select></div>
+    <div class="row"><label style="width:92px">At once</label>
+      <input id="workers" type="number" min="1" max="8" value="3" style="width:80px">
+      <span class="msg" style="font-size:12px">threads running at the same time</span></div>
+    <div class="row" style="justify-content:flex-end;margin-top:4px">
+      <button id="cancel">Cancel</button>
+      <button class="primary" id="go">Hand over</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module">
+import { dialogMessage, openTool } from '/nav.js';
+
+const $ = (s) => document.querySelector(s);
+const state = {
+  me: null, builds: [], seats: [], current: null, timer: null,
+  open: null,            // the thread whose transcript is showing
+  log: { events: [], commands: [], visits: [] },
+  sig: '',
+};
+try { state.me = localStorage.getItem('esprits.me'); } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const ago = (iso) => {
+  if (!iso) return '';
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+function say(t, cls = '') {
+  if (cls === 'err' && dialogMessage(t)) return;
+  $('#msg').textContent = t; $('#msg').className = `msg ${cls}`;
+  clearTimeout(say.t); if (t) say.t = setTimeout(() => { $('#msg').textContent = ''; }, 6000);
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `${res.status} ${res.statusText}`);
+  return d;
+}
+
+$('#toolTerminal').addEventListener('click', () => openTool('terminal'));
+$('#toolBrowser').addEventListener('click', () => openTool('browser'));
+
+// ------------------------------------------------------------------- folder
+
+async function renderFolder() {
+  const w = await api('/api/workspace').catch(() => null);
+  if (!w) return;
+  $('#folder').innerHTML = w.ok
+    ? `Threads run their commands here.<code>${esc(w.dir)}</code>
+       <div class="row"><button id="pick">Change</button>
+       <label><input type="checkbox" id="agents" ${w.agentsAllowed ? 'checked' : ''}> agents may use the terminal</label></div>`
+    : `${esc(w.why)}. A thread cannot run a command until one is chosen.
+       <div class="row" style="margin-top:7px"><button id="pick" class="primary">Choose the folder</button></div>`;
+  $('#pick').onclick = async () => {
+    const folder = prompt('The project folder — the full path. Commands start here.', w.dir || '');
+    if (folder === null) return;
+    try { await api('/api/workspace', { method: 'POST', body: JSON.stringify({ folder }) }); say('folder set', 'ok'); }
+    catch (e) { say(e.message, 'err'); }
+    renderFolder();
+  };
+  const agents = $('#agents');
+  if (agents) agents.onchange = async () => {
+    await api('/api/workspace', { method: 'POST', body: JSON.stringify({ agentsAllowed: agents.checked }) }).catch((e) => say(e.message, 'err'));
+    renderFolder();
+  };
+}
+
+// ------------------------------------------------------------------- builds
+
+function renderBuilds() {
+  $('#builds').innerHTML = state.builds.length
+    ? state.builds.map((b) => `
+        <div class="build ${state.current?.id === b.id ? 'on' : ''}" data-id="${b.id}">
+          <span class="g">${esc(b.title)}</span>
+          <div class="s"><span class="badge ${esc(b.status)}">${esc(b.status)}</span>
+            ${b.total ? ` ${b.done}/${b.total} threads` : ''} · ${ago(b.createdAt)}</div>
+        </div>`).join('')
+    : '<p class="msg" style="font-size:12.5px;line-height:1.5">None yet. Talk an idea through in the chat, then hand it over.</p>';
+  for (const el of document.querySelectorAll('.build')) {
+    el.onclick = () => select(Number(el.dataset.id));
+  }
+}
+
+const stars = (n) => `<span class="imp" title="importance ${n} of 5">${'●'.repeat(n)}<i>${'●'.repeat(5 - n)}</i></span>`;
+
+/** One thread, with what it was given — which is the part a person can change. */
+function threadCard(t) {
+  const busy = t.status === 'running';
+  const seat = state.seats.find((s) => s.name === t.seat);
+  const seatOptions = [
+    ...state.seats.map((s) => `<option value="${esc(s.name)}" ${s.name === t.seat ? 'selected' : ''}>${esc(s.name)}</option>`),
+    // A seat whose connection has since gone is still what this thread has; say so rather than show another.
+    ...(seat || !t.seat ? [] : [`<option value="${esc(t.seat)}" selected>${esc(t.seat)} (no connection)</option>`]),
+  ].join('');
+  const open = state.open === t.id;
+  return `
+    <div class="thread ${open ? 'open' : ''}" data-thread="${t.id}">
+      <div class="h" data-toggle="${t.id}" title="Show what this thread has been doing">
+        <span class="dot ${esc(t.status)}"></span>
+        <span class="n">${t.seq}</span>
+        <b>${esc(t.title)}</b>
+        <span class="badge ${esc(t.necessity)}" title="how necessary the coordinator judged it">${esc(t.necessity)}</span>
+        ${stars(t.importance)}
+        <span class="badge ${esc(t.status)}">${esc(t.status)}</span>
+      </div>
+      <div class="ctl">
+        <label>Seat</label>
+        <select data-field="seat" data-id="${t.id}" ${busy ? 'disabled' : ''}>${seatOptions}</select>
+        <label>Model</label>
+        <input data-field="model" data-id="${t.id}" value="${esc(t.model)}" spellcheck="false" ${busy ? 'disabled' : ''}
+          placeholder="${seat ? `the seat's own: ${esc(seat.model)}` : 'model id'}">
+        <label>Effort</label>
+        <select data-field="effort" data-id="${t.id}" ${busy ? 'disabled' : ''}>
+          ${['low', 'medium', 'high'].map((e) => `<option ${e === t.effort ? 'selected' : ''}>${e}</option>`).join('')}
+        </select>
+        <button data-retry="${t.id}" ${busy ? 'disabled' : ''}
+          title="Put it back in the queue with what it has now">${t.status === 'queued' ? 'Run' : 'Run again'}</button>
+      </div>
+      ${open ? `<div class="brief">${esc(t.brief)}</div>` : ''}
+      ${t.error ? `<div class="e">${esc(t.error)}</div>` : ''}
+      ${t.result ? `<div class="r">${esc(t.result)}</div>` : ''}
+      ${open ? `<div class="log" id="log"></div>
+        <form class="tell" data-tell="${t.id}">
+          <input placeholder="Tell this thread something — it hears it at its next step" autocomplete="off">
+          <button>Tell it</button>
+        </form>` : ''}
+    </div>`;
+}
+
+function renderBuild() {
+  const b = state.current;
+  if (!b) {
+    $('#mid').innerHTML = `<div class="empty">${state.builds.length
+      ? 'Pick a build on the left.'
+      : `Nothing has been handed over yet.<br>Drop an idea in the chat, talk it through with the models, and when it is
+         what you want, hand it over — here, or with the button at the top of the idea.`}</div>`;
+    return;
+  }
+  const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
+  const going = b.live || ['planning', 'running'].includes(b.status);
+  $('#mid').innerHTML = `
+    <div class="card">
+      <div class="row">
+        <h3 style="flex:1;min-width:0">${esc(b.title)}</h3>
+        <span class="badge ${esc(b.status)}">${esc(b.status)}</span>
+        ${going ? '<button id="stop">Stop</button>' : ''}
+      </div>
+      <div class="sub">Build #${b.id} · coordinated by <b>${esc(b.coordinator)}</b> · up to ${b.workers} at once ·
+        handed over by ${esc(b.createdBy)} ${ago(b.createdAt)}
+        ${b.idea ? ` · <a href="/?idea=${encodeURIComponent(b.idea)}" style="color:var(--accent)">the idea</a>` : ''}</div>
+      ${b.total ? `<div class="bar"><i class="${b.status === 'done' ? 'done' : ''}" style="width:${pct}%"></i></div>
+        <div class="sub" style="margin-top:6px">${b.done} done · ${b.running} running · ${b.queued} waiting${b.failed ? ` · ${b.failed} failed` : ''}</div>` : ''}
+      ${b.error ? `<div class="msg err" style="margin-top:8px">${esc(b.error)}</div>` : ''}
+    </div>
+
+    ${b.threads.length
+      ? `<h2>Threads <span style="text-transform:none;letter-spacing:0;font-weight:400">— in the order they are started: the necessary first, then by importance</span></h2>
+         ${b.threads.map(threadCard).join('')}`
+      : `<div class="empty">${b.status === 'planning' || (going && !b.error)
+          ? `${esc(b.coordinator)} is reading what was approved and cutting it into threads…`
+          : 'This build has no threads.'}</div>`}
+
+    ${b.report ? `<h2>The coordinator’s report</h2><div class="card report">${esc(b.report)}</div>` : ''}`;
+
+  $('#stop')?.addEventListener('click', async () => {
+    try { await api(`/api/builds/${b.id}/cancel`, { method: 'POST', body: '{}' }); say('stopping', 'ok'); refresh(true); }
+    catch (e) { say(e.message, 'err'); }
+  });
+  for (const el of document.querySelectorAll('[data-toggle]')) {
+    el.onclick = () => openThread(Number(el.dataset.toggle));
+  }
+  for (const el of document.querySelectorAll('[data-field]')) {
+    el.onchange = async () => {
+      try {
+        await api(`/api/threads/${el.dataset.id}`, { method: 'POST', body: JSON.stringify({ [el.dataset.field]: el.value.trim() }) });
+        say('changed — it applies the next time the thread runs', 'ok');
+      } catch (e) { say(e.message, 'err'); }
+      refresh(true);
+    };
+  }
+  for (const el of document.querySelectorAll('[data-retry]')) {
+    el.onclick = async () => {
+      try { await api(`/api/threads/${el.dataset.retry}/retry`, { method: 'POST', body: '{}' }); say('queued', 'ok'); }
+      catch (e) { say(e.message, 'err'); }
+      refresh(true);
+    };
+  }
+  for (const form of document.querySelectorAll('[data-tell]')) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const box = form.querySelector('input');
+      const text = box.value.trim();
+      if (!text) return;
+      try {
+        const r = await api(`/api/threads/${form.dataset.tell}/note`, { method: 'POST', body: JSON.stringify({ text, as: state.me }) });
+        box.value = '';
+        say(`it will hear that ${r.heard}`, 'ok');
+        pollThread();
+      } catch (x) { say(x.message, 'err'); }
+    };
+  }
+  renderLog(true);
+}
+
+// --------------------------------------------------------------- transcript
+
+function renderLog(jump = false) {
+  const box = $('#log');
+  if (!box) return;
+  const { events, commands, visits } = state.log;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const lines = events.map((e) => {
+    if (e.kind === 'say') return `<div class="ev say"><span class="who">${esc(e.actor)}</span>${esc(e.body)}</div>`;
+    if (e.kind === 'tool') {
+      const [name, ...rest] = e.body.split(' ');
+      return `<div class="ev tool"><span class="who">${esc(e.actor)} used</span><b>${esc(name)}</b> <code>${esc(rest.join(' '))}</code></div>`;
+    }
+    if (e.kind === 'result') return `<div class="ev result"><span class="who">${esc(e.actor)} gave back</span><pre>${esc(e.body)}</pre></div>`;
+    if (e.kind === 'note') return `<div class="ev note"><span class="who">${esc(e.actor)} told it</span>${esc(e.body)}</div>`;
+    return `<div class="ev status">${esc(e.actor)} — ${esc(e.body)} · ${ago(e.at)}</div>`;
+  });
+  const tally = [
+    commands.length ? `${commands.length} command${commands.length === 1 ? '' : 's'} run` : '',
+    visits.length ? `${visits.length} page${visits.length === 1 ? '' : 's'} opened` : '',
+  ].filter(Boolean).join(' · ');
+  box.innerHTML = (lines.join('') || '<div class="ev status">Nothing yet — it has not started.</div>')
+    + (tally ? `<div class="ev status">${tally} — the terminal and the browser show them in full.</div>` : '');
+  if (jump || atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function pollThread() {
+  if (!state.open) return;
+  const id = state.open;
+  const last = state.log.events.at(-1)?.id ?? 0;
+  const t = await api(`/api/threads/${id}?since=${last}`).catch(() => null);
+  if (!t || state.open !== id) return;
+  const fresh = t.events.length > 0
+    || t.commands.length !== state.log.commands.length || t.visits.length !== state.log.visits.length;
+  state.log.events.push(...t.events);
+  state.log.commands = t.commands;
+  state.log.visits = t.visits;
+  if (fresh) renderLog();
+}
+
+function openThread(id) {
+  state.open = state.open === id ? null : id;
+  state.log = { events: [], commands: [], visits: [] };
+  renderBuild();
+  pollThread();
+}
+
+// ---------------------------------------------------------------- refreshing
+
+/** What on the page would look different. Redrawing only then keeps a half-typed model name where it is. */
+const signature = (b) => (b ? JSON.stringify([b.status, b.error, b.report?.length, b.live,
+  b.threads.map((t) => [t.id, t.status, t.seat, t.model, t.effort, t.result?.length, t.error])]) : '');
+
+async function refresh(force = false) {
+  const list = await api('/api/builds').catch(() => null);
+  if (!list) return;
+  state.builds = list.builds;
+  state.seats = list.seats;
+  if (state.current) {
+    state.current = await api(`/api/builds/${state.current.id}`).catch(() => state.current);
+  }
+  renderBuilds();
+  const sig = signature(state.current);
+  const typing = $('#mid').contains(document.activeElement) && ['INPUT', 'SELECT'].includes(document.activeElement.tagName);
+  if (force || (sig !== state.sig && !typing)) { state.sig = sig; renderBuild(); }
+  pollThread();
+}
+
+async function select(id) {
+  state.current = await api(`/api/builds/${id}`).catch((e) => { say(e.message, 'err'); return null; });
+  state.open = null;
+  state.log = { events: [], commands: [], visits: [] };
+  const url = new URL(location.href);
+  if (state.current) url.searchParams.set('build', id); else url.searchParams.delete('build');
+  history.replaceState(null, '', url);
+  state.sig = signature(state.current);
+  renderBuilds();
+  renderBuild();
+}
+
+// ----------------------------------------------------------------- hand-over
+
+$('#hand').addEventListener('click', async () => {
+  if (!state.me) return say('open the chat once to say who you are — it is your approval that starts a build', 'err');
+  const [o] = await Promise.all([api('/api/overview').catch(() => ({ ideas: [] })), refresh()]);
+  if (!o.ideas?.length) return say('there is no idea to hand over yet — drop one in the chat first', 'err');
+  if (!state.seats.length) return say('no model has a working connection — add one on the setup page', 'err');
+  $('#idea').innerHTML = o.ideas.map((i) => `<option value="${esc(i.slug)}">${esc(i.title)} — ${esc(i.stage)}</option>`).join('');
+  const asked = new URLSearchParams(location.search).get('idea');
+  if (asked && o.ideas.some((i) => i.slug === asked)) $('#idea').value = asked;
+  $('#coordinator').innerHTML = '<option value="">whoever holds the coordinator role</option>'
+    + state.seats.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.model)}</option>`).join('');
+  dialogMessage('');
+  $('#dlg').showModal();
+});
+$('#cancel').addEventListener('click', () => $('#dlg').close());
+$('#go').addEventListener('click', async () => {
+  try {
+    const build = await api(`/api/ideas/${encodeURIComponent($('#idea').value)}/handover`, {
+      method: 'POST',
+      body: JSON.stringify({ as: state.me, coordinator: $('#coordinator').value || undefined, workers: Number($('#workers').value) }),
+    });
+    $('#dlg').close();
+    say('handed over — the coordinator is planning the threads', 'ok');
+    await refresh();
+    select(build.id);
+  } catch (e) { say(e.message, 'err'); }
+});
+
+// ----------------------------------------------------------------------- go
+
+renderFolder();
+await refresh();
+const wanted = Number(new URLSearchParams(location.search).get('build')) || state.builds[0]?.id;
+if (wanted && state.builds.some((b) => b.id === wanted)) await select(wanted); else renderBuild();
+if (new URLSearchParams(location.search).get('do') === 'handover') $('#hand').click();
+state.timer = setInterval(refresh, 2000);
+</script>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>
