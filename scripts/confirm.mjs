@@ -263,7 +263,7 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
   });
 
   await check('a proxy in front of many providers wires itself up', async () => {
-    // My Claude Code serves the paths this app already asks for, so the proof
+    // MCC serves the paths this app already asks for, so the proof
     // that it needs no adapter is that the ordinary endpoint code reaches it
     // and four ordinary rows come out — one per job, no new kind of thing.
     const r = await api('/api/connections/from-mcc', {

@@ -10,8 +10,8 @@ about keys, headers and the spelling of "model".
 In practice they are not quite interchangeable, which is the one thing this
 file has to know. Two request shapes are in use:
 
-* **chat** — OpenAI's ``/chat/completions``. 9Router and My Claude Code serve it.
-* **messages** — Anthropic's ``/v1/messages``. Free Claude Code serves only
+* **chat** — OpenAI's ``/chat/completions``. 9Router and MCC serve it.
+* **messages** — the ``/v1/messages`` shape. FCC serves only
   this one and ``/responses``; it has no ``/chat/completions`` at all.
 
 So the shape is discovered rather than assumed, and a turn is built for
@@ -240,11 +240,11 @@ class Turn:
             calls,
         )
 
-    # ---------------------------------------------------- the Anthropic shape
+    # ---------------------------------------------------- the Messages shape
 
     def _as_messages(self):
         """
-        The same turn, in the shape Free Claude Code serves.
+        The same turn, in the shape FCC serves.
 
         Three differences do the work. The system prompt is a top-level field
         rather than the first message. Tool results are content blocks on a user
@@ -264,7 +264,7 @@ class Turn:
                     "content": m.get("content") or "",
                 }
                 # Consecutive results belong to one user message, because
-                # Anthropic alternates roles strictly and a run of user
+                # This shape alternates roles strictly and a run of user
                 # messages is refused.
                 if turns and turns[-1]["role"] == "user" and isinstance(turns[-1]["content"], list):
                     turns[-1]["content"].append(block)
@@ -380,8 +380,7 @@ class Router:
         """
         Which request shape this router serves.
 
-        Asked once and remembered. It cannot be assumed from the address: Free
-        Claude Code and My Claude Code both listen on 8082 as shipped, and one
+        Asked once and remembered. It cannot be assumed from the address: FCC and MCC both listen on 8082 as shipped, and one
         of them has no /chat/completions at all.
         """
         if self._shape:

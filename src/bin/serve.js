@@ -17,7 +17,7 @@ import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
 import { exportSkill } from '../skillpack.js';
 import { probe as probeEndpoint, tryKey } from '../probe.js';
-import { detectShape } from '../participants/anthropic.js';
+import { detectShape } from '../participants/messages.js';
 import { createRouters } from '../routers.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
@@ -1029,7 +1029,7 @@ app.post('/api/routers/:id/use', async (req, res) => {
   if (!found.ok) return res.status(400).json({ ok: false, error: found.error });
 
   // A model is only chosen for the shape we can actually prove against. The
-  // Anthropic shape has no cheap one-token probe here, so its row is left for
+  // Messages shape has no cheap one-token probe here, so its row is left for
   // the model box rather than being given a guess dressed up as a check.
   let model = '';
   let proven = null;
@@ -1109,7 +1109,7 @@ function hostName(url) {
 }
 
 /**
- * Wire up My Claude Code in one action.
+ * Wire up MCC in one action.
  *
  * MCC is a proxy in front of many providers that speaks the shape this app
  * already speaks, on the same paths. So there is nothing to adapt: the work is

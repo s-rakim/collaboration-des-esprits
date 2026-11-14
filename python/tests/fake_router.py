@@ -6,8 +6,8 @@ documented surface answers. What is proven against them is that the room can
 talk to those surfaces, which is the only claim worth making without the
 routers installed.
 
-Two shapes, because the routers genuinely differ. 9Router and My Claude Code
-serve OpenAI's /chat/completions; Free Claude Code serves Anthropic's
+Two shapes, because the routers genuinely differ. 9Router and MCC
+serve OpenAI's /chat/completions; FCC serves the Messages shape,
 /v1/messages and no /chat/completions at all, so pointing the room at it
 without noticing would 404 every turn.
 """

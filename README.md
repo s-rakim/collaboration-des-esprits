@@ -266,7 +266,7 @@ polling. That is what makes the room feel live.
 Everything the room can reach is a **connection** you define: a name, a URL, a
 key, and what it is for. Nothing is a fixed list. Presets fill the boxes in for
 OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, xAI, NVIDIA, Ollama, LM
-Studio and My Claude Code,
+Studio and MCC,
 but you can type your own URL and model for anything that isn't there — a
 provider that launches next month needs no change to this code.
 
@@ -291,12 +291,12 @@ need a model first: with the box empty it asks the endpoint what it serves,
 proves the key against the first model your account can actually reach, and
 keeps that one.
 
-### Using My Claude Code as the way out
+### Using MCC as the way out
 
-[My Claude Code](https://github.com/FiredMosquito831/my-claude-code) is a local
+MCC is a local
 proxy in front of many providers. It speaks the same shape this app speaks, on
 the same paths, so it is not a special case here: it is one more endpoint, and
-pressing **Use My Claude Code** on the setup page asks it what it can reach and
+pressing **Use MCC** on the setup page asks it what it can reach and
 writes down a row per job — chat, voice, ears, images.
 
 Worth doing if you have more than a couple of providers, because it moves a

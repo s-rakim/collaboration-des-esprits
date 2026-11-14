@@ -46,7 +46,7 @@ export const KINDS = {
  * and the URL and a model are filled in, then change anything you like.
  */
 /**
- * My Claude Code, if it is running on this machine.
+ * MCC, if it is running on this machine.
  *
  * It is a proxy in front of many providers that speaks the same OpenAI shape
  * this app speaks, on the same paths — chat, speech, transcription, images.
@@ -79,10 +79,10 @@ export const PRESETS = [
     keyHint: 'no key needed', keyOptional: true },
   { preset: 'LM Studio (local)', kind: 'chat', baseURL: 'http://127.0.0.1:1234/v1', model: 'local-model',
     keyHint: 'no key needed', keyOptional: true },
-  // My Claude Code: a proxy in front of many providers, speaking the same shape
+  // MCC: a proxy in front of many providers, speaking the same shape
   // this app already speaks. One row here reaches everything it is configured
   // with, and its keys stay in its own dashboard rather than being pasted twice.
-  { preset: 'My Claude Code (local proxy)', kind: 'chat', baseURL: MCC, model: '',
+  { preset: 'MCC (local proxy)', kind: 'chat', baseURL: MCC, model: '',
     keyHint: MCC_HINT, keyOptional: true, discoverModels: true },
 
   // ---- speech to text ----
@@ -94,7 +94,7 @@ export const PRESETS = [
     keyHint: 'console.deepgram.com' },
   { preset: 'whisper.cpp (local)', kind: 'transcribe', baseURL: 'http://127.0.0.1:8080/v1', model: 'whisper-1',
     keyHint: 'no key needed', keyOptional: true },
-  { preset: 'My Claude Code (local proxy)', kind: 'transcribe', baseURL: MCC, model: '',
+  { preset: 'MCC (local proxy)', kind: 'transcribe', baseURL: MCC, model: '',
     keyHint: MCC_HINT, keyOptional: true, discoverModels: true },
 
   // ---- text to speech ----
@@ -120,7 +120,7 @@ export const PRESETS = [
   { preset: 'Kokoro (local)', kind: 'speak', baseURL: 'http://127.0.0.1:8880/v1', model: 'kokoro',
     keyHint: 'no key needed — runs on your machine', keyOptional: true, extra: { voice: 'af_bella' },
     voices: ['af_bella', 'af_sarah', 'af_nicole', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] },
-  { preset: 'My Claude Code (local proxy)', kind: 'speak', baseURL: MCC, model: '',
+  { preset: 'MCC (local proxy)', kind: 'speak', baseURL: MCC, model: '',
     keyHint: MCC_HINT, keyOptional: true, discoverModels: true },
 
   // ---- images ----
@@ -128,7 +128,7 @@ export const PRESETS = [
     keyHint: 'platform.openai.com' },
   { preset: 'Google Imagen', kind: 'image', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'imagen-4',
     keyHint: 'aistudio.google.com' },
-  { preset: 'My Claude Code (local proxy)', kind: 'image', baseURL: MCC, model: '',
+  { preset: 'MCC (local proxy)', kind: 'image', baseURL: MCC, model: '',
     keyHint: MCC_HINT, keyOptional: true, discoverModels: true },
 
   // ---- web search ----

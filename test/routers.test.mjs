@@ -4,7 +4,7 @@ import http from 'node:http';
 import { EventEmitter } from 'node:events';
 
 import { createRouters, ROUTERS, ROUTER_ORDER } from '../src/routers.js';
-import { anthropicAdapter, detectShape } from '../src/participants/anthropic.js';
+import { messagesAdapter, detectShape } from '../src/participants/messages.js';
 
 /** A child process that never really starts, so nothing is spawned in a test. */
 function fakeChild({ exitWith = null } = {}) {
@@ -109,7 +109,7 @@ test('stopping something nothing started is not an error', () => {
   assert.match(out.note, /nothing was started/);
 });
 
-// --------------------------------------------------------- the Anthropic shape
+// --------------------------------------------------------- the Messages shape
 
 test('which shape a router speaks is asked, not assumed', async () => {
   // A path that exists but takes POST answers 405; one that does not exist
@@ -133,7 +133,7 @@ test('which shape a router speaks is asked, not assumed', async () => {
   assert.equal(await detectShape('http://127.0.0.1:9/v1', { timeoutMs: 500 }), 'chat');
 });
 
-test('a whole turn runs in the shape Free Claude Code serves', async () => {
+test('a whole turn runs in the shape FCC serves', async () => {
   const bodies = [];
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -158,7 +158,7 @@ test('a whole turn runs in the shape Free Claude Code serves', async () => {
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
 
-  const adapter = anthropicAdapter({
+  const adapter = messagesAdapter({
     model: 'vendor/big', maxTokens: 512,
     baseURL: `http://127.0.0.1:${server.address().port}/v1`,
   });
@@ -207,7 +207,7 @@ test('two tool results in one round become one user message', async () => {
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
 
-  const adapter = anthropicAdapter({
+  const adapter = messagesAdapter({
     model: 'm', maxTokens: 64, baseURL: `http://127.0.0.1:${server.address().port}/v1`,
   });
   const turn = adapter.startTurn({ system: 'x', tools: [] });
@@ -234,7 +234,7 @@ test('a refused key is flagged rather than only worded, in this shape too', asyn
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
 
-  const adapter = anthropicAdapter({
+  const adapter = messagesAdapter({
     apiKey: 'nope', model: 'm', maxTokens: 8,
     baseURL: `http://127.0.0.1:${server.address().port}/v1`,
   });
@@ -250,7 +250,7 @@ test('a refused key is flagged rather than only worded, in this shape too', asyn
 });
 
 test('each router is started by a command it actually installs', () => {
-  // "fcc" is not a command Free Claude Code ships — its own pyproject names the
+  // "fcc" is not a command FCC ships — its own pyproject names the
   // server entry point fcc-server — so starting it would have failed with the
   // same "not recognized" a missing program gives, and looked like our bug.
   assert.equal(ROUTERS.fcc.command, 'fcc-server');

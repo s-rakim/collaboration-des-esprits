@@ -18,7 +18,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const shaped = {
   nvidia: `nvapi-${'Qz7'.repeat(21)}Q`,
-  anthropic: `sk-ant-${'Lm4_'.repeat(12)}`,
+  skAnt: `sk-ant-${'Lm4_'.repeat(12)}`,
   openai: `sk-${'pR8k'.repeat(12)}`,
   groq: `gsk_${'Wv3n'.repeat(12)}`,
   huggingface: `hf_${'Tq6m'.repeat(9)}`,

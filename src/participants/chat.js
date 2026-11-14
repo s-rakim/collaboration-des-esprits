@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { anthropicAdapter } from './anthropic.js';
+import { messagesAdapter } from './messages.js';
 
 /**
  * The chat adapter, on the official OpenAI SDK.
@@ -31,7 +31,7 @@ export function chatAdapter({
   // entirely, not a different parameter. Which one it is gets discovered once
   // and stored on the connection; this only honours the answer.
   if (shape === 'messages') {
-    return anthropicAdapter({ apiKey, model, maxTokens, effort, baseURL, timeoutMs });
+    return messagesAdapter({ apiKey, model, maxTokens, effort, baseURL, timeoutMs });
   }
 
   /**

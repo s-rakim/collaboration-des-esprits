@@ -9,7 +9,7 @@ Honest state, so nobody runs it expecting a room.
   the other with its history intact, both directions, full-text search included.
 - **`esprits/router.py`** — the whole connector layer. Speaks both request
   shapes and discovers which a router serves. 16 tests against stand-ins that
-  answer the way 9Router, Free Claude Code and My Claude Code answer.
+  answer the way 9Router, FCC and MCC answer.
 - **`esprits/roles.py`** — charters and house rules, from `roles/builtin.json`.
 
 ## Ported, not yet usable

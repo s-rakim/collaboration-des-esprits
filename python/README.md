@@ -2,7 +2,7 @@
 
 A port of Collaboration des Esprits, with one change of substance: it does not
 talk to model providers itself. Everything it needs from outside — a model that
-talks, a voice, an ear, a picture — goes to **My Claude Code**, which stands in
+talks, a voice, an ear, a picture — goes to **MCC**, which stands in
 front of whatever providers you have given it.
 
 That removes the part of this app that was never really its own job. There are

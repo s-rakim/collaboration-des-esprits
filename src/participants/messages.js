@@ -1,9 +1,9 @@
 /**
- * The Anthropic Messages shape.
+ * The Messages shape.
  *
- * Free Claude Code serves /v1/messages and /v1/responses and has no
+ * FCC serves /v1/messages and /v1/responses and has no
  * /chat/completions at all, so without this the room pointed at it would 404
- * every turn. 9Router and My Claude Code serve both, and for those the OpenAI
+ * every turn. 9Router and MCC serve both, and for those the OpenAI
  * adapter is still the one used — this exists for the router that only speaks
  * the other language.
  *
@@ -22,14 +22,14 @@
 const TURN_TIMEOUT_MS = 180_000;
 
 /** The same surface chatAdapter has, so nothing above here knows the difference. */
-export function anthropicAdapter({
+export function messagesAdapter({
   apiKey, model, maxTokens, effort, baseURL,
   timeoutMs = TURN_TIMEOUT_MS, fetchImpl = fetch,
 }) {
   const url = `${String(baseURL || '').replace(/\/+$/, '')}/messages`;
 
   const headers = () => {
-    const h = { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' };
+    const h = { 'content-type': 'application/json' };
     // Which of the two a router reads depends on which shape it is imitating,
     // and sending the pair costs nothing. This is the router's own token, not
     // a provider key — the router holds those.

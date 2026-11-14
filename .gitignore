@@ -7,3 +7,6 @@ data/
 *.sqlite-shm
 *.sqlite-wal
 dist/
+__pycache__/
+*.pyc
+.pytest_cache/

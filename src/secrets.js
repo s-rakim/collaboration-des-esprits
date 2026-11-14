@@ -23,7 +23,7 @@
  */
 const SHAPES = [
   { kind: 'NVIDIA API key', re: /nvapi-[A-Za-z0-9_-]{40,}/g },
-  { kind: 'Anthropic API key', re: /sk-ant-[A-Za-z0-9_-]{30,}/g },
+  { kind: 'provider API key (sk-ant)', re: /sk-ant-[A-Za-z0-9_-]{30,}/g },
   { kind: 'OpenAI-style secret key', re: /\bsk-[A-Za-z0-9_-]{32,}/g },
   { kind: 'Groq API key', re: /\bgsk_[A-Za-z0-9]{40,}/g },
   { kind: 'Hugging Face token', re: /\bhf_[A-Za-z0-9]{30,}/g },

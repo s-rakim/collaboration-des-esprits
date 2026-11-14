@@ -253,11 +253,11 @@ test('a key ending in base64 padding keeps its padding', () => {
     'abcdef0123456789abcdef0123456789');
 });
 
-test('My Claude Code is not a special case — it is an endpoint', () => {
+test('MCC is not a special case — it is an endpoint', () => {
   // The whole reason it needs no adapter: it serves the paths this app already
   // asks for. If that ever stops being true the presets are a lie, so the
   // claim is pinned here rather than left in a comment.
-  const mcc = PRESETS.filter((p) => p.preset.includes('My Claude Code'));
+  const mcc = PRESETS.filter((p) => p.preset.includes('MCC'));
   assert.ok(mcc.length >= 4, 'it should cover chat, voice, ears and images');
   for (const p of mcc) {
     assert.equal(p.baseURL, 'http://127.0.0.1:8082/v1');

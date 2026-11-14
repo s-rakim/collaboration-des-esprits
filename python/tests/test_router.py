@@ -155,9 +155,9 @@ async def test_the_room_sends_no_key_at_all():
         await client.aclose()
 
 
-# --------------------------------------------------------- the Anthropic shape
+# --------------------------------------------------------- the Messages shape
 #
-# Free Claude Code serves /v1/messages and no /chat/completions at all, so a
+# FCC serves /v1/messages and no /chat/completions at all, so a
 # room pointed at it without noticing would 404 every single turn. These are the
 # tests that say it does not.
 
@@ -174,7 +174,7 @@ async def test_a_router_without_chat_completions_is_detected_not_assumed():
         await client.aclose()
 
 
-async def test_a_whole_turn_runs_in_the_anthropic_shape():
+async def test_a_whole_turn_runs_in_the_messages_shape():
     with FakeRouter("messages") as router:
         client = Router(router.base)
         turn = client.start_turn(
@@ -205,7 +205,7 @@ async def test_a_whole_turn_runs_in_the_anthropic_shape():
         # And a tool is described by input_schema rather than nested in function.
         assert first_body["tools"][0]["input_schema"] == {"type": "object"}
 
-        # A tool result is a content block on a user message. Anthropic
+        # A tool result is a content block on a user message. This shape
         # alternates roles strictly, so a run of user messages is refused.
         second_body = sent[1]["body"]
         roles = [m["role"] for m in second_body["messages"]]

@@ -658,7 +658,7 @@ $('#body').addEventListener('click', async (e) => {
       const r = await api(`/api/routers/${encodeURIComponent(id)}/use`, { method: 'POST', body: '{}' });
       await loadAll();
       const bits = [`added "${r.name}"`, `${r.models} model(s)`];
-      bits.push(r.shape === 'messages' ? 'Anthropic shape' : 'OpenAI shape');
+      bits.push(r.shape === 'messages' ? 'Messages shape' : 'OpenAI shape');
       bits.push(r.proven ? `proven on ${r.proven}` : `start with ${r.model || 'a model you pick'}`);
       say(bits.join(' · '), 'ok');
     } catch (err) { say(err.message, 'err'); }
@@ -708,7 +708,7 @@ $('#body').addEventListener('click', async (e) => {
   if (e.target.closest('#fromMcc')) {
     const button = e.target.closest('#fromMcc');
     button.disabled = true;
-    say('asking My Claude Code what it can reach…');
+    say('asking MCC what it can reach…');
     api('/api/connections/from-mcc', { method: 'POST', body: '{}' }).then(async (r) => {
       await loadAll();
       const made = r.made.filter((m) => m.created);
