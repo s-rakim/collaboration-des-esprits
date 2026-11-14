@@ -332,6 +332,15 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
     return names.join(', ');
   });
 
+  await check('a skill leaves the room as a zip a marketplace takes', async () => {
+    const report = await api('/api/skills/code-review/export?check');
+    const res = await fetch(`${BASE}/api/skills/code-review/export`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (res.headers.get('content-type') !== 'application/zip') throw new Error('it did not come back as a zip');
+    if (bytes.readUInt32LE(0) !== 0x04034b50) throw new Error('what came back is not a zip');
+    return `${bytes.length} bytes, ${report.errors.length} thing(s) a scan would refuse`;
+  });
+
   await check('skills can be switched off and on', async () => {
     await api('/api/skills/code-review/enabled', { method: 'POST', body: JSON.stringify({ enabled: false }) });
     let list = await api('/api/skills');

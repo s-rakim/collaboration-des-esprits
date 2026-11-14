@@ -151,6 +151,14 @@ export function createSkills(db, { store = null } = {}) {
       return r ? view(r, filesOf(r.name)) : null;
     },
 
+    /** The text of the files a skill brought with it, by path — without counting as a use. */
+    texts(name) {
+      return new Map(
+        db.prepare("SELECT path, text FROM skill_files WHERE skill = ? AND text != ''").all(String(name))
+          .map((f) => [f.path, f.text]),
+      );
+    },
+
     /** Read one for use, verbatim, and record that it was used. */
     use(name, { by = 'unknown' } = {}) {
       const s = this.get(name);

@@ -383,6 +383,34 @@ What it will not do is guess. A scanned PDF has no text in it, and the room is
 told exactly that rather than handed whatever punctuation survived. Anything in
 a format we cannot read is kept and linked, and labelled as such.
 
+## Taking skills somewhere else
+
+A skill written here is worth having in other agents, and the places that
+distribute them all take the same thing: a folder with a `SKILL.md`, zipped.
+
+**Export** on a skill's tile downloads exactly that. It is checked on the way
+out the way a marketplace's scan checks it on the way in — structure, file
+types, dangerous commands, secrets, environment harvesting, obfuscation,
+instructions aimed at the reader's own instructions — and says what would be
+refused before you find out from a review queue.
+
+For a folder of skills kept as files:
+
+```bash
+npm run skills:check   # what would be refused, and why
+npm run skills:build   # one zip per skill, plus a pack, in dist/skills/
+```
+
+`dist/skills/listing.json` holds what an upload form asks for — name, summary,
+description, tags — so listing one is copying.
+
+Two checks are particular to this room. A skill sold as working anywhere may
+not call a tool only the room has: the charters here say "call `brief()`
+first", and lifted into another agent as they are, that names a tool that is
+not there. And a skill that does drive the room may only name tools the server
+really declares, read from the declarations rather than from a list kept
+beside them.
+
 ## Scheduled
 
 Standing work: a message fired into the room on a repeat, addressed to everyone

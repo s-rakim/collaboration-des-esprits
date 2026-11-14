@@ -249,6 +249,7 @@ function renderSkills() {
       <div class="acts">
         <button class="read">Read</button>
         <button class="toggle">${k.enabled ? 'Switch off' : 'Switch on'}</button>
+        <button class="export" title="Download as a zip a skill marketplace takes">Export</button>
         <button class="danger drop">Remove</button>
       </div>
     </div>`).join('')
@@ -277,6 +278,22 @@ $('#skills').addEventListener('click', async (e) => {
       });
       say(`${name} ${k.enabled ? 'switched off' : 'switched on'}`, 'ok');
       return loadSkills();
+    }
+    if (e.target.closest('.export')) {
+      // Checked the way it will be checked on arrival, before it leaves: being
+      // told here costs a second, and being told by a review queue costs a day.
+      const check = await api(`/api/skills/${encodeURIComponent(name)}/export?check`);
+      if (check.errors.length) {
+        say(`${name} would be refused: ${check.errors.join('; ')}`, 'err');
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = `/api/skills/${encodeURIComponent(name)}/export`;
+      link.download = `${name}.zip`;
+      link.click();
+      const notes = [...check.warnings, ...check.leftOut.map((f) => `${f} was left out — not text`)];
+      say(`${name}.zip downloaded${notes.length ? ` · ${notes.join('; ')}` : ' — it would pass a marketplace scan'}`, 'ok');
+      return;
     }
     if (e.target.closest('.drop')) {
       if (!confirm(`Remove the skill "${name}"? The agents will stop being told about it.`)) return;

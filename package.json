@@ -21,7 +21,9 @@
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
     "check:presets": "node --disable-warning=ExperimentalWarning scripts/check-presets.mjs",
     "check:pages": "node --disable-warning=ExperimentalWarning scripts/check-pages.mjs",
-    "confirm": "node --disable-warning=ExperimentalWarning scripts/confirm.mjs"
+    "confirm": "node --disable-warning=ExperimentalWarning scripts/confirm.mjs",
+    "skills:check": "node --disable-warning=ExperimentalWarning scripts/build-skills.mjs --check",
+    "skills:build": "node --disable-warning=ExperimentalWarning scripts/build-skills.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

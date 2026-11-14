@@ -15,6 +15,7 @@ import { createPlugins, PLUGIN_PRESETS, BUILT_IN } from '../plugins.js';
 import { createWebBridge } from '../web.js';
 import { readDocument, READABLE } from '../documents.js';
 import { createSkills } from '../skills.js';
+import { exportSkill } from '../skillpack.js';
 import { probe as probeEndpoint, tryKey } from '../probe.js';
 import { detectShape } from '../participants/anthropic.js';
 import { createRouters } from '../routers.js';
@@ -501,6 +502,27 @@ app.post('/api/skills/upload', express.raw({ type: '*/*', limit: '10mb' }), (req
 app.post('/api/skills/:name/enabled', (req, res) =>
   send(res, () => skills.setEnabled(req.params.name, req.body?.enabled !== false)),
 );
+
+/**
+ * A skill from this room, as the zip a marketplace takes.
+ *
+ * It is checked on the way out the way it will be checked on arrival, and the
+ * findings travel with it: being told here costs a second, and being told by a
+ * review queue costs a day.
+ */
+app.get('/api/skills/:name/export', (req, res) => {
+  const skill = skills.get(req.params.name);
+  if (!skill) return res.status(404).json({ error: `no skill named "${req.params.name}"` });
+  const texts = skills.texts(skill.name);
+  const out = exportSkill(skill, { fileText: (path) => texts.get(path) ?? '' });
+  if (req.query.check !== undefined) {
+    return res.json({ name: skill.name, ...out.report, leftOut: out.leftOut, bytes: out.archive.length });
+  }
+  res.set({
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="${out.filename}"`,
+  }).send(out.archive);
+});
 
 app.delete('/api/skills/:name', (req, res) => send(res, () => ({ removed: skills.remove(req.params.name) })));
 
