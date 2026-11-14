@@ -469,3 +469,106 @@ r = client.chat.completions.create(model="grok-4")`);
   assert.equal(shape.model, 'grok-4');
   assert.equal(shape.apiKey, '', 'an env lookup is not a key');
 });
+
+test('a reply length the model will not allow is brought down to one it will', async () => {
+  // A seat asks for a long reply by default. A model that allows less says so,
+  // and that used to be the end of it: every turn failed with the same
+  // sentence, which reads as "the agents do not answer".
+  const { chatAdapter, smallerLimit } = await import('../src/participants/chat.js');
+  const http = await import('node:http');
+
+  assert.equal(smallerLimit("This model's maximum context length is 32768 tokens. However, you requested 64200 tokens (200 in the messages, 64000 in the completion).", 64000), 32768 - 200 - 64);
+  assert.equal(smallerLimit('max_tokens must be less than or equal to 4096', 64000), 4096);
+  assert.equal(smallerLimit('max_tokens: 64000 > 8192', 64000), 8192);
+  assert.equal(smallerLimit('max_tokens is too large for this model', 64000), 4096);
+  // Not about size, so not this function's to answer.
+  assert.equal(smallerLimit("Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead.", 64000), null);
+  assert.equal(smallerLimit('The model `nope` does not exist', 64000), null);
+  assert.equal(smallerLimit('max_tokens must be less than or equal to 4096', 2048), null, 'already under it — the complaint is about something else');
+
+  const bodies = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    bodies.push(body);
+    if (body.max_tokens > 4096) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: { message: `max_tokens must be less than or equal to 4096, got ${body.max_tokens}` } }));
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const adapter = chatAdapter({ apiKey: 'k', model: 'm', maxTokens: 64000, baseURL: `http://127.0.0.1:${server.address().port}/v1`, maxRetries: 0 });
+
+  const step = await adapter.startTurn({ system: 'x', tools: [] }).send('hi');
+  assert.equal(step.text, 'ok');
+  assert.deepEqual(bodies.map((b) => b.max_tokens), [64000, 4096]);
+  // It still means max_tokens: a complaint about size is not a complaint about spelling.
+  assert.equal(bodies[1].max_completion_tokens, undefined);
+
+  bodies.length = 0;
+  await adapter.startTurn({ system: 'x', tools: [] }).send('again');
+  assert.deepEqual(bodies.map((b) => b.max_tokens), [4096], 'and it does not have to be told twice');
+  server.close();
+});
+
+test('a chat key becomes an agent in the chat, once, under the name it was given', () => {
+  const db = openDb(':memory:');
+  const connections = createConnections(db);
+  const seats = createSeats(db, connections);
+  seats.seedIfEmpty();                       // a new room: architect and critic, waiting for a model
+
+  connections.save({ name: 'stdenis', kind: 'chat', baseURL: 'https://x/v1', model: 'vendor/one', apiKey: 'nvapi-NOT-A-REAL-KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM' });
+  db.prepare('UPDATE connections SET created_at = ? WHERE name = ?').run('2026-01-01T00:00:00Z', 'stdenis');
+  connections.save({ name: 'st etienne', kind: 'chat', baseURL: 'https://x/v1', model: 'vendor/two', apiKey: 'nvapi-EXAMPLE-ONLY_ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcb' });
+  connections.save({ name: 'st-malo', kind: 'image', baseURL: 'https://y/v1' });          // not for chat
+  connections.save({ name: 'no-key-yet', kind: 'chat', baseURL: 'https://z/v1' });         // nothing to sit on yet
+
+  const first = seats.follow([]);
+  assert.deepEqual(first.made, ['stdenis', 'st-etienne'], 'a name with a space becomes one that can follow an @');
+  // The roles a new room starts with pass to the first keys, so two keys still disagree.
+  assert.deepEqual(seats.all().map((s) => [s.name, s.role, s.connection, s.enabled, s.ready]).sort(), [
+    ['st-etienne', 'critic', 'st etienne', true, true],
+    ['stdenis', 'architect', 'stdenis', true, true],
+  ]);
+  assert.deepEqual(seats.enabled().map((s) => s.name).sort(), ['st-etienne', 'stdenis']);
+
+  // Asked again, nothing happens — and a seat somebody removed stays removed.
+  seats.remove('stdenis');
+  const again = seats.follow(first.done);
+  assert.deepEqual(again.made, []);
+  assert.equal(seats.get('stdenis'), null);
+
+  // The key that had not arrived yet gets its seat when it does.
+  connections.save({ name: 'no-key-yet', kind: 'chat', baseURL: 'https://z/v1', apiKey: 'sk-proj-abc123DEF456ghi789JKL012mno345PQR678stu901VWX234yz' });
+  assert.deepEqual(seats.follow(again.done).made, ['no-key-yet']);
+  assert.equal(seats.get('no-key-yet').role, 'generalist');
+
+  // A connection somebody already seated by hand is left alone.
+  connections.save({ name: 'manual', kind: 'chat', baseURL: 'https://m/v1', apiKey: 'sk-proj-abc123DEF456ghi789JKL012mno345PQR678stu901VWX234yz' });
+  seats.save({ name: 'kestrel', connection: 'manual', role: 'reviewer' });
+  assert.deepEqual(seats.follow([]).made.includes('manual'), false);
+});
+
+test('starter seats an older version parked on an empty connection are taken over too', () => {
+  const db = openDb(':memory:');
+  const connections = createConnections(db);
+  const seats = createSeats(db, connections);
+  // What a restart used to leave behind: a keyless "openai" row nobody made,
+  // with the two unconfigured starter seats attached to it.
+  connections.save({ name: 'openai', kind: 'chat' });
+  seats.save({ name: 'architect', role: 'architect', connection: 'openai', enabled: false });
+  seats.save({ name: 'critic', role: 'critic', connection: 'openai', enabled: false });
+  connections.save({ name: 'stdenis', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'sk-proj-abc123DEF456ghi789JKL012mno345PQR678stu901VWX234yz' });
+
+  assert.deepEqual(seats.follow([]).made, ['stdenis']);
+  assert.deepEqual(seats.all().map((s) => [s.name, s.role]), [['critic', 'critic'], ['stdenis', 'architect']]);
+  assert.ok(connections.get('openai'), 'still in use by the other starter seat');
+
+  connections.save({ name: 'second', kind: 'chat', baseURL: 'https://x/v1', model: 'm', apiKey: 'sk-proj-abc123DEF456ghi789JKL012mno345PQR678stu901VWX234yz' });
+  seats.follow(['stdenis']);
+  assert.deepEqual(seats.all().map((s) => [s.name, s.role]).sort(), [['second', 'critic'], ['stdenis', 'architect']]);
+  assert.equal(connections.get('openai'), null, 'and the empty connection goes with the last of them');
+});

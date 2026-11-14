@@ -356,3 +356,21 @@ test('a receipt marks what reached an agent, and never its own words', () => {
   assert.deepEqual(first.reactions, [{ emoji: '✓', by: ['ada'] }]);
   assert.equal(second.reactions, undefined);
 });
+
+test('a room with nobody able to answer says so, and why, instead of sitting silent', async () => {
+  const r = room({ names: [] });
+  r.seats.save({ name: 'architect', role: 'architect', enabled: false });      // a seat, never given a key
+  await r.say('hello');
+  const said = r.lines().find((l) => l.startsWith('esprits: Nobody can answer yet'));
+  assert.match(said, /architect is not on a connection/);
+  assert.match(said, /setup page/);
+  // Said once, not under every message.
+  await r.say('anyone?');
+  assert.equal(r.lines().filter((l) => /Nobody can answer yet/.test(l)).length, 1);
+});
+
+test('a room with no seats at all says how to get one', async () => {
+  const r = room({ names: [] });
+  await r.say('hello');
+  assert.ok(r.lines().some((l) => /No agent is in this chat yet\. Add a key on the setup page/.test(l)));
+});

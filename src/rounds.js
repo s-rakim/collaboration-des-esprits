@@ -335,8 +335,28 @@ export function createRounds({
     return [...names].sort((a, b) => String(spoke.get(a) ?? '').localeCompare(String(spoke.get(b) ?? '')) || names.indexOf(a) - names.indexOf(b));
   }
 
+  /** Why nobody can answer, in the words of somebody who can fix it. */
+  function whyNobody() {
+    const all = seats.all();
+    if (!all.length) return 'No agent is in this chat yet. Add a key on the setup page — each chat key becomes an agent here.';
+    const reasons = all.map((s) => (!s.connection ? `${s.name} is not on a connection`
+      : s.connectionMissing ? `${s.name}'s connection is gone`
+      : !s.ready ? `${s.name}'s connection has no key`
+      : !s.enabled ? `${s.name} is switched off`
+      : !seats.resolve(s.name)?.model ? `${s.name} has no model set`
+      : `${s.name} is still starting`));
+    return `Nobody can answer yet: ${reasons.join('; ')}. Fix that on the setup page.`;
+  }
+
+  let saidNobody = 0;
+
   async function everyone({ idea, key, trigger, message, except = [] }) {
     let names = roster().filter((n) => !except.includes(n));
+    if (!names.length && !except.length && (!saidNobody || clock() - saidNobody > 60_000)) {
+      // A room with no one in it must not look like a room that is ignoring you.
+      saidNobody = clock();
+      notice(idea, whyNobody());
+    }
     if (mode() === 'coordinator') names = await coordinatedOrder(message ?? trigger, names);
     for (const seat of names) enqueue({ seat, idea, key, trigger });
     return names;

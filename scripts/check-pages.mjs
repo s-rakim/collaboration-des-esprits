@@ -355,18 +355,26 @@ try {
       }
     }
 
-    // The note under the seats has to say what is stopping them.
-    const seatNote = (await page.textContent('#seatNote')).trim();
-    if (!/no connection yet/.test(seatNote)) note('setup', `the seat note explains nothing: "${seatNote}"`);
-
-    // Choosing a connection puts that seat in the chat, in one action.
-    await page.selectOption('.seat:first-child .sc', 'test provider');
-    await page.waitForTimeout(1500);
+    // The keys typed above were only ever saved as connections. Each one has
+    // to have put an agent in the chat by itself: finding the second half of
+    // this page and attaching a seat by hand was the step people never took,
+    // and a room with working keys and nobody in it is what they got.
+    await page.reload({ waitUntil: 'networkidle' });
     const seats = await page.evaluate(async () => (await (await fetch('/api/seats')).json()).seats);
+    const keyed = await page.evaluate(async () =>
+      (await (await fetch('/api/connections')).json()).connections.filter((c) => c.kind === 'chat' && c.keySet).map((c) => c.name));
+    for (const name of keyed) {
+      const on = seats.find((x) => x.connection === name);
+      if (!on) note('setup', `the key "${name}" was saved but nothing in the chat is using it`);
+      else if (!on.running) note('setup', `${on.name} has a seat on "${name}" but is not in the chat`);
+    }
+    if (seats.some((x) => !x.connection)) note('setup', 'a seat with no connection is still listed after keys were added');
     const first = seats[0];
-    if (!first.connection) note('setup', 'picking a connection did not stick');
-    if (!first.enabled) note('setup', 'picking a connection did not put the seat in the chat');
-    if (!first.running) note('setup', 'the seat did not start');
+    if (!first?.running) note('setup', 'the first seat did not start');
+
+    // And the note under the seats says so in words.
+    const seatNote = (await page.textContent('#seatNote')).trim();
+    if (!/^[1-9]\d* in the chat/.test(seatNote)) note('setup', `the seat note does not say who is in the chat: "${seatNote}"`);
 
     // And the switch can take it back out again.
     await page.uncheck('.seat:first-child .sx');
@@ -380,15 +388,18 @@ try {
 
   // The seat that is now in the chat must actually answer.
   {
+    const roster = await (await fetch(`${BASE}/api/seats`)).json();
+    const addressed = roster.seats.find((x) => x.running)?.name ?? 'nobody';
     await fetch(`${BASE}/api/post`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ as: 'rakim', body: '@architect are you there?' }),
+      // Typed in capitals, as people do: the name still has to reach its agent.
+      body: JSON.stringify({ as: 'rakim', body: `@${addressed.toUpperCase()} are you there?` }),
     });
     let replied = false;
     for (let i = 0; i < 40 && !replied; i++) {
       await new Promise((r) => setTimeout(r, 500));
       const feed = await (await fetch(`${BASE}/api/feed?since=0`)).json();
-      replied = feed.messages.some((m) => m.author === 'architect');
+      replied = feed.messages.some((m) => m.author === addressed);
     }
     if (!replied) note('room', 'a configured model never answered a message addressed to it');
   }

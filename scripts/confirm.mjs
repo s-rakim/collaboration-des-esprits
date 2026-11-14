@@ -296,6 +296,17 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
 
   // --------------------------------------------------------- models in the room
 
+  await check('a chat key becomes an agent in the chat without being seated by hand', async () => {
+    // The keys above were only ever saved as connections. That used to leave a
+    // room with working keys and nobody in it.
+    const roster = await api('/api/seats');
+    const seat = roster.seats.find((s) => s.name === 'provider');
+    if (!seat) throw new Error(`no seat for the "provider" key; seats: ${roster.seats.map((s) => s.name).join(', ') || 'none'}`);
+    if (!seat.running) throw new Error('it has a seat but is not running');
+    if (roster.seats.some((s) => !s.connection)) throw new Error('a seat with no connection is still listed');
+    return `${roster.seats.filter((s) => s.running).map((s) => s.name).join(', ')} — named after their keys`;
+  });
+
   await check('a model takes a seat and answers when addressed', async () => {
     await api('/api/seats', { method: 'POST', body: JSON.stringify({ name: 'kestrel', connection: 'provider', role: 'architect', enabled: true }) });
     await api('/api/post', { method: 'POST', body: JSON.stringify({ as: 'rakim', body: '@kestrel what database should the importer use?' }) });
@@ -331,21 +342,25 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
     await api('/api/connections', { method: 'POST', body: JSON.stringify({ name: 'second', kind: 'chat', baseURL: PROVIDER, model: 'vendor/small', apiKey: 'sk-not-a-real-key-2' }) });
     await api('/api/seats', { method: 'POST', body: JSON.stringify({ name: 'wren', connection: 'second', role: 'critic', enabled: true }) });
     const asked = await api('/api/post', { method: 'POST', body: JSON.stringify({ as: 'rakim', body: 'what should we do first?' }) });
-    const answers = await until('both to answer', async () => {
+    const expected = (await api('/api/rounds')).speaking;
+    const answers = await until('everyone to answer', async () => {
       const feed = await api(`/api/feed?since=${asked.id}`);
-      const said = feed.messages.filter((m) => ['kestrel', 'wren'].includes(m.author));
-      return said.length >= 2 ? said : null;
-    }, 30000);
-    const order = answers.map((m) => m.author).join(' → ');
-    if (order !== 'kestrel → wren') throw new Error(`they answered ${order}`);
+      const said = feed.messages.filter((m) => expected.includes(m.author));
+      return said.length >= expected.length ? said : null;
+    }, 60000);
+    const order = answers.map((m) => m.author);
+    if (order.join() !== expected.join()) throw new Error(`they answered ${order.join(' → ')}, not ${expected.join(' → ')}`);
+    // The first key added speaks first; the last one added, last.
+    if (order[0] !== 'provider' || order.at(-1) !== 'wren') throw new Error(`the order is ${order.join(' → ')}`);
     const seen = (await api('/api/feed?since=0')).messages.find((m) => m.id === asked.id).reactions?.find((r) => r.emoji === '✓')?.by ?? [];
-    if (!seen.includes('kestrel') || !seen.includes('wren')) throw new Error(`receipts: ${seen.join(', ') || 'none'}`);
-    return `${order}; read by ${seen.join(', ')}`;
+    const unread = expected.filter((n) => !seen.includes(n));
+    if (unread.length) throw new Error(`no receipt from ${unread.join(', ')}`);
+    return `${order.join(' → ')}; all of them left a receipt`;
   });
 
   await check('the order can be set by hand, and the coordinator can be an agent', async () => {
     const mine = await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'custom', order: ['wren', 'kestrel'] }) });
-    if (mine.speaking.join(',') !== 'wren,kestrel') throw new Error(`the order is ${mine.speaking.join(', ')}`);
+    if (mine.speaking.slice(0, 2).join(',') !== 'wren,kestrel') throw new Error(`the order is ${mine.speaking.join(', ')}`);
     const picked = await api('/api/coordinator', { method: 'POST', body: JSON.stringify({ name: 'wren' }) });
     if (picked.name !== 'wren' || picked.automation) throw new Error(JSON.stringify(picked));
     await api('/api/coordinator', { method: 'POST', body: JSON.stringify({ name: '' }) });

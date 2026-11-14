@@ -23,6 +23,35 @@ import { messagesAdapter } from './messages.js';
  */
 const TURN_TIMEOUT_MS = 180_000;
 
+/**
+ * How many tokens an endpoint will take, read from its refusal.
+ *
+ * A seat asks for a generous reply length by default, and plenty of models
+ * allow far less. They say so — "maximum context length is 32768 tokens,
+ * however you requested 64200 (200 in the messages, 64000 in the completion)",
+ * "max_tokens must be less than or equal to 4096" — and what they say is the
+ * answer. Handing that sentence to a person, to go and type the number into a
+ * settings page, is making them do arithmetic the error already did.
+ *
+ * Returns a number that fits, or null when the message is about something else.
+ */
+export function smallerLimit(message, asked) {
+  const text = String(message ?? '');
+  if (!/token/i.test(text)) return null;
+
+  const window = text.match(/maximum context length is (\d+)/i) ?? text.match(/context (?:window|length) of (\d+)/i);
+  if (window) {
+    const used = text.match(/(\d+) in the messages/i) ?? text.match(/(\d+) (?:prompt|input) tokens/i);
+    const room = Number(window[1]) - (used ? Number(used[1]) : Math.ceil(Number(window[1]) / 2)) - 64;
+    if (room >= 256 && room < asked) return room;
+  }
+  const cap = text.match(/(?:at most|less than or equal to|<=|no (?:more|greater) than|maximum (?:value )?(?:is|of)|up to|limit (?:is|of)|>)\s*`?(\d{3,7})\b/i);
+  if (cap && Number(cap[1]) < asked) return Number(cap[1]);
+  // It objected to the size without saying what would fit.
+  if (/too large|too many|exceed|greater than|out of range|must be (?:less|at most|<=)/i.test(text) && asked > 4096) return 4096;
+  return null;
+}
+
 export function chatAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
   timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam, shape,
@@ -50,6 +79,8 @@ export function chatAdapter({
    * so.
    */
   let lengthKey = tokenParam || 'max_tokens';
+  /** The reply length asked for. Starts as configured; comes down if the endpoint says it must. */
+  let cap = maxTokens;
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
@@ -79,7 +110,7 @@ export function chatAdapter({
 
       const body = () => ({
         model,
-        [lengthKey]: maxTokens,
+        [lengthKey]: cap,
         messages,
         // An empty tools array alongside tool_choice:'auto' asks some servers
         // to choose from nothing, which they are entitled to find confusing.
@@ -99,10 +130,15 @@ export function chatAdapter({
             // The one case worth retrying automatically: the server naming the
             // length parameter it wanted. It has told us the answer, so asking
             // a person to go and find it would be a strange thing to do.
-            const named = first?.status === 400
-              && /max_completion_tokens|max_tokens/i.test(first.message ?? '');
-            if (!named) throw first;
-            lengthKey = lengthKey === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+            if (first?.status !== 400 && first?.status !== 422) throw first;
+            // Asked for more than the model allows: it has said how much it
+            // does allow, so ask for that. Checked before the spelling,
+            // because a complaint about size names the parameter too.
+            const fits = smallerLimit(first.message, cap);
+            if (fits) cap = fits;
+            else if (/max_completion_tokens|max_tokens/i.test(first.message ?? '')) {
+              lengthKey = lengthKey === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+            } else throw first;
             response = await client.chat.completions.create(body(), { signal: ctl.signal });
           }
         } catch (err) {

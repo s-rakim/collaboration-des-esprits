@@ -40,6 +40,10 @@ function migrateSeatsToConnections(db) {
 
   const ts = new Date().toISOString();
   for (const seat of orphans) {
+    // A seat that never had an endpoint or a key has nothing to lift. Inventing
+    // a connection for it leaves a keyless row on the setup page that nobody
+    // made, attached to a seat that still cannot speak.
+    if (!seat.provider && !seat.base_url && !seat.api_key) continue;
     // One connection per distinct provider, reusing it across seats that shared it.
     const name = seat.provider || 'openai';
     const existing = db.prepare('SELECT name FROM connections WHERE name = ?').get(name);

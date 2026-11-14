@@ -1098,7 +1098,7 @@ app.get('/api/connections', (_req, res) =>
 
 app.post('/api/connections', (req, res) =>
   send(res, () => {
-    const saved = connections.save(req.body ?? {});
+    const saved = saveConnection(req.body ?? {});
     // A key added here may be exactly what an idle seat was waiting for.
     syncSeats();
     return saved;
@@ -1144,7 +1144,7 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   // fails for the same reason, and now there is a list to pick from.
   const keepsModel = !conn.model || found.models.includes(conn.model);
   if (found.changed || !keepsModel) {
-    connections.save({
+    saveConnection({
       name: conn.name,
       kind: conn.kind,
       baseURL: found.baseURL,
@@ -1162,7 +1162,7 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   // cost one request and is called far more often than this.
   const shape = await detectShape(found.baseURL, { apiKey: conn.apiKey });
   if (shape && shape !== conn.extra?.shape) {
-    connections.save({
+    saveConnection({
       name: conn.name, kind: conn.kind, baseURL: found.baseURL,
       model: keepsModel ? conn.model : '',
       extra: { ...(conn.extra ?? {}), shape },
@@ -1187,7 +1187,7 @@ app.post('/api/connections/:name/probe', async (req, res) => {
   // A model proven to work is better than an empty box, so long as nobody had
   // picked one — the list is still there to change it.
   if (usable.ok && !chosen && usable.model) {
-    connections.save({ name: conn.name, kind: conn.kind, baseURL: found.baseURL, model: usable.model });
+    saveConnection({ name: conn.name, kind: conn.kind, baseURL: found.baseURL, model: usable.model });
   }
 
   res.json({ ...found, clearedModel: keepsModel ? null : conn.model, key: usable });
@@ -1249,7 +1249,7 @@ app.post('/api/routers/:id/use', async (req, res) => {
   if (!model) model = found.models[0] ?? '';
 
   const name = req.body?.name?.trim() || req.params.id;
-  connections.save({
+  saveConnection({
     name, kind: 'chat', baseURL: found.baseURL, model, apiKey: '',
     extra: { shape },
   });
@@ -1279,7 +1279,7 @@ app.post('/api/connections/from-snippet', (req, res) => {
   if (!name) return res.status(400).json({ ok: false, error: 'give the connection a name' });
 
   const existing = connections.resolve(name);
-  const saved = connections.save({
+  const saved = saveConnection({
     name,
     kind: parsed.kind,
     baseURL: parsed.baseURL,
@@ -1364,7 +1364,7 @@ app.post('/api/connections/from-mcc', async (req, res) => {
       made.push({ ...row, skipped: 'a connection of that name already exists' });
       continue;
     }
-    connections.save({ name: row.name, kind: row.kind, baseURL: found.baseURL, model: row.model, apiKey: '' });
+    saveConnection({ name: row.name, kind: row.kind, baseURL: found.baseURL, model: row.model, apiKey: '' });
     made.push({ ...row, created: true });
   }
 
@@ -1444,7 +1444,7 @@ app.post('/api/connections/:name/test', async (req, res) => {
     // the key we just proved.
     baseURL = found.baseURL;
     chose = true;
-    connections.save({ name: conn.name, kind: conn.kind, baseURL, model });
+    saveConnection({ name: conn.name, kind: conn.kind, baseURL, model });
   }
   if (!model) return res.status(400).json({ ok: false, error: 'set a model on this connection first' });
 
@@ -1986,7 +1986,27 @@ async function makeMedia(kind, prompt, by, idea = null) {
   return url;
 }
 
+/**
+ * Save a connection, and let the chat follow.
+ *
+ * Every way a key gets in — typed into a row, pasted as a provider's example,
+ * picked up from a router — comes through here, so none of them can save a key
+ * that then sits there with nobody using it.
+ */
+function saveConnection(spec) {
+  const saved = connections.save(spec);
+  try { syncSeats(); } catch (err) { process.stderr.write(`seats: ${err.message}\n`); }
+  return saved;
+}
+
 function syncSeats() {
+  // A chat key with nobody sitting on it gets a seat, once.
+  let handled = [];
+  try { handled = JSON.parse(config.get('auto_seated') || '[]'); } catch { /* start again */ }
+  const followed = seats.follow(Array.isArray(handled) ? handled : []);
+  if (followed.done.length !== handled.length) config.set('auto_seated', JSON.stringify(followed.done));
+  for (const name of followed.made) process.stdout.write(`${name}: given a seat in the chat, on the key of the same name\n`);
+
   const wanted = new Map(seats.enabled().map((s) => [s.name, s]));
 
   for (const [name, running] of models) {

@@ -315,6 +315,15 @@ is worse than a box that says it needs you.
 
 ## The models in your chat
 
+**A chat key is an agent.** Save a connection for chat with a key on it and it
+takes a seat by itself, under the connection's name — that is the name you type
+after an `@`. The first two take the roles a new room starts with (architect,
+then critic); the rest are generalists until you change them. It happens once
+per connection, so a seat you remove stays removed.
+
+If nobody can answer, the room says so in the chat, and why — no key, switched
+off, no model — rather than leaving your message hanging.
+
 Each seat points at a chat connection and takes **any model string that endpoint
 accepts** — the model box is free text, so a model released tomorrow works
 today. Leave it blank to use the connection's default.

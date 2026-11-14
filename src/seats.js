@@ -109,6 +109,55 @@ export function createSeats(db, connections) {
       return db.prepare('DELETE FROM participants WHERE name = ?').run(String(name)).changes > 0;
     },
 
+    /**
+     * Give every chat key a seat.
+     *
+     * Adding a key and adding an agent used to be two steps on two parts of a
+     * long page, and the second was easy to never find: the keys saved, the
+     * tests passed, and the room stayed silent because nothing was sitting on
+     * them. A key somebody has added for chat is a model they want in the
+     * chat, so it gets a seat, named after the connection — the name they
+     * chose, and the one they will type after an @.
+     *
+     * Once per connection: `done` is the list of those already handled, so a
+     * seat somebody then removes stays removed.
+     */
+    follow(done = []) {
+      const handled = new Set(done);
+      const made = [];
+      const chat = db.prepare(`SELECT name FROM connections WHERE kind = 'chat' ORDER BY created_at, name`).all();
+      for (const { name: connection } of chat) {
+        if (handled.has(connection)) continue;
+        if (!connections.get(connection)?.keySet) continue;      // no key yet: come back when there is one
+        handled.add(connection);
+        if (db.prepare('SELECT 1 FROM participants WHERE connection = ?').get(connection)) continue;
+
+        const handle = connection.trim().replace(/[^\w.-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '');
+        if (!handle || this.get(handle)) continue;               // that name is somebody else's seat already
+
+        // The seats a new room starts with are roles waiting for a model. The
+        // first keys take those roles over, so two keys still give a room that
+        // disagrees with itself rather than two generalists.
+        const waiting = STARTER_SEATS
+          .map((x) => db.prepare('SELECT name, role, effort, connection, enabled FROM participants WHERE name = ?').get(x.name))
+          // Waiting means never set up: switched off, and on no connection — or
+          // on one with no key, which is where an older version left them.
+          .find((row) => row && !row.enabled && !(row.connection && connections.get(row.connection)?.keySet));
+        if (waiting) {
+          this.remove(waiting.name);
+          // And the empty connection that came with it, if nothing else uses it.
+          const left = waiting.connection ? connections.get(waiting.connection) : null;
+          if (left && !left.keySet && !left.baseURL && !left.model
+              && !db.prepare('SELECT 1 FROM participants WHERE connection = ?').get(waiting.connection)) {
+            try { connections.remove(waiting.connection); } catch { /* in use after all */ }
+          }
+        }
+        this.save({ name: handle, connection, role: waiting?.role ?? 'generalist', effort: waiting?.effort ?? 'high', enabled: true });
+        made.push(handle);
+      }
+      return { made, done: [...handled] };
+    },
+
     seedIfEmpty() {
       if (db.prepare('SELECT COUNT(*) AS n FROM participants').get().n > 0) return [];
       return STARTER_SEATS.map((s) => this.save({ ...s, enabled: false }));
