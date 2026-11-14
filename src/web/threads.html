@@ -93,7 +93,7 @@
 <main>
   <aside>
     <button id="hand" class="primary" style="width:100%">Hand over an idea…</button>
-    <h2>Project folder</h2>
+    <h2>Where the work happens</h2>
     <div class="folder" id="folder"></div>
     <h2>Builds</h2>
     <div id="builds"></div>
@@ -161,24 +161,39 @@ $('#toolBrowser').addEventListener('click', () => openTool('browser'));
 // ------------------------------------------------------------------- folder
 
 async function renderFolder() {
-  const w = await api('/api/workspace').catch(() => null);
-  if (!w) return;
-  $('#folder').innerHTML = w.ok
-    ? `Threads run their commands here.<code>${esc(w.dir)}</code>
-       <div class="row"><button id="pick">Change</button>
-       <label><input type="checkbox" id="agents" ${w.agentsAllowed ? 'checked' : ''}> agents may use the terminal</label></div>`
-    : `${esc(w.why)}. A thread cannot run a command until one is chosen.
-       <div class="row" style="margin-top:7px"><button id="pick" class="primary">Choose the folder</button></div>`;
-  $('#pick').onclick = async () => {
-    const folder = prompt('The project folder — the full path. Commands start here.', w.dir || '');
-    if (folder === null) return;
-    try { await api('/api/workspace', { method: 'POST', body: JSON.stringify({ folder }) }); say('folder set', 'ok'); }
-    catch (e) { say(e.message, 'err'); }
+  const sb = await api('/api/sandbox').catch(() => null);
+  if (!sb) return;
+  const el = $('#folder');
+  // Rebuilding this under somebody choosing from its menu closes the menu.
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+  const line = sb.preparing ? 'The sandbox is getting ready — the first time, that is a download.'
+    : sb.isolated ? `Threads work in a sandbox: a ${esc(sb.engine)} container that can see this folder and nothing else on the computer.`
+    : sb.unconfined ? '<b style="color:var(--bad)">Not sandboxed.</b> Threads run their commands directly on this computer.'
+    : `<b style="color:var(--bad)">No sandbox.</b> ${esc(sb.why)}. A thread cannot run a command until there is one.`;
+  el.innerHTML = `${line}<code>${esc(sb.dir)}</code>
+    <div class="row">
+      <select id="pick" style="width:auto;font-size:12px;padding:3px 6px" title="The folder inside the sandbox the threads work in">
+        ${sb.folders.map((f) => `<option ${f === sb.folder ? 'selected' : ''}>${esc(f)}</option>`).join('')}
+        <option value="+">new folder…</option>
+      </select>
+      <button id="files">Files &amp; export</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <label><input type="checkbox" id="agents" ${sb.agentsAllowed ? 'checked' : ''}> agents may use the terminal</label>
+    </div>`;
+  $('#pick').onchange = async (e) => {
+    let folder = e.target.value;
+    if (folder === '+') folder = prompt('A name for the new folder in the sandbox — letters, numbers, dashes.', '');
+    if (folder) {
+      try { await api('/api/sandbox', { method: 'POST', body: JSON.stringify({ folder }) }); say(`threads now work in ${folder}`, 'ok'); }
+      catch (x) { say(x.message, 'err'); }
+    }
+    e.target.blur();
     renderFolder();
   };
-  const agents = $('#agents');
-  if (agents) agents.onchange = async () => {
-    await api('/api/workspace', { method: 'POST', body: JSON.stringify({ agentsAllowed: agents.checked }) }).catch((e) => say(e.message, 'err'));
+  $('#files').onclick = () => openTool('files');
+  $('#agents').onchange = async (e) => {
+    await api('/api/workspace', { method: 'POST', body: JSON.stringify({ agentsAllowed: e.target.checked }) }).catch((x) => say(x.message, 'err'));
     renderFolder();
   };
 }
@@ -443,6 +458,7 @@ const wanted = Number(new URLSearchParams(location.search).get('build')) || stat
 if (wanted && state.builds.some((b) => b.id === wanted)) await select(wanted); else renderBuild();
 if (new URLSearchParams(location.search).get('do') === 'handover') $('#hand').click();
 state.timer = setInterval(refresh, 2000);
+setInterval(renderFolder, 5000);
 </script>
 <script type="module" src="/nav.js"></script>
 </body>

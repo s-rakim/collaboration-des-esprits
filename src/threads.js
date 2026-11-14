@@ -529,7 +529,9 @@ export function createThreads({ db, hub, seats, terminal, browser, config = null
       let step = await turn.send([
         `# The product, for context only\n${build.brief}`,
         `# Your thread: ${thread.title}\n${thread.brief}`,
-        folder.ok ? `The project folder is ${folder.dir}.` : 'No project folder has been chosen, so the terminal will refuse commands.',
+        folder.ok
+          ? `You are working in a sandbox. Your commands start in ${folder.dir}, which is the project folder; put everything you make there.`
+          : `The terminal will refuse commands: ${folder.why}.`,
       ].join('\n\n') + notes());
 
       for (let n = 0; n < maxSteps; n++) {

@@ -776,7 +776,7 @@ the brief, and the coordinator takes it from there:
 2. It gives each one a **necessity** (must / should / could) and an
    **importance** (1–5), and from those a seat and an effort. The necessary and
    important run first, think hardest, and get first pick of the models.
-3. The threads run in parallel, each with the terminal and the browser.
+3. The threads run in parallel, in the sandbox, each with its terminal and the browser.
 4. It reports where the product stands, including what did not get done.
 
 Everything it allocated is a first answer. On the Threads page each thread's
@@ -790,22 +790,45 @@ is a list, otherwise one thread — and its report is what each thread said,
 unedited, with the failures named. The threads themselves are always worked by
 models, so at least one seat needs a key.
 
-## The terminal and the browser
+## The sandbox
 
-Two things you share with the agents, opened from the rail on every page — the
-chat included — or with `Ctrl` + `` ` ``:
+Everything the room runs, it runs in a sandbox: a container that can see **one
+folder** of your computer and nothing else. Not your home folder, not the rest
+of the disk, and not the room's own database with your keys in it. Agents and
+you work in there; what gets made stays in there until **you** export it.
 
-- **A terminal** that starts in a **project folder** you choose. You and the
-  agents type into the same one, and every command is recorded with who ran it.
-  Agents can be switched off from it with one checkbox.
-- **A Firefox window**, a real one on your screen, on a profile of its own
-  rather than your everyday one. Search in it and the agents can read the
-  results; they search and you watch it happen. Install Firefox and the room
-  finds it; `ESPRITS_FIREFOX` points at one it cannot find.
+It is opened from the rail on every page — the chat included — or with `Ctrl` +
+`` ` ``, and has three parts:
 
-The folder is where commands *start*, not a wall around them: a shell command
-can reach whatever your account can. To confine the agents, run the whole
-server in a container or under a spare account.
+- **Terminal.** The same one for you and the agents, and every command is
+  recorded with who ran it. Commands start in a folder inside the sandbox
+  (`/sandbox/project` to begin with); make more folders by name and switch
+  between them. Agents can be switched off from it with one checkbox.
+- **Browser.** A real Firefox window on your screen, on a profile of its own
+  rather than your everyday one, with anything it downloads landing in the
+  sandbox. Search in it and the agents can read the results; they search and
+  you watch it happen. Install Firefox and the room finds it;
+  `ESPRITS_FIREFOX` points at one it cannot find.
+- **Files & export.** What has been made, readable in place, and the only way
+  out: **download as a zip** (dependencies and `.git` left out unless you ask),
+  or **copy to a folder on this computer** that you name. A copy goes into a
+  new folder and never over an existing one.
+
+**It needs a container engine**: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+or [Podman](https://podman.io), installed and running. The room finds whichever
+is there, starts a container from `node:22-bookworm` (the first time, that is a
+download), and removes it when the room shuts down — the folder and its
+contents stay.
+
+With no engine, the terminal **refuses** and says what to install. It does not
+quietly run things on your machine instead. You can choose to run without a
+sandbox — one click, off by default, and the drawer then says *not sandboxed*
+for as long as it is on — but that is commands running as you, with everything
+that implies.
+
+The browser is separated by its profile and its download folder, not by the
+container: it is a program running on your machine, showing you what the agents
+look at.
 
 ## Tagging one agent
 
@@ -900,7 +923,11 @@ just takes precedence when both are present.
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
 | `ESPRITS_HUMAN` | — | your handle |
 | `ESPRITS_KEY_<NAME>` | — | fallback key for the connection of that name |
-| `ESPRITS_WORKSPACE` | — | the project folder the shared terminal starts in |
+| `ESPRITS_WORKSPACE` | `project` | the folder inside the sandbox where commands start — a name, not a path |
+| `ESPRITS_SANDBOX_IMAGE` | `node:22-bookworm` | the image the sandbox container is made from |
+| `ESPRITS_SANDBOX_NETWORK` | `true` | whether the sandbox can reach the internet |
+| `ESPRITS_SANDBOX_ENGINE` | found automatically | `docker`, `podman`, or `none` |
+| `ESPRITS_SANDBOX_UNCONFINED` | `false` | run commands with no sandbox when there is no engine |
 | `ESPRITS_TERMINAL_AGENTS` | `true` | whether agents may use the terminal |
 | `ESPRITS_FIREFOX` | found automatically | full path to Firefox |
 | `ESPRITS_COORDINATOR` | the automation | the seat that coordinates |
@@ -927,6 +954,12 @@ part nothing covers.
 - The database holds your API keys once you save them, so it is set to `600` and
   should be treated like a credential file. Prefer environment variables if you
   would rather keys never touch it.
+- Commands run in the **sandbox**, a container that is given one folder and
+  nothing else — in particular not this database. With no container engine the
+  terminal refuses rather than running on the machine; running without one is a
+  choice only a person in the room can make, and it is labelled for as long as
+  it is on. The routes that run commands, drive the browser or export files
+  also refuse requests that did not come from the room's own pages.
 
 ## Tests
 

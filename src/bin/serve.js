@@ -23,6 +23,7 @@ import { createTerminal } from '../workspace.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
 import { createRounds } from '../rounds.js';
+import { createSandbox } from '../sandbox.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
@@ -63,8 +64,10 @@ const seats = createSeats(hub.db, connections);
 seats.seedIfEmpty();
 const MEDIA = mediaDir(hub.db.name);
 const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`${m}\n`) });
-const terminal = createTerminal({ db: hub.db, config });
-const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA) });
+/** Where the room's work is done: a container that sees one folder of this machine. */
+const sandbox = createSandbox({ config, dataDir: dirname(MEDIA) });
+const terminal = createTerminal({ db: hub.db, config, sandbox });
+const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA), downloadDir: join(sandbox.root, 'downloads') });
 const threads = createThreads({
   db: hub.db, hub, seats, terminal, browser, config, log: (m) => process.stdout.write(`${m}\n`),
 });
@@ -646,6 +649,63 @@ app.post('/api/workspace', fromOurPages, (req, res) =>
       if (req.body?.agentsAllowed !== undefined) terminal.setAgentsAllowed(Boolean(req.body.agentsAllowed));
     } catch (err) { throw new Invalid(err.message); }
     return { ...terminal.folder(), agentsAllowed: terminal.agentsAllowed() };
+  }));
+
+// ------------------------------------------------------------------- sandbox
+
+/** What the sandbox is right now: which engine, whether it isolates, which folder. */
+app.get('/api/sandbox', (req, res) =>
+  send(res, async () => ({ ...(await sandbox.status({ recheck: req.query.recheck !== undefined })), agentsAllowed: terminal.agentsAllowed() })));
+
+app.post('/api/sandbox', fromOurPages, (req, res) =>
+  send(res, async () => {
+    try {
+      // Running with no isolation is a person's decision about their own
+      // machine, so it takes a person to make it.
+      if (req.body?.unconfined !== undefined) person(req.body?.as);
+      sandbox.configure({ network: req.body?.network, image: req.body?.image, unconfined: req.body?.unconfined });
+      if (req.body?.folder !== undefined) sandbox.setFolder(req.body.folder);
+    } catch (err) { if (err instanceof Invalid) throw err; throw new Invalid(err.message); }
+    return sandbox.status();
+  }));
+
+/** Get the container up — the first time, that is a download. */
+app.post('/api/sandbox/prepare', fromOurPages, (_req, res) =>
+  send(res, async () => {
+    // Not waited for: pulling an image takes minutes, and the status says how it went.
+    sandbox.prepare().catch((err) => process.stderr.write(`sandbox: ${err.message}\n`));
+    return sandbox.status();
+  }));
+
+app.post('/api/sandbox/restart', fromOurPages, (_req, res) =>
+  send(res, async () => { try { return await sandbox.restart(); } catch (err) { throw new Invalid(err.message); } }));
+
+app.get('/api/sandbox/files', (req, res) =>
+  send(res, () => { try { return sandbox.files({ folder: req.query.folder }); } catch (err) { throw new Invalid(err.message); } }));
+
+app.get('/api/sandbox/file', (req, res) =>
+  send(res, () => { try { return sandbox.read({ folder: req.query.folder, path: req.query.path }); } catch (err) { throw new Invalid(err.message); } }));
+
+/** The results, as a zip. */
+app.get('/api/sandbox/export.zip', (req, res) => {
+  try {
+    const out = sandbox.exportZip({ folder: req.query.folder, everything: req.query.all !== undefined });
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${out.name}"`,
+      'Cache-Control': 'no-store',
+    }).send(out.data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** The results, copied to a folder on this computer. Only a person can ask: it is the one way anything leaves. */
+app.post('/api/sandbox/export', fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    try { return sandbox.exportTo({ folder: req.body?.folder, to: req.body?.to }); }
+    catch (err) { throw new Invalid(err.message); }
   }));
 
 app.get('/api/terminal', (req, res) =>
@@ -2013,6 +2073,10 @@ function startScheduler() {
 function startParticipants() {
   syncSeats();
   rounds.start();
+  // Find out now what the sandbox is, so the first page to ask is told rather than kept waiting.
+  sandbox.detect().then((engine) => process.stdout.write(engine
+    ? `sandbox: commands run in a ${engine} container that sees only ${sandbox.root}\n`
+    : 'sandbox: no container engine is running — the terminal will refuse commands until one is, or until you allow it to run without\n'));
   startScheduler();
 
   const token = config.secret('telegram_token');
@@ -2048,6 +2112,8 @@ const shutdown = () => {
   try {
     for (const p of models.values()) p.stop();
     telegram?.stop();
+    browser.stop();
+    sandbox.close();
     hub.close();
   } catch { /* best effort */ }
   process.exit(0);

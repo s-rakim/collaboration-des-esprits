@@ -355,12 +355,15 @@ function render(rail, mode, ideas, me) {
 
     ${m.links.map(item).join('')}
 
-    <div class="head">Shared with the agents</div>
-    <button class="item" data-tool="terminal" title="The terminal you and the agents both use (Ctrl \`)">
+    <div class="head">The sandbox</div>
+    <button class="item" data-tool="terminal" title="The sandbox's terminal — you and the agents both use it (Ctrl \`)">
       ${icon('terminal')}<span class="t">Terminal</span>
     </button>
     <button class="item" data-tool="browser" title="The Firefox window you and the agents both use">
       ${icon('browser')}<span class="t">Browser</span>
+    </button>
+    <button class="item" data-tool="files" title="What has been made in the sandbox, and the way to export it">
+      ${icon('artifacts')}<span class="t">Files &amp; export</span>
     </button>
 
     ${threads(ideas)}

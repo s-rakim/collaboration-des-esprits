@@ -1,23 +1,15 @@
 /**
  * The shared terminal.
  *
- * One folder, chosen by a person, and commands that start in it. The person
- * and the agents type into the same terminal, so everything that runs is
- * written down with who ran it — that record is the only thing that keeps a
- * shared terminal legible afterwards, and the only way to answer "what did it
- * do to my project?" without guessing.
+ * The person and the agents type into the same terminal, so everything that
+ * runs is written down with who ran it — that record is the only thing that
+ * keeps a shared terminal legible afterwards, and the only way to answer "what
+ * did it do?" without guessing.
  *
- * What this is not: a sandbox. A command starts in the folder, and a shell
- * command can go wherever the account running this server can go. The folder
- * says where work happens, not where it is confined. Somebody who wants
- * confinement runs the whole server inside a container or a spare account, and
- * no check written here would be an honest substitute for that.
+ * Where it runs is not this file's decision. Every command is handed to the
+ * sandbox, which runs it in a container that can see one folder and nothing
+ * else of this machine. This file keeps the record and the clock.
  */
-
-import { spawn } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve, parse } from 'node:path';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -41,34 +33,18 @@ const NEVER = [
   { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, why: 'it is a fork bomb' },
 ];
 
-export function createTerminal({ db, config, spawnImpl = spawn }) {
+export function createTerminal({ db, config, sandbox }) {
   const now = () => new Date().toISOString();
   const live = new Map(); // run id -> child
 
-  /** The folder, as stored, and whether it is still there. */
+  /** Where commands start, and whether one can be run at all right now. */
   function folder() {
-    const dir = config.get('workspace');
-    if (!dir) return { dir: '', ok: false, why: 'no project folder has been chosen yet' };
-    if (!existsSync(dir)) return { dir, ok: false, why: `${dir} no longer exists` };
-    return { dir, ok: true };
+    return sandbox.peek();
   }
 
-  /**
-   * Choose the folder.
-   *
-   * It has to exist and be a folder, and it may not be the root or the home
-   * folder: "the project" being everything the account owns is the choice
-   * that turns one mistaken command into a very bad afternoon.
-   */
-  function setFolder(raw) {
-    const typed = String(raw ?? '').trim().replace(/^["']|["']$/g, '');
-    if (!typed) { config.set('workspace', ''); return folder(); }
-    const dir = resolve(typed);
-    if (!existsSync(dir)) throw new Error(`${dir} does not exist`);
-    if (!statSync(dir).isDirectory()) throw new Error(`${dir} is a file, not a folder`);
-    if (dir === parse(dir).root) throw new Error('choose a project folder, not the whole drive');
-    if (dir === resolve(homedir())) throw new Error('choose a project folder inside your home folder, not the home folder itself');
-    config.set('workspace', dir);
+  /** Choose the folder — one inside the sandbox, by name. */
+  function setFolder(name) {
+    sandbox.setFolder(name);
     return folder();
   }
 
@@ -98,8 +74,6 @@ export function createTerminal({ db, config, spawnImpl = spawn }) {
     if (!text) return Promise.reject(new Error('there is no command to run'));
     if (!by) return Promise.reject(new Error('a command needs somebody to have run it'));
 
-    const where = folder();
-    if (!where.ok) return Promise.reject(new Error(`${where.why} — choose one on the Threads page`));
     if (kind !== 'human' && !config.bool('terminal_agents')) {
       return Promise.reject(new Error('agents are not allowed to use the terminal — a person switched that off'));
     }
@@ -108,15 +82,18 @@ export function createTerminal({ db, config, spawnImpl = spawn }) {
     }
 
     const limit = Math.min(Math.max(1000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
+    // Recorded before it starts, with where it is about to run.
     const id = Number(db.prepare(
       `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(text, where.dir, String(by), kind, thread, now()).lastInsertRowid);
+    ).run(text, sandbox.peek().dir, String(by), kind, thread, now()).lastInsertRowid);
 
-    return new Promise((done) => {
+    return new Promise((done, fail) => {
       let out = '';
       let clipped = false;
       let timedOut = false;
+      let timer = null;
+      let settled = false;
       const keep = (chunk) => {
         if (clipped) return;
         out += chunk.toString('utf8');
@@ -125,9 +102,9 @@ export function createTerminal({ db, config, spawnImpl = spawn }) {
           clipped = true;
         }
       };
-
-      let child;
       const finish = (code) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         live.delete(id);
         db.prepare('UPDATE terminal_runs SET exit_code = ?, output = ?, timed_out = ?, finished_at = ? WHERE id = ?')
@@ -135,45 +112,33 @@ export function createTerminal({ db, config, spawnImpl = spawn }) {
         done(view(db.prepare('SELECT * FROM terminal_runs WHERE id = ?').get(id)));
       };
 
-      try {
-        child = spawnImpl(text, {
-          cwd: where.dir, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-          // Its own process group, so stopping it stops what it started too. A
-          // shell is a parent; killing only the shell leaves the build it
-          // launched running and holding the output open, and the command
-          // then never finishes as far as anybody waiting on it can tell.
-          detached: process.platform !== 'win32',
-        });
-      } catch (err) {
-        out = err.message;
-        return finish(-1);
-      }
-      live.set(id, child);
-      child.stdout?.on('data', keep);
-      child.stderr?.on('data', keep);
-      child.on('error', (err) => { keep(Buffer.from(`${err.message}\n`)); finish(-1); });
-      child.on('close', (code, signal) => finish(code ?? (signal ? 137 : -1)));
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        keep(Buffer.from(`\n… stopped after ${Math.round(limit / 1000)}s`));
-        stop(id);
-      }, limit);
+      sandbox.start({ command: text, id }).then((run) => {
+        // Where it really ran: the sandbox may have had to be found first.
+        db.prepare('UPDATE terminal_runs SET cwd = ? WHERE id = ?').run(run.cwd, id);
+        live.set(id, run);
+        run.child.stdout?.on('data', keep);
+        run.child.stderr?.on('data', keep);
+        run.child.on('error', (err) => { keep(Buffer.from(`${err.message}\n`)); finish(-1); });
+        run.child.on('close', (code, signal) => finish(code ?? (signal ? 137 : -1)));
+        timer = setTimeout(() => {
+          timedOut = true;
+          keep(Buffer.from(`\n… stopped after ${Math.round(limit / 1000)}s`));
+          stop(id);
+        }, limit);
+      }).catch((err) => {
+        // It never started — no sandbox, or one that would not come up. Not a
+        // command that failed, so it is refused rather than recorded as a run.
+        db.prepare('DELETE FROM terminal_runs WHERE id = ?').run(id);
+        fail(err);
+      });
     });
   }
 
   /** Stop a running command, and whatever it started. */
   function stop(id) {
-    const child = live.get(Number(id));
-    if (!child) return false;
-    try {
-      // A shell is a parent; killing only it leaves the thing it launched.
-      if (process.platform === 'win32' && child.pid) {
-        spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-      } else if (child.pid) {
-        try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
-      }
-    } catch { /* already gone */ }
+    const run = live.get(Number(id));
+    if (!run) return false;
+    sandbox.kill({ child: run.child, id: Number(id), isolated: run.isolated });
     return true;
   }
 

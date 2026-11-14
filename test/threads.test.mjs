@@ -9,6 +9,7 @@ import { createConfig } from '../src/settings.js';
 import { createConnections } from '../src/connections.js';
 import { createSeats } from '../src/seats.js';
 import { createTerminal } from '../src/workspace.js';
+import { createSandbox } from '../src/sandbox.js';
 import { createThreads, allocate, parsePlan, planByRule, reportByRule } from '../src/threads.js';
 import { BOT } from '../src/rounds.js';
 
@@ -36,9 +37,14 @@ function room({ seatsToMake = ['overseer:coordinator', 'ada:backend', 'bo:fronte
     const [name, role] = s.split(':');
     seats.save({ name, connection: 'c', role });
   }
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'esprits-build-')));
-  const terminal = createTerminal({ db: hub.db, config });
-  terminal.setFolder(dir);
+  // What is tested here is the build, not the container, so the sandbox is the
+  // person's explicit "run without one" — a plain folder that needs no engine.
+  const sandbox = createSandbox({
+    config, dataDir: realpathSync(mkdtempSync(join(tmpdir(), 'esprits-build-'))), env: { ESPRITS_SANDBOX_ENGINE: 'none' },
+  });
+  config.set('sandbox_unconfined', 'true');
+  const terminal = createTerminal({ db: hub.db, config, sandbox });
+  const dir = sandbox.folder().hostDir;
   const idea = hub.dropIdea({ title: 'A landing page', raw: 'One page, a signup form.', by: 'malcolm' });
   hub.refine({ ref: idea.slug, spec: 'A static page with a signup form that posts to /signup.', by: 'malcolm' });
   return { hub, seats, terminal, dir, idea, browser: fakeBrowser() };

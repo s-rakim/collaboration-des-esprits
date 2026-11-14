@@ -19,7 +19,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
 
 const READ_LIMIT = 20_000;
@@ -58,6 +58,8 @@ const READ_PAGE = `JSON.stringify({
 export function createBrowser({
   db,
   dataDir,
+  /** Where anything it downloads is put. In the sandbox, so a download is a result like any other. */
+  downloadDir = null,
   port = Number(process.env.ESPRITS_FIREFOX_PORT ?? 9222),
   locate = locateFirefox,
   spawnImpl = spawn,
@@ -150,6 +152,18 @@ export function createBrowser({
       }
       const profile = join(dataDir, 'firefox-profile');
       mkdirSync(profile, { recursive: true });
+      if (downloadDir) {
+        // Without this a file an agent downloads lands in the person's own
+        // Downloads folder, outside everything the sandbox is for.
+        mkdirSync(downloadDir, { recursive: true });
+        writeFileSync(join(profile, 'user.js'), [
+          'user_pref("browser.download.folderList", 2);',
+          `user_pref("browser.download.dir", ${JSON.stringify(downloadDir)});`,
+          'user_pref("browser.download.useDownloadDir", true);',
+          'user_pref("browser.download.always_ask_before_handling_new_types", false);',
+          '',
+        ].join('\n'));
+      }
       child = spawnImpl(binary, [
         '--remote-debugging-port', String(port),
         '--profile', profile,

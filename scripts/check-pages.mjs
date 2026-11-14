@@ -419,6 +419,12 @@ try {
     await page.click('#shell-rail [data-tool="browser"]');
     await page.waitForTimeout(200);
     if (!(await page.isVisible('#tools #bGo'))) note(path, 'the browser did not open from the rail');
+    // And the way out of the sandbox is next to them: what was made, and exporting it.
+    await page.click('#shell-rail [data-tool="files"]');
+    await page.waitForTimeout(400);
+    if (!(await page.isVisible('#tools #fCopy'))) note(path, 'the files and export tab did not open from the rail');
+    const state = (await page.textContent('#tools #fWhere .state').catch(() => '')) ?? '';
+    if (!/sandboxed|no sandbox|getting ready/.test(state)) note(path, `the drawer does not say whether work is sandboxed (it says "${state}")`);
     await page.close();
   }
 

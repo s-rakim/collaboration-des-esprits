@@ -24,7 +24,19 @@ export const SETTINGS = {
   },
   workspace: {
     env: 'ESPRITS_WORKSPACE', default: '',
-    label: 'Project folder — where the terminal starts',
+    label: 'The folder inside the sandbox where commands start — a name, not a path',
+  },
+  sandbox_image: {
+    env: 'ESPRITS_SANDBOX_IMAGE', default: 'node:22-bookworm',
+    label: 'The image the sandbox container is made from',
+  },
+  sandbox_network: {
+    env: 'ESPRITS_SANDBOX_NETWORK', default: 'true',
+    label: 'The sandbox may reach the network (to install packages)',
+  },
+  sandbox_unconfined: {
+    env: 'ESPRITS_SANDBOX_UNCONFINED', default: 'false',
+    label: 'Run commands with no sandbox when no engine is installed',
   },
   terminal_agents: {
     env: 'ESPRITS_TERMINAL_AGENTS', default: 'true',

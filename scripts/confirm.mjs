@@ -169,6 +169,8 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
     ESPRITS_TELEGRAM_ENABLED: 'true',
     ESPRITS_TELEGRAM_TOKEN: 'confirm-token',
     ESPRITS_PAIR_CODE: 'letmein',
+    // A small image, so a machine with an engine is not made to download a large one to be checked.
+    ESPRITS_SANDBOX_IMAGE: process.env.ESPRITS_TEST_IMAGE ?? 'node:22-bookworm-slim',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -353,14 +355,39 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
 
   // ------------------------------------------------- terminal, and a build
 
-  await check('the shared terminal runs in the folder you chose, under your name', async () => {
-    const proj = join(dataDir, 'project');
-    mkdirSync(proj, { recursive: true });
-    await api('/api/workspace', { method: 'POST', body: JSON.stringify({ folder: proj }) });
-    const run = await api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command: 'echo from the room', as: 'rakim' }) });
-    if (run.exitCode !== 0 || !/from the room/.test(run.output)) throw new Error(JSON.stringify(run));
-    if (!run.cwd.endsWith('project') || run.by !== 'rakim') throw new Error(`ran in ${run.cwd} as ${run.by}`);
-    return `exit 0 in …/project, by ${run.by}`;
+  await check('commands run in a sandbox, or not at all until you say otherwise', async () => {
+    const sb = await api('/api/sandbox?recheck');
+    const run = (command) => api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command, as: 'rakim' }) });
+    if (sb.isolated) {
+      // A real container: the room's own data must not be there from inside.
+      const out = await run(`pwd; ls "${dataDir}" 2>&1 | head -1; echo made > note.txt`);
+      if (out.exitCode !== 0 || !out.output.startsWith('/sandbox/project')) throw new Error(JSON.stringify(out));
+      if (!/No such file or directory/.test(out.output)) throw new Error(`the room's data is visible from inside: ${out.output}`);
+      return `in a ${sb.engine} container; the room's own folder is not there from inside`;
+    }
+    let refused = '';
+    try { await run('echo hi'); } catch (err) { refused = err.message; }
+    if (!/Nothing is run outside a sandbox/.test(refused)) throw new Error(`it ran with no sandbox: ${refused || 'no refusal'}`);
+    await api('/api/sandbox', { method: 'POST', body: JSON.stringify({ unconfined: true, as: 'rakim' }) });
+    const out = await run('echo made > note.txt && echo ok');
+    if (out.exitCode !== 0) throw new Error(JSON.stringify(out));
+    return 'no engine here: refused, then ran once a person allowed it';
+  });
+
+  await check('what was made can be seen and exported, and nothing is written over', async () => {
+    const list = await api('/api/sandbox/files');
+    if (!list.files.some((f) => f.path === 'note.txt')) throw new Error(`files: ${list.files.map((f) => f.path).join(', ') || 'none'}`);
+    const res = await fetch(`${BASE}/api/sandbox/export.zip`);
+    const zipped = Buffer.from(await res.arrayBuffer());
+    if (!res.ok || zipped.readUInt32LE(0) !== 0x04034b50) throw new Error('the export is not a zip');
+    const outside = join(dataDir, 'exported');
+    mkdirSync(outside, { recursive: true });
+    const copied = await api('/api/sandbox/export', { method: 'POST', body: JSON.stringify({ to: outside, as: 'rakim' }) });
+    if (readFileSync(join(copied.to, 'note.txt'), 'utf8').trim() !== 'made') throw new Error('the copy does not hold the work');
+    let again = '';
+    try { await api('/api/sandbox/export', { method: 'POST', body: JSON.stringify({ to: outside, as: 'rakim' }) }); } catch (err) { again = err.message; }
+    if (!/already exists/.test(again)) throw new Error('a second export wrote over the first');
+    return `zip of ${zipped.length} bytes; copied to …/exported/project`;
   });
 
   await check('an approved idea is handed over and built as threads', async () => {
