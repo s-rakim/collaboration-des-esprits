@@ -173,30 +173,140 @@ export async function speak({ conn, text, voice, speed, format, dir }) {
 // -------------------------------------------------------------------- images
 
 /**
+ * Where an image is, in whatever a provider sent back.
+ *
+ * There is no one shape. OpenAI and those who copy it use data[0].b64_json or
+ * data[0].url; NVIDIA's catalogue uses artifacts[0].base64 for most models and
+ * a bare top-level "image" for some; others use images[0] or output[0]. All of
+ * them are a base64 string or a link, so they are looked for by what they are.
+ */
+export function imageFrom(out) {
+  const first = out?.data?.[0] ?? out?.artifacts?.[0] ?? out?.images?.[0] ?? out?.output?.[0] ?? out;
+  const pick = (v) => (typeof v === 'string' && v.length > 0 ? v : null);
+  const found = typeof first === 'string' ? first
+    : pick(first?.b64_json) ?? pick(first?.base64) ?? pick(first?.image) ?? pick(first?.url) ?? pick(first?.image_url)
+      ?? pick(out?.image) ?? pick(out?.url);
+  // A provider that filtered the prompt answers 200 with a reason and no picture.
+  const why = first?.finishReason ?? first?.finish_reason ?? out?.finish_reason ?? out?.finishReason;
+  if (!found || (why && !/^(success|stop)$/i.test(String(why)) && String(found).length < 200)) {
+    return { why: why ? String(why).toLowerCase().replace(/_/g, ' ') : null };
+  }
+  if (/^https?:\/\//i.test(found)) return { url: found };
+  return { bytes: Buffer.from(found.replace(/^data:image\/\w+;base64,/, ''), 'base64') };
+}
+
+/** JPEG, WebP or PNG — told from the bytes, because the providers do not agree and do not always say. */
+const imageExt = (bytes) => (bytes[0] === 0xff && bytes[1] === 0xd8 ? 'jpg'
+  : bytes.subarray(0, 4).toString('latin1') === 'RIFF' ? 'webp' : 'png');
+
+/**
+ * NVIDIA's image models.
+ *
+ * They are not behind /images/generations. Each model has an address of its
+ * own — https://ai.api.nvidia.com/v1/genai/<publisher>/<model> — and takes the
+ * prompt directly. Their chat models live on a different host
+ * (integrate.api.nvidia.com), which is the one a key page shows first, so an
+ * image connection pointed there is sent to the right place rather than
+ * failing with a 404 that explains nothing.
+ */
+const NVIDIA_HOST = /(^|\.)api\.nvidia\.com$/i;
+const NVIDIA_PUBLISHER = [
+  [/^flux/i, 'black-forest-labs'],
+  [/^(stable-|sd)/i, 'stabilityai'],
+];
+
+export function nvidiaImageTargets(conn) {
+  let url;
+  try { url = new URL(conn.baseURL); } catch { return null; }
+  if (!NVIDIA_HOST.test(url.hostname)) return null;
+
+  // The whole address pasted from a model's own page: use it as it is.
+  const pasted = url.pathname.match(/\/genai\/([^/]+\/[^/]+)\/?$/);
+  let model = String(conn.model ?? '').trim().replace(/^\/+|\/+$/g, '');
+  if (pasted) return { urls: [`https://ai.api.nvidia.com/v1/genai/${pasted[1]}`], model: pasted[1] };
+  if (!model) return { urls: [], model: '' };
+  if (!model.includes('/')) {
+    const publisher = NVIDIA_PUBLISHER.find(([re]) => re.test(model))?.[1];
+    if (publisher) model = `${publisher}/${model}`;
+  }
+  // The catalogue lists some models with a dash where the address has a dot
+  // ("flux-3-image-klein" is served at flux.3-image-klein), so both are tried.
+  const dotted = model.replace(/(flux)[-_](\d)(?=[-_.]|$)/i, '$1.$2');
+  const names = [...new Set([model, dotted])];
+  return { urls: names.map((m) => `https://ai.api.nvidia.com/v1/genai/${m}`), model };
+}
+
+async function nvidiaImage({ conn, prompt, size, targets }) {
+  if (!targets.urls.length) throw new Error(`${conn.name} needs a model — for NVIDIA that is the name on the model's page, such as flux.1-schnell`);
+  const [width, height] = String(size ?? '').split('x').map(Number);
+  const sdxl = /stable-diffusion-xl/i.test(targets.model);
+  const body = {
+    // Stable Diffusion XL is the one that still takes its prompt as a list.
+    ...(sdxl ? { text_prompts: [{ text: String(prompt) }] } : { prompt: String(prompt) }),
+    // Only when asked for: the default is 1024 everywhere, and not every model takes a size.
+    ...(width && height && !/stable-diffusion-3/i.test(targets.model) ? { width, height } : {}),
+    ...(conn.extra?.body ?? {}),
+  };
+  let last;
+  for (const url of targets.urls) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: headers(conn, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+      });
+      if (res.ok) return res.json();
+      const text = await res.text().catch(() => '');
+      last = new Error(res.status === 404
+        ? `${conn.name}: NVIDIA has no image model at ${url.split('/genai/')[1]} — use the name from the model's page on build.nvidia.com`
+        : res.status === 401 || res.status === 403
+          ? `${conn.name}: NVIDIA refused the key for ${targets.model} (${res.status}) — the key may not have access to this model`
+          : `${conn.name} returned ${res.status}: ${text.slice(0, 300) || res.statusText}`);
+      if (res.status !== 404) throw last;
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error(`${conn.name} timed out after ${TIMEOUT_MS / 1000}s`);
+      if (err !== last) throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw last;
+}
+
+/**
  * Generate an image. Providers return either base64 or a URL; both are handled,
  * and either way the bytes are stored locally so the room keeps working when a
  * provider's temporary link expires.
  */
 export async function generateImage({ conn, prompt, size, dir }) {
   if (!conn) throw new Error('no image connection is configured');
-  const out = await call(conn, '/images/generations', {
-    body: {
-      model: conn.model || 'gpt-image-1',
-      prompt: String(prompt),
-      n: 1,
-      ...(size ? { size } : {}),
-      ...(conn.extra?.body ?? {}),
-    },
-  });
+  const nvidia = conn.extra?.path ? null : nvidiaImageTargets(conn);
+  const out = nvidia
+    ? await nvidiaImage({ conn, prompt, size, targets: nvidia })
+    : await call(conn, '/images/generations', {
+        body: {
+          model: conn.model || 'gpt-image-1',
+          prompt: String(prompt),
+          n: 1,
+          ...(size ? { size } : {}),
+          ...(conn.extra?.body ?? {}),
+        },
+      });
 
-  const first = out.data?.[0] ?? out;
-  if (first.b64_json) return store(dir, Buffer.from(first.b64_json, 'base64'), 'png');
-  if (first.url) {
-    const res = await fetch(first.url);
+  const image = imageFrom(out);
+  if (image.bytes?.length) return store(dir, image.bytes, imageExt(image.bytes));
+  if (image.url) {
+    const res = await fetch(image.url);
     if (!res.ok) throw new Error(`could not fetch the generated image (${res.status})`);
-    return store(dir, Buffer.from(await res.arrayBuffer()), 'png');
+    const bytes = Buffer.from(await res.arrayBuffer());
+    return store(dir, bytes, imageExt(bytes));
   }
-  throw new Error(`${conn.name} returned no image`);
+  throw new Error(image.why
+    ? `${conn.name} made no image: the provider answered "${image.why}"${/filter/.test(image.why) ? ' — reword the prompt' : ''}`
+    : `${conn.name} returned no image`);
 }
 
 // --------------------------------------------------------------------- video
