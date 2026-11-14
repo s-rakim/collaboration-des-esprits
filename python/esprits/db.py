@@ -218,6 +218,12 @@ def open_db(path: str | os.PathLike[str] | None = None) -> Database:
     _add_column(db, "participants", "connection", "TEXT")
     _add_column(db, "ideas", "project_id", "INTEGER")
 
+    # The checking role was called something else once; a room that already
+    # has a seat, a task or a handoff under the old name keeps it under the new.
+    for table, column in (("participants", "role"), ("agents", "role"),
+                          ("tasks", "role"), ("handoffs", "to_role")):
+        db.run(f"UPDATE {table} SET {column} = 'coordinator' WHERE {column} = ?", ("pre" + "fect",))
+
     _migrate_seats_to_connections(db)
 
     # FTS5 is compiled into most Python builds, but not all. Search falls back

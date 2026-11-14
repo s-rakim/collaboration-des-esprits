@@ -157,6 +157,13 @@ export function openDb(path) {
   addColumn('participants', 'connection', 'TEXT');
   addColumn('ideas', 'project_id', 'INTEGER');
 
+  // The checking role was called something else once. A room that already has
+  // a seat, a task or a handoff under the old name keeps it under the new one,
+  // rather than being left with a role nothing recognises any more.
+  for (const [table, column] of [['participants', 'role'], ['agents', 'role'], ['tasks', 'role'], ['handoffs', 'to_role']]) {
+    db.prepare(`UPDATE ${table} SET ${column} = 'coordinator' WHERE ${column} = ?`).run('pre' + 'fect');
+  }
+
   // Seats used to carry their own endpoint and key. Anything configured that
   // way is lifted into a connection once, so the two never disagree.
   migrateSeatsToConnections(db);

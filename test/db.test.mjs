@@ -141,3 +141,22 @@ test('db.name is the resolved path, which the permission tightening relies on', 
   assert.equal(db.name, file);
   assert.equal(fresh().name, ':memory:');
 });
+
+test('a seat in the role that was renamed keeps its place', () => {
+  // Renaming a role in the code does nothing for a room that already has
+  // someone sitting in it: the row still says the old word, and nothing
+  // recognises it any more.
+  const dir = mkdtempSync(join(tmpdir(), 'esprits-rename-'));
+  const file = join(dir, 'room.sqlite');
+  const old = ['pre', 'fect'].join('');
+  const first = openDb(file);
+  first.prepare(
+    `INSERT INTO participants (name, model, role, effort, max_tokens, enabled, created_at)
+     VALUES ('watcher', 'm', ?, 'high', 1000, 1, 'x')`,
+  ).run(old);
+  first.close();
+
+  const again = openDb(file);
+  assert.equal(again.prepare(`SELECT role FROM participants WHERE name = 'watcher'`).get().role, 'coordinator');
+  again.close();
+});

@@ -171,12 +171,12 @@ function render(d) {
       }).join('')
     : '<p class="empty">No runs yet. Hand a job to the swarm on the <a href="/work">tasks page</a>.</p>';
 
-  // The prefect's panel. An empty one is not "all clear" — it means nobody is
+  // The coordinator's panel. An empty one is not "all clear" — it means nobody is
   // checking, and the card says so rather than showing a reassuring zero.
-  const seated = d.prefect ?? [];
-  const prefect = !seated.length
-    ? `<p class="empty">No prefect is seated, so nothing is being checked. Give a seat the
-       <b>prefect</b> role on the <a href="/setup">setup page</a> and it will verify what the room
+  const seated = d.coordinator ?? [];
+  const coordinator = !seated.length
+    ? `<p class="empty">No coordinator is seated, so nothing is being checked. Give a seat the
+       <b>coordinator</b> role on the <a href="/setup">setup page</a> and it will verify what the room
        asserts and flag what it cannot support.</p>`
     : `<div class="row" style="margin-bottom:8px">
          ${seated.map((p) => `<span class="badge ${p.running ? 'on' : ''}">
@@ -249,7 +249,7 @@ function render(d) {
   $('#cols').innerHTML = `
     <div class="card"><h2>Waiting on you</h2>${attention}</div>
     <div class="card"><h2>Ideas</h2>${ideas}</div>
-    <div class="card wide"><h2>The prefect</h2>${prefect}</div>
+    <div class="card wide"><h2>The coordinator</h2>${coordinator}</div>
     <div class="card"><h2>Swarm runs</h2>${runs}</div>
     <div class="card"><h2>In the room</h2>${room}</div>
     <div class="card"><h2>Plugins and skills</h2>${tools}</div>

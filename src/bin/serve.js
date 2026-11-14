@@ -547,7 +547,7 @@ app.get('/api/dashboard', (_req, res) =>
       schedules: hub.schedules().slice(0, 6),
       plugins: plugins.all().map((p) => ({ name: p.name, enabled: p.enabled, lastUsed: p.lastUsed })),
       skills: skills.all().map((k) => ({ name: k.name, title: k.title, enabled: k.enabled, used: k.used })),
-      // The prefect's record: what has been checked, and what failed a check.
+      // The coordinator's record: what has been checked, and what failed a check.
       checks: {
         total: checks.length,
         problems: checks.filter((c) => c.verdict !== 'supported').slice(0, 10),
@@ -561,8 +561,8 @@ app.get('/api/dashboard', (_req, res) =>
         speak: connections.ofKind('speak').length,
       },
       // Whether anybody is actually watching for invention, and who.
-      prefect: seats.all()
-        .filter((s) => s.role === 'prefect')
+      coordinator: seats.all()
+        .filter((s) => s.role === 'coordinator')
         .map((s) => ({ name: s.name, model: s.model, running: models.has(s.name), ready: s.ready })),
     };
   }),

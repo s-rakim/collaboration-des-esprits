@@ -51,7 +51,7 @@ export const BUILT_IN = [
     detail: 'The same voice reads replies aloud in live chat, so the room sounds like one thing.' },
   { name: 'Web search', icon: '🌐', where: '/setup', how: 'connection:search',
     blurb: 'Lets agents look things up, so a claim can rest on something.',
-    detail: 'Brave, Tavily or a local SearXNG. The prefect uses it to check what the room asserts.' },
+    detail: 'Brave, Tavily or a local SearXNG. The coordinator uses it to check what the room asserts.' },
   { name: 'Swarm', icon: '🐝', where: '/work', how: 'work',
     blurb: 'Split a job into pieces, run them in parallel across your models, and merge the answers.',
     detail: 'One planner, many workers, one merger. The result is saved as an artifact.' },

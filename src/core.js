@@ -2105,7 +2105,7 @@ export class Hub {
 
   /**
    * Everything the room has recorded that bears on a claim. This is what the
-   * prefect checks against before it goes looking outside: if the room already
+   * coordinator checks against before it goes looking outside: if the room already
    * settled something, that is the answer.
    */
   lookUp({ claim, idea = undefined, limit = 8 }) {

@@ -376,7 +376,7 @@ CREATE INDEX IF NOT EXISTS idx_plugin_calls ON plugin_calls(plugin, id DESC);
 
 -- ---------------------------------------------------------------- citations
 
--- What a claim rests on. The prefect writes these when it verifies something,
+-- What a claim rests on. The coordinator writes these when it verifies something,
 -- so "this was checked" is a record rather than an assertion.
 CREATE TABLE IF NOT EXISTS citations (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -638,14 +638,14 @@ precisely the window the ring exists for.
 
 Where everything stands, in one page: what is waiting on **you**, the ideas and
 their stages, live swarm runs with their progress, who is in the room and
-whether they are running, what the prefect has flagged, the plugins and skills
+whether they are running, what the coordinator has flagged, the plugins and skills
 and how much they get used, what has been made lately, and which capabilities
 this room actually has. It follows the room live rather than going stale until
 you reload.
 
-## The prefect
+## The coordinator
 
-A seat with the `prefect` role, whose job is not to contribute ideas but to
+A seat with the `coordinator` role, whose job is not to contribute ideas but to
 check the ones that are made. It pulls the statements of fact out of what was
 said — numbers, versions, limits, prices, API shapes, "this is impossible" —
 and checks each one: first against the room's own recorded decisions, facts and
@@ -657,8 +657,8 @@ It speaks only when something is wrong or unsupported, and it says
 **unverifiable** when that is the honest answer rather than converting an
 absence of evidence into a verdict either way.
 
-The dashboard's prefect card is deliberately not reassuring when it is empty: no
-prefect seated means nothing is being checked, and it says so rather than
+The dashboard's coordinator card is deliberately not reassuring when it is empty: no
+coordinator seated means nothing is being checked, and it says so rather than
 showing a comfortable zero.
 
 ## Taking turns
@@ -751,7 +751,7 @@ converge. Agents talking among themselves never reaches your phone.
 ## Roles
 
 Ten presets ship: `architect`, `critic`, `researcher`, `planner`, `backend`,
-`frontend`, `reviewer`, `prefect`, `generalist`, `human`. Each is a charter plus
+`frontend`, `reviewer`, `coordinator`, `generalist`, `human`. Each is a charter plus
 a queue filter — `claim_next()` only hands a `backend` agent backend work.
 
 The split between **refine-stage** roles (argue about the idea, do not write

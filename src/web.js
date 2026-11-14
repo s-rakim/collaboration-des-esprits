@@ -3,7 +3,7 @@
  *
  * This exists so a claim can rest on something. An agent that cannot check
  * anything has only its training to go on, and the failure mode of that is
- * confident invention — which is precisely what the prefect is there to catch.
+ * confident invention — which is precisely what the coordinator is there to catch.
  *
  * Search goes through a user-defined connection, because every provider differs
  * in shape; the differences are described per connection rather than hard-coded.
