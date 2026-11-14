@@ -24,7 +24,7 @@
   .build .g{font-size:13px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .build .s{font-size:11px;color:var(--faint);margin-top:3px}
   .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
-  .badge.running,.badge.planning{color:var(--accent);border-color:var(--accent)}
+  .badge.running,.badge.planning,.badge.reporting{color:var(--accent);border-color:var(--accent)}
   .badge.done{color:var(--good);border-color:var(--good)}
   .badge.failed{color:var(--bad);border-color:var(--bad)}
   .badge.cancelled,.badge.queued{color:var(--faint)}
@@ -255,7 +255,7 @@ function renderBuild() {
     return;
   }
   const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
-  const going = b.live || ['planning', 'running'].includes(b.status);
+  const going = b.live || ['planning', 'running', 'reporting'].includes(b.status);
   $('#mid').innerHTML = `
     <div class="card">
       <div class="row">
@@ -410,7 +410,13 @@ $('#hand').addEventListener('click', async () => {
   $('#idea').innerHTML = o.ideas.map((i) => `<option value="${esc(i.slug)}">${esc(i.title)} — ${esc(i.stage)}</option>`).join('');
   const asked = new URLSearchParams(location.search).get('idea');
   if (asked && o.ideas.some((i) => i.slug === asked)) $('#idea').value = asked;
-  $('#coordinator').innerHTML = '<option value="">whoever holds the coordinator role</option>'
+  // The standing coordinator is chosen in the chat's Speaking panel; this is
+  // for making an exception for one build.
+  const standing = await api('/api/coordinator').catch(() => null);
+  $('#coordinator').innerHTML = `<option value="">${standing
+      ? `the standing coordinator — ${esc(standing.automation ? 'the automation' : standing.name)}`
+      : 'the standing coordinator'}</option>
+    <option value="coordinator-bot">the automation — no key; cuts it by the board, or the spec's list</option>`
     + state.seats.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.model)}</option>`).join('');
   dialogMessage('');
   $('#dlg').showModal();

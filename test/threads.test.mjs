@@ -9,7 +9,8 @@ import { createConfig } from '../src/settings.js';
 import { createConnections } from '../src/connections.js';
 import { createSeats } from '../src/seats.js';
 import { createTerminal } from '../src/workspace.js';
-import { createThreads, allocate, parsePlan } from '../src/threads.js';
+import { createThreads, allocate, parsePlan, planByRule, reportByRule } from '../src/threads.js';
+import { BOT } from '../src/rounds.js';
 
 /** A browser that goes nowhere, so a thread can "look something up" in a test. */
 const fakeBrowser = () => {
@@ -268,4 +269,88 @@ test('with no model seated, handing over says what is missing', () => {
   const r = room({ seatsToMake: [] });
   const threads = createThreads({ ...r, db: r.hub.db });
   assert.throws(() => threads.handOver({ idea: r.idea.slug, by: 'malcolm' }), /no model has a seat with a working connection/);
+});
+
+// ------------------------------------------------------- the automation
+
+test('with no seat made coordinator, the automation oversees the build without a model call of its own', async () => {
+  const r = room({ seatsToMake: ['ada:backend', 'bo:frontend'] });
+  r.hub.plan({ idea: r.idea.slug, by: 'malcolm', tasks: [
+    { title: 'Write the page', detail: 'index.html with the form', role: 'frontend' },
+    { title: 'Optional: add a dark theme', detail: 'nice to have', role: 'frontend' },
+  ] });
+  const p = provider({ planned: [] });
+  const threads = createThreads({ db: r.hub.db, hub: r.hub, seats: r.seats, terminal: r.terminal, browser: r.browser, createClient: p.createClient });
+
+  const started = threads.handOver({ idea: r.idea.slug, by: 'malcolm', start: false });
+  assert.equal(started.coordinator, BOT);
+  const done = await threads.run(started.id);
+
+  assert.equal(done.status, 'done');
+  assert.ok(!p.stats.calls.includes('plan') && !p.stats.calls.includes('report'), 'it plans and reports by rule');
+  assert.deepEqual(done.threads.map((t) => [t.title, t.necessity]), [
+    ['Write the page', 'should'],
+    ['Optional: add a dark theme', 'could'],
+  ]);
+  // The seats still take turns at the work, and the less necessary thread gets less effort.
+  assert.deepEqual(done.threads.map((t) => t.seat), ['ada', 'bo']);
+  assert.equal(done.threads[1].effort, 'low');
+  assert.match(done.report, /2 of 2 threads finished/);
+  assert.match(done.report, /put together by the automation/);
+  // And it speaks in the idea's thread under its own name.
+  assert.ok(r.hub.recent({ idea: r.idea.slug, limit: 20 }).some((m) => m.author === BOT && /Build #\d+ is finished/.test(m.body)));
+});
+
+test('the seat the person made coordinator is the one that oversees', async () => {
+  const r = room({ seatsToMake: ['ada:backend', 'bo:frontend'] });
+  const config = createConfig(r.hub.db);
+  config.set('coordinator', 'bo');
+  const p = provider({ planned: [{ title: 'Page', brief: 'Write index.html', necessity: 'must', importance: 5 }] });
+  const threads = createThreads({ db: r.hub.db, hub: r.hub, seats: r.seats, terminal: r.terminal, browser: r.browser, config, createClient: p.createClient });
+  assert.equal(threads.handOver({ idea: r.idea.slug, by: 'malcolm', start: false }).coordinator, 'bo');
+  // Asking for the automation by name still gets it.
+  assert.equal(threads.handOver({ idea: r.idea.slug, by: 'malcolm', coordinator: BOT, start: false }).coordinator, BOT);
+});
+
+test('the automation keeps tasks that depend on each other in one thread, in order', () => {
+  const pieces = planByRule({ title: 'Shop', tasks: [
+    { id: 1, title: 'Schema', detail: 'tables', status: 'todo', dependsOn: [] },
+    { id: 2, title: 'API', detail: 'needs the schema', status: 'todo', dependsOn: [{ id: 1 }] },
+    { id: 3, title: 'Logo', detail: 'optional polish', status: 'todo', dependsOn: [] },
+    { id: 4, title: 'Old spike', detail: '', status: 'done', dependsOn: [] },
+  ] });
+  assert.equal(pieces.length, 2, 'two things that can run side by side; the finished task is not rebuilt');
+  assert.match(pieces[0].title, /^Schema — then 1 that depend on it$/);
+  assert.match(pieces[0].brief, /1\. Schema[\s\S]*2\. API/);
+  assert.equal(pieces[0].necessity, 'must', 'other work waits on it');
+  assert.equal(pieces[1].necessity, 'could');
+  assert.ok(pieces[0].importance > pieces[1].importance);
+});
+
+test('with no board, the automation cuts a spec that is a list, and builds one that is not as one piece', () => {
+  const listed = planByRule({ title: 'Site', spec: 'The site:\n- A landing page that must load fast\n  with a hero image\n- A signup form\n- Maybe a blog later' });
+  assert.deepEqual(listed.map((p) => [p.title, p.necessity]), [
+    ['A landing page that must load fast', 'must'],
+    ['A signup form', 'should'],
+    ['Maybe a blog later', 'could'],
+  ]);
+  assert.match(listed[0].brief, /with a hero image/);
+
+  const prose = planByRule({ title: 'Site', spec: 'One static page with a signup form.' });
+  assert.deepEqual(prose.map((p) => [p.title, p.necessity, p.importance]), [['Build: Site', 'must', 5]]);
+
+  const many = planByRule({ title: 'Big', spec: Array.from({ length: 20 }, (_, i) => `- piece ${i + 1}`).join('\n') });
+  assert.equal(many.length, 12);
+  assert.match(many[11].title, /piece 12 — and 8 more/);
+  assert.match(many[11].brief, /piece 20/, 'the tail is done together, not dropped');
+});
+
+test('the automation\'s report names what did not get done', () => {
+  const report = reportByRule({ title: 'Site', threads: [
+    { title: 'Page', status: 'done', necessity: 'must', importance: 5, seat: 'ada', result: 'Wrote index.html.' },
+    { title: 'Form', status: 'failed', necessity: 'must', importance: 4, seat: 'bo', error: 'timed out' },
+  ] });
+  assert.match(report, /1 of 2 threads finished, 1 failed/);
+  assert.match(report, /\*\*Form\*\* \(must\) failed: timed out/);
+  assert.match(report, /Wrote index\.html\./);
 });

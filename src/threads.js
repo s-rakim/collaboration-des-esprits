@@ -20,6 +20,8 @@
 import { chatAdapter } from './participants/chat.js';
 import { pageForModel } from './browser.js';
 
+import { BOT } from './rounds.js';
+
 export const NECESSITY = ['must', 'should', 'could'];
 export const EFFORTS = ['low', 'medium', 'high'];
 
@@ -150,6 +152,120 @@ export function parsePlan(text, max = 12) {
   return pieces;
 }
 
+const SAYS_MUST = /\b(must|required?|needs? to|has to|core|critical|essential|blocker|cannot (?:work|ship) without)\b/i;
+const SAYS_COULD = /\b(optional(?:ly)?|nice[- ]to[- ]have|stretch|later|maybe|could|if (?:there is|we have) time|polish|bonus)\b/i;
+
+/**
+ * The automation's plan: no model, only what the room already wrote down.
+ *
+ * A coordinator with a model reads the brief and decides how to cut it. The
+ * automation cannot judge, so it does not pretend to — it takes the cutting
+ * the room has already done:
+ *
+ *  1. If the idea has tasks on its board, those are the threads. Tasks that
+ *     depend on each other go in one thread together, in order, because
+ *     threads run side by side and cannot wait on each other.
+ *  2. Otherwise, if the spec is a list, each item is a thread.
+ *  3. Otherwise it is one thread: build what was approved.
+ *
+ * How necessary a piece is comes from the words used for it ("must", "nice to
+ * have"), and how important from where it was put: people write the thing that
+ * matters first. Both are shown on the Threads page, and both can be changed
+ * there before anything runs.
+ */
+export function planByRule({ title = '', spec = '', raw = '', tasks = [] } = {}, max = 12) {
+  const necessity = (text) => (SAYS_COULD.test(text) ? 'could' : SAYS_MUST.test(text) ? 'must' : 'should');
+  const rank = (i, n) => (n <= 1 ? 5 : Math.max(2, 5 - Math.round((i / (n - 1)) * 3)));
+  const cap = (pieces) => {
+    if (pieces.length <= max) return pieces;
+    // More pieces than threads: the tail is done together rather than dropped.
+    const rest = pieces.slice(max - 1);
+    return [...pieces.slice(0, max - 1), {
+      title: `${rest[0].title} — and ${rest.length - 1} more`,
+      brief: rest.map((p) => p.brief).join('\n\n'),
+      necessity: NECESSITY[Math.min(...rest.map((p) => NECESSITY.indexOf(p.necessity)))],
+    }];
+  };
+  const finish = (pieces) => cap(pieces).map((p, i, all) => ({
+    title: p.title.slice(0, 160), brief: p.brief, necessity: p.necessity,
+    importance: p.importance ?? rank(i, all.length), seat: '', effort: '',
+  }));
+
+  const open = tasks.filter((t) => !['done', 'dropped'].includes(t.status));
+  if (open.length) {
+    // Tasks joined by a dependency, in either direction, are one piece of work.
+    const group = new Map(open.map((t) => [t.id, t.id]));
+    const find = (id) => { while (group.get(id) !== id) id = group.get(id); return id; };
+    for (const t of open) {
+      for (const d of t.dependsOn ?? []) if (group.has(d.id)) group.set(find(t.id), find(d.id));
+    }
+    const sets = new Map();
+    for (const t of open) {
+      const root = find(t.id);
+      if (!sets.has(root)) sets.set(root, []);
+      sets.get(root).push(t);
+    }
+    return finish([...sets.values()].map((set) => {
+      // What something depends on is done before it.
+      const ordered = [];
+      const place = (t) => {
+        if (ordered.includes(t)) return;
+        for (const d of t.dependsOn ?? []) { const dep = set.find((x) => x.id === d.id); if (dep) place(dep); }
+        ordered.push(t);
+      };
+      set.forEach(place);
+      const text = ordered.map((t) => `${t.title} ${t.detail ?? ''}`).join(' ');
+      return {
+        title: ordered.length === 1 ? ordered[0].title : `${ordered[0].title} — then ${ordered.length - 1} that depend on it`,
+        brief: ordered.map((t, i) => `${ordered.length > 1 ? `${i + 1}. ` : ''}${t.title}${t.detail ? `\n${t.detail}` : ''}`).join('\n\n'),
+        // Something other work waits on is necessary whatever it was called.
+        necessity: ordered.length > 1 ? 'must' : necessity(text),
+      };
+    }));
+  }
+
+  const source = String(spec || raw || '');
+  const items = [];
+  for (const line of source.split('\n')) {
+    const top = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)/);
+    if (top) items.push(top[1].trim());
+    // An indented line under an item is part of that item.
+    else if (items.length && /^\s+\S/.test(line)) items[items.length - 1] += `\n${line.trim()}`;
+  }
+  if (items.length >= 2) {
+    return finish(items.map((item) => ({
+      title: item.split('\n')[0].replace(/[.:;]+$/, ''),
+      brief: item,
+      necessity: necessity(item),
+    })));
+  }
+
+  return finish([{
+    title: `Build: ${title || 'what was approved'}`,
+    brief: source.trim() || title,
+    necessity: 'must', importance: 5,
+  }]);
+}
+
+/** The automation's report: what each thread said, in order, with the gaps named. No model writes it. */
+export function reportByRule({ title, threads }) {
+  const done = threads.filter((t) => t.status === 'done');
+  const failed = threads.filter((t) => t.status === 'failed');
+  const other = threads.filter((t) => !['done', 'failed'].includes(t.status));
+  return [
+    `# Build report — ${title}`,
+    `${done.length} of ${threads.length} threads finished${failed.length ? `, ${failed.length} failed` : ''}${other.length ? `, ${other.length} did not run` : ''}.`
+      + ' This report was put together by the automation: it is what each thread said about its own work, unedited.',
+    ...(failed.length || other.length ? [
+      '## Not done',
+      [...failed.map((t) => `- **${t.title}** (${t.necessity}) failed: ${t.error || 'no reason given'}`),
+        ...other.map((t) => `- **${t.title}** (${t.necessity}) did not run: ${t.status}`)].join('\n'),
+    ] : []),
+    '## What each thread reported',
+    ...done.map((t) => `### ${t.title} — ${t.necessity}, importance ${t.importance}, by ${t.seat}\n${t.result || '(it finished without saying what it did)'}`),
+  ].join('\n\n');
+}
+
 /**
  * Decide what each thread gets.
  *
@@ -183,7 +299,7 @@ export function allocate(pieces, roster) {
   });
 }
 
-export function createThreads({ db, hub, seats, terminal, browser, log = () => {}, createClient = null, maxSteps = 24 }) {
+export function createThreads({ db, hub, seats, terminal, browser, config = null, log = () => {}, createClient = null, maxSteps = 24 }) {
   const now = () => new Date().toISOString();
   /** build id -> { cancelled, turns: Set } for the builds running in this process. */
   const live = new Map();
@@ -242,15 +358,27 @@ export function createThreads({ db, hub, seats, terminal, browser, log = () => {
   /** Seats that can actually make a call, in the order the person listed them. */
   const usable = () => seats.all().filter((s) => seats.resolve(s.name)?.model);
 
+  /**
+   * Who oversees a build.
+   *
+   * Whoever was asked for; failing that the seat the person made coordinator;
+   * failing that a seat holding the coordinator role. With none of those it is
+   * the automation — which plans from what the room wrote down rather than
+   * from judgement, and needs no key. Either way the threads themselves are
+   * worked by models, so there has to be at least one.
+   */
   function pickCoordinator(asked) {
     const able = usable();
-    if (!able.length) throw new Error('no model has a seat with a working connection — add one on the setup page');
+    if (!able.length) throw new Error('no model has a seat with a working connection — the threads need one to do the work; add it on the setup page');
+    if (asked === BOT) return BOT;
     if (asked) {
       const named = able.find((s) => s.name === asked);
       if (!named) throw new Error(`${asked} has no working connection, so it cannot coordinate`);
       return named.name;
     }
-    return (able.find((s) => s.role === 'coordinator') ?? able[0]).name;
+    const chosen = config?.get('coordinator');
+    if (chosen && able.some((s) => s.name === chosen)) return chosen;
+    return able.find((s) => s.role === 'coordinator')?.name ?? BOT;
   }
 
   /** One model call with no tools, as a named seat. */
@@ -271,7 +399,10 @@ export function createThreads({ db, hub, seats, terminal, browser, log = () => {
   function announce(build, body) {
     if (!build.idea_id) return;
     try {
-      hub.join({ name: build.coordinator, role: 'coordinator', kind: 'agent' });
+      hub.join({
+        name: build.coordinator, role: 'coordinator', kind: 'agent',
+        ...(build.coordinator === BOT ? { model: 'automation — rules, no model' } : {}),
+      });
       hub.post({ idea: build.idea_id, by: build.coordinator, kind: 'status', body });
     } catch (err) {
       log(`build ${build.id}: could not post to the idea — ${err.message}`);
@@ -314,6 +445,14 @@ export function createThreads({ db, hub, seats, terminal, browser, log = () => {
 
   function plan(build) {
     const roster = usable();
+    if (build.coordinator === BOT) {
+      const idea = build.idea_id ? hub.getIdea(build.idea_id) : null;
+      const pieces = planByRule({
+        title: build.title, spec: idea?.spec, raw: idea?.raw,
+        tasks: build.idea_id ? hub.tasks({ idea: build.idea_id }) : [],
+      });
+      return Promise.resolve(allocate(pieces, roster));
+    }
     const listing = roster.map((s) => {
       const r = seats.resolve(s.name);
       return `- ${s.name}: ${r.model} (role: ${s.role})`;
@@ -483,7 +622,8 @@ export function createThreads({ db, hub, seats, terminal, browser, log = () => {
       }
       db.prepare(`UPDATE builds SET status = 'reporting' WHERE id = ?`).run(id);
       let report;
-      try {
+      if (build.coordinator === BOT) report = reportByRule({ title: build.title, threads });
+      else try {
         report = await ask({
           seat: build.coordinator,
           system: REPORTER_SYSTEM,

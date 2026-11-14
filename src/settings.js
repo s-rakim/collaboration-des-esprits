@@ -30,6 +30,18 @@ export const SETTINGS = {
     env: 'ESPRITS_TERMINAL_AGENTS', default: 'true',
     label: 'Agents may use the terminal',
   },
+  coordinator: {
+    env: 'ESPRITS_COORDINATOR', default: '',
+    label: 'Coordinator — a seat\'s name, or empty for the automation',
+  },
+  turn_order_mode: {
+    env: 'ESPRITS_TURN_ORDER_MODE', default: '',
+    label: 'Who sets the order agents answer in: added (default), custom, coordinator',
+  },
+  turn_order: {
+    env: 'ESPRITS_TURN_ORDER', default: '',
+    label: 'The order agents answer in, when it has been set by hand',
+  },
   about_me: {
     env: 'ESPRITS_ABOUT_ME', default: '',
     label: 'About you — what the room should assume',

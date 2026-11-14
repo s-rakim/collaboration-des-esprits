@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,6 +91,15 @@ const provider = createServer(async (req, res) => {
     }
     if (/one worker in a parallel swarm/i.test(system)) return prose('Postgres handles concurrent writes.');
     if (/findings|merge|write the answer to the original goal/i.test(system)) return prose('Postgres, for the transactions.');
+
+    // A thread of a build finishes by saying what it did.
+    if (/one thread of a build/i.test(system)) {
+      return json({
+        model: body.model,
+        choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null,
+          tool_calls: [{ id: 'd1', type: 'function', function: { name: 'done', arguments: JSON.stringify({ summary: 'Built it; the file is in the folder.' }) } }] } }],
+      });
+    }
 
     // A seat in the room answers by calling reply.
     return json({
@@ -300,6 +309,74 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
     const out = await api('/api/interrupt', { method: 'POST' });
     if (!out.stopped) throw new Error('no answer from interrupt');
     return `nothing hung; ${busy.seats.length} seat(s) were mid-turn`;
+  });
+
+  // ------------------------------------------------------------ taking turns
+
+  await check('naming an agent keeps the conversation with it until you sign off', async () => {
+    const during = await api('/api/rounds');
+    if (!during.oneToOne?.seats.includes('kestrel')) throw new Error(`no one-to-one after naming kestrel: ${JSON.stringify(during.oneToOne)}`);
+    await api('/api/post', { method: 'POST', body: JSON.stringify({ as: 'rakim', body: 'thanks' }) });
+    const opened = await until('the coordinator to open the floor', async () => {
+      const feed = await api('/api/feed?since=0');
+      return feed.messages.find((m) => m.author === 'coordinator-bot' && /have finished/.test(m.body));
+    });
+    if ((await api('/api/rounds')).oneToOne) throw new Error('the one-to-one is still open');
+    return opened.body.slice(0, 44);
+  });
+
+  await check('a message that names nobody is answered by everyone, in the order the keys were added', async () => {
+    await api('/api/connections', { method: 'POST', body: JSON.stringify({ name: 'second', kind: 'chat', baseURL: PROVIDER, model: 'vendor/small', apiKey: 'sk-not-a-real-key-2' }) });
+    await api('/api/seats', { method: 'POST', body: JSON.stringify({ name: 'wren', connection: 'second', role: 'critic', enabled: true }) });
+    const asked = await api('/api/post', { method: 'POST', body: JSON.stringify({ as: 'rakim', body: 'what should we do first?' }) });
+    const answers = await until('both to answer', async () => {
+      const feed = await api(`/api/feed?since=${asked.id}`);
+      const said = feed.messages.filter((m) => ['kestrel', 'wren'].includes(m.author));
+      return said.length >= 2 ? said : null;
+    }, 30000);
+    const order = answers.map((m) => m.author).join(' → ');
+    if (order !== 'kestrel → wren') throw new Error(`they answered ${order}`);
+    const seen = (await api('/api/feed?since=0')).messages.find((m) => m.id === asked.id).reactions?.find((r) => r.emoji === '✓')?.by ?? [];
+    if (!seen.includes('kestrel') || !seen.includes('wren')) throw new Error(`receipts: ${seen.join(', ') || 'none'}`);
+    return `${order}; read by ${seen.join(', ')}`;
+  });
+
+  await check('the order can be set by hand, and the coordinator can be an agent', async () => {
+    const mine = await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'custom', order: ['wren', 'kestrel'] }) });
+    if (mine.speaking.join(',') !== 'wren,kestrel') throw new Error(`the order is ${mine.speaking.join(', ')}`);
+    const picked = await api('/api/coordinator', { method: 'POST', body: JSON.stringify({ name: 'wren' }) });
+    if (picked.name !== 'wren' || picked.automation) throw new Error(JSON.stringify(picked));
+    await api('/api/coordinator', { method: 'POST', body: JSON.stringify({ name: '' }) });
+    await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'added' }) });
+    return 'wren first, then back to the order the keys were added';
+  });
+
+  // ------------------------------------------------- terminal, and a build
+
+  await check('the shared terminal runs in the folder you chose, under your name', async () => {
+    const proj = join(dataDir, 'project');
+    mkdirSync(proj, { recursive: true });
+    await api('/api/workspace', { method: 'POST', body: JSON.stringify({ folder: proj }) });
+    const run = await api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command: 'echo from the room', as: 'rakim' }) });
+    if (run.exitCode !== 0 || !/from the room/.test(run.output)) throw new Error(JSON.stringify(run));
+    if (!run.cwd.endsWith('project') || run.by !== 'rakim') throw new Error(`ran in ${run.cwd} as ${run.by}`);
+    return `exit 0 in …/project, by ${run.by}`;
+  });
+
+  await check('an approved idea is handed over and built as threads', async () => {
+    const idea = await api('/api/ideas', { method: 'POST', body: JSON.stringify({ as: 'rakim', title: 'Landing page', raw: '- A page that must load fast\n- A signup form\n- Maybe a blog later' }) });
+    const started = await api(`/api/ideas/${idea.slug}/handover`, { method: 'POST', body: JSON.stringify({ as: 'rakim', coordinator: 'coordinator-bot' }) });
+    const done = await until('the build to finish', async () => {
+      const b = await api(`/api/builds/${started.id}`);
+      return ['done', 'failed'].includes(b.status) ? b : null;
+    }, 40000);
+    if (done.status !== 'done') throw new Error(`the build ${done.status}: ${done.error}`);
+    if (done.threads.length !== 3) throw new Error(`${done.threads.length} threads`);
+    const last = done.threads.at(-1);
+    if (last.necessity !== 'could') throw new Error(`"${last.title}" is ${last.necessity}`);
+    const edited = await api(`/api/threads/${last.id}`, { method: 'POST', body: JSON.stringify({ effort: 'high', model: 'vendor/big' }) });
+    if (edited.effort !== 'high' || edited.model !== 'vendor/big') throw new Error(JSON.stringify(edited));
+    return `${done.threads.length} threads by ${done.coordinator}; ${done.threads.map((t) => t.necessity).join(', ')}`;
   });
 
   // ------------------------------------------------------------------ skills

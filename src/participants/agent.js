@@ -1,3 +1,4 @@
+import { SEEN } from '../core.js';
 import { describeRole } from '../roles.js';
 import { chatAdapter } from './chat.js';
 import { pageForModel } from '../browser.js';
@@ -24,6 +25,10 @@ const QUIET_AFTER_STOP_MS = 6000; // how long a stopped seat stays out of the wa
 /** How long to queue for the floor before giving up on this turn. */
 const FLOOR_WAIT_MS = 30_000;
 
+/** How much of a thread an agent is shown before it speaks, and how long one message may run. */
+const THREAD_TAIL = 40;
+const LINE_LIMIT = 1800;
+
 /** The actions a model may take. Deliberately a subset: talking and deciding, not building. */
 function toolDefs() {
   return [
@@ -37,8 +42,29 @@ function toolDefs() {
         additionalProperties: false,
         properties: {
           body: { type: 'string', description: 'What you want to say. Plain text. @mention an agent to address it.' },
+          reply_to: {
+            type: 'integer',
+            description: 'The #number of the message you are answering, when it is one in particular — ' +
+              'another agent\'s point you are building on or disagreeing with, or the question you were asked.',
+          },
         },
         required: ['body'],
+      },
+    },
+    {
+      name: 'react',
+      description:
+        'Acknowledge a message with one emoji instead of words, and end your turn. Use it when you have ' +
+        'read something and have nothing to add that has not been said: 👍 agreed, 👀 looking, ❓ unclear. ' +
+        'It shows the room you got the message without making it read another paragraph.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          message_id: { type: 'integer', description: 'The #number of the message.' },
+          emoji: { type: 'string', description: 'One emoji.' },
+        },
+        required: ['message_id', 'emoji'],
       },
     },
     {
@@ -558,8 +584,14 @@ export function createModelParticipant({
       `- When there is more than one sane approach, propose one rather than asserting it. When somebody`,
       `  else has an open proposal, score it — an unscored proposal cannot be chosen, so silence blocks`,
       `  the room.`,
-      `- If somebody already made your point, say_nothing. A room where every agent restates the same`,
-      `  observation is worse than a quiet one.`,
+      `- The agents answer one after another, in the order they joined. Everything said so far is in`,
+      `  front of you with a #number on each message, including what the agents before you just said.`,
+      `  Read it before you speak: build on it or disagree with it by name, and pass reply_to with the`,
+      `  #number when you are answering one message in particular.`,
+      `- If somebody already made your point, do not restate it: react to their message instead. A room`,
+      `  where every agent repeats the same observation is worse than a quiet one, and a reaction still`,
+      `  shows you read it.`,
+      `- When the human addresses you by name, they want your answer. Reply; do not stay silent.`,
       '',
       // Named, not pasted: the whole point of use_skill is that a model reads
       // the instructions when it needs them, so twelve skills do not cost twelve
@@ -603,13 +635,23 @@ export function createModelParticipant({
   }
 
   async function runTurn({ trigger, ideaSlug, replyUrgency = 'comment' }) {
-    const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 30, by: name }) : null;
+    // The brief carries what is settled; the thread below carries what was
+    // said. The brief's own tail is left out so the conversation is in the
+    // context once, in full, rather than twice with one copy cut short.
+    const brief = ideaSlug ? hub.brief({ idea: ideaSlug, messages: 0, by: name }) : null;
+    const said = hub.recent({ idea: ideaSlug ?? null, limit: THREAD_TAIL });
+    // Read first, so the count of things waiting does not include the very
+    // messages printed underneath it.
+    markRead(ideaSlug);
     const catchUp = hub.catchUp({ name });
 
     const context = [
-      brief ? brief.digest : '(No idea selected — this is the lobby.)',
+      brief ? brief.digest : '(No idea selected — this is the lobby, the room\'s general chat.)',
       '',
       '---',
+      '',
+      `## The conversation in this thread (oldest first — you are "${name}")`,
+      said.length ? said.map(threadLine).join('\n') : '(nothing has been said here yet)',
       '',
       '## What is waiting on you',
       ...catchUp.nudges.map((n) => `- ${n}`),
@@ -617,6 +659,10 @@ export function createModelParticipant({
       '## What just happened',
       trigger,
     ].join('\n');
+
+    // The receipt goes down when the messages go in front of the model: the
+    // tick on the page means "this was in its context", whatever it says next.
+    try { hub.acknowledge({ by: name, messages: said.map((m) => m.id) }); } catch { /* a receipt must not cost the turn */ }
 
     const turn = adapter().startTurn({ system: systemPrompt(), tools: toolDefs() });
     inFlight = turn;
@@ -681,6 +727,26 @@ export function createModelParticipant({
     }
   }
 
+  /** One message of the thread, as the model reads it. */
+  function threadLine(m) {
+    const who = m.author === name ? `${m.author} (you)` : m.authorKind === 'human' ? `${m.author} (the human)` : m.author;
+    const kind = m.kind !== 'message' ? ` [${m.kind}]` : '';
+    const to = m.replyTo ? ` replying to #${m.replyTo}` : '';
+    const marks = (m.reactions ?? []).filter((r) => r.emoji !== SEEN)
+      .map((r) => `${r.emoji} ${r.by.join(', ')}`).join(' · ');
+    const body = m.body.length > LINE_LIMIT ? `${m.body.slice(0, LINE_LIMIT)}… (cut)` : m.body;
+    return `#${m.id} ${who}${kind}${to}: ${body}${marks ? `\n    reactions: ${marks}` : ''}`;
+  }
+
+  /** Everything up to now counts as read, in this thread and among the mentions. */
+  function markRead(ideaSlug) {
+    try {
+      hub.read({ by: name, limit: 500 });
+      hub.read({ by: name, mentioningMe: true, limit: 500 });
+      if (ideaSlug) hub.read({ by: name, idea: ideaSlug, limit: 500 });
+    } catch { /* being behind on reading is not a reason to stay silent */ }
+  }
+
   /**
    * Post as this participant, queueing for the floor like any other agent.
    *
@@ -688,7 +754,7 @@ export function createModelParticipant({
    * few seconds is completely normal, and dropping the reply over that would
    * make direct questions fail on timing alone.
    */
-  async function speak(body, { urgency = 'comment', idea } = {}) {
+  async function speak(body, { urgency = 'comment', idea, replyTo = null } = {}) {
     hub.requestFloor({ by: name, urgency, reason: 'replying', idea: idea ?? null });
     const f = await hub.waitForTurn({ by: name, timeoutMs: FLOOR_WAIT_MS });
     if (!f.yours) {
@@ -696,7 +762,14 @@ export function createModelParticipant({
       hub.yieldFloor({ by: name });
       throw new Error(`${f.holder?.agent ?? 'another agent'} still has the floor after waiting`);
     }
-    return hub.post({ idea: idea ?? null, body, by: name, kind: 'message' });
+    try {
+      return hub.post({ idea: idea ?? null, body, by: name, kind: 'message', replyTo });
+    } catch (err) {
+      // A #number that does not exist is the model's slip, not a reason to
+      // lose what it wrote. The floor is still ours: say it unthreaded.
+      if (replyTo === null || !/to reply to/.test(err.message)) throw err;
+      return hub.post({ idea: idea ?? null, body, by: name, kind: 'message' });
+    }
   }
 
   /** Map a tool call onto the Hub. `ends` marks the calls that finish a turn. */
@@ -706,8 +779,16 @@ export function createModelParticipant({
       case 'reply':
         // A reply to something aimed at this participant is an answer, which
         // outranks general chatter in the queue.
-        await speak(String(input.body ?? '').trim(), { idea, urgency: replyUrgency });
+        await speak(String(input.body ?? '').trim(), {
+          idea, urgency: replyUrgency,
+          replyTo: Number.isInteger(Number(input.reply_to)) && Number(input.reply_to) > 0 ? Number(input.reply_to) : null,
+        });
         return { text: 'posted', ends: true };
+
+      case 'react': {
+        const r = hub.react({ message: input.message_id, by: name, emoji: input.emoji });
+        return { text: `reacted ${r.emoji} to #${r.message}`, ends: true };
+      }
 
       case 'say_nothing':
         return { text: 'stayed quiet', ends: true };
@@ -923,69 +1004,34 @@ export function createModelParticipant({
   }
 
   /**
-   * The watch loop. Wakes on anything addressed to this participant, plus
-   * proposals it owes a score, then takes exactly one action.
+   * Take a seat in the room.
+   *
+   * It used to watch for its own name here and answer whenever it saw it. That
+   * made every seat its own scheduler: nobody answered a message that named
+   * nobody, two seats named together answered over each other, and none of
+   * them could tell that a conversation was somebody else's. Who speaks, and
+   * in what order, is now decided in one place — the rounds — and a seat
+   * speaks when it is given a turn.
    */
   async function run() {
-    if (!usable()) {
-      log(`${name}: not configured yet; idle until its connection has a model and a key`);
-    }
     join();
     const r = live();
-    log(`${name} (${role}) joined on ${currentModel()}${r?.connection ? ` via ${r.connection}` : ''}`);
+    log(usable()
+      ? `${name} (${role}) joined on ${currentModel()}${r?.connection ? ` via ${r.connection}` : ''}`
+      : `${name}: not configured yet; it has a seat but no connection with a model and a key`);
+  }
 
-    let backoff = 5000;
-    while (!stopped) {
-      try {
-        if (!usable()) {
-          await sleep(3000);
-          continue;
-        }
-        if (Date.now() < quietUntil) {
-          await sleep(Math.min(1000, quietUntil - Date.now()));
-          continue;
-        }
-
-        const woke = await hub.waitFor({ by: name, mentioningMe: true, timeoutMs: 20000 });
-        const owed = hub.catchUp({ name }).proposalsAwaitingMyScore;
-
-        let trigger = null;
-        let ideaSlug = null;
-        if (woke.messages.length) {
-          const relevant = woke.messages.filter((m) => m.author !== name);
-          if (relevant.length) {
-            trigger = relevant.map((m) => `${m.author} (${m.kind}): ${m.body}`).join('\n\n');
-            ideaSlug = relevant.findLast((m) => m.idea)?.idea ?? null;
-          }
-        } else if (owed.length) {
-          const p = owed[0];
-          trigger = `Proposal P#${p.id} "${p.title}" by ${p.author} is open and you have not scored it. The room cannot choose a route until you do.`;
-          ideaSlug = p.idea;
-        }
-
-        if (!trigger) continue;
-
-        const result = await think({
-          trigger,
-          ideaSlug,
-          // Woken by a mention means somebody is waiting on us; an owed
-          // proposal score is ordinary business.
-          replyUrgency: woke.messages.length ? 'answer' : 'comment',
-        });
-        if (result.refused) log(`${name}: declined by safety classifiers; skipping this wake`);
-        else if (result.truncated) log(`${name}: response hit max_tokens`);
-        else log(`${name}: ${result.actions.join(', ') || 'no action'}`);
-        backoff = 5000;
-      } catch (err) {
-        if (stopped) break;
-        log(`${name}: ${err.message} — retrying in ${Math.round(backoff / 1000)}s`);
-        // Always drop the floor on the way out; holding it through a backoff
-        // would stall every other agent for as long as the error persists.
-        try { hub.yieldFloor({ by: name }); } catch { /* not queued */ }
-        await sleep(backoff);
-        backoff = Math.min(backoff * 2, 120000);
-      }
-    }
+  /**
+   * One turn, given by whoever is keeping order.
+   *
+   * `direct` is true when the human named this seat: then the reply is an
+   * answer somebody is waiting on, and it goes ahead of general chatter.
+   */
+  async function takeTurn({ trigger, idea = null, direct = false }) {
+    if (stopped) return { actions: [], stopped: true };
+    if (Date.now() < quietUntil) await sleep(quietUntil - Date.now());
+    join();
+    return think({ trigger, ideaSlug: idea, replyUrgency: direct ? 'answer' : 'comment' });
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1007,6 +1053,8 @@ export function createModelParticipant({
     interrupt,
     get busy() { return Boolean(inFlight) && !inFlight.aborted; },
     askDirect,
+    takeTurn,
+    get usable() { return usable(); },
     join,
     name,
     role,

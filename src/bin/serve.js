@@ -22,6 +22,7 @@ import { createRouters } from '../routers.js';
 import { createTerminal } from '../workspace.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
+import { createRounds } from '../rounds.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
@@ -65,7 +66,7 @@ const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`
 const terminal = createTerminal({ db: hub.db, config });
 const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA) });
 const threads = createThreads({
-  db: hub.db, hub, seats, terminal, browser, log: (m) => process.stdout.write(`${m}\n`),
+  db: hub.db, hub, seats, terminal, browser, config, log: (m) => process.stdout.write(`${m}\n`),
 });
 const plugins = createPlugins(hub.db, { log: (m) => process.stdout.write(`${m}\n`) });
 const web = createWebBridge({ connections, log: (m) => process.stdout.write(`${m}\n`) });
@@ -87,6 +88,12 @@ const skills = createSkills(hub.db, {
 /** Running model participants, keyed by seat name. */
 const models = new Map();
 let telegram = null;
+
+/** Who speaks next: the one place the order of the conversation is kept. */
+const rounds = createRounds({
+  hub, seats, models, config,
+  log: (m) => process.stdout.write(`${m}\n`),
+});
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -373,6 +380,7 @@ app.get('/api/feed', (req, res) =>
         body: m.body,
         replyTo: m.reply_to ?? null,
         ref: m.ref_kind ? { kind: m.ref_kind, id: m.ref_id } : null,
+        reactions: hub.reactionsOn(m.id),
         createdAt: m.created_at,
       })),
     };
@@ -381,7 +389,17 @@ app.get('/api/feed', (req, res) =>
 
 // The human's side of the room.
 app.post('/api/ideas', (req, res) =>
-  send(res, () => hub.dropIdea({ title: req.body.title, raw: req.body.raw ?? '', by: req.body.as })),
+  send(res, () => {
+    const idea = hub.dropIdea({ title: req.body.title, raw: req.body.raw ?? '', by: req.body.as });
+    // A new idea is the start of a conversation, so the room gets a turn at it
+    // without the person having to ask "well?" underneath their own idea.
+    rounds.invite({
+      idea: idea.slug,
+      trigger: `${req.body.as} dropped a new idea: "${idea.title}".${idea.raw ? `\n\n${idea.raw}` : ''}\n\n`
+        + 'Give your first reaction to it from your own role — what it needs, what is unclear, what you would do first.',
+    }).catch((err) => process.stderr.write(`rounds: ${err.message}\n`));
+    return idea;
+  }),
 );
 app.post('/api/post', (req, res) =>
   send(res, () => hub.post({ idea: req.body.idea ?? null, body: req.body.body, by: req.body.as, kind: req.body.kind ?? 'message' })),
@@ -421,18 +439,9 @@ app.post('/api/ask', (req, res) =>
       replyTo: req.body.replyTo ?? null,
     });
 
-    // A running participant already has a usable key for its own provider, so
-    // its presence in the map is the only gate needed.
-    const tagged = models.get(audience);
-    if (tagged) {
-      // Deliberately not awaited: a reply can take a while, and the page should
-      // not sit on an open request when the feed will deliver the answer.
-      tagged
-        .askDirect({ body: req.body.body, idea: req.body.idea ?? null, from: req.body.as })
-        .catch((err) => process.stderr.write(`${audience}: direct ask failed — ${err.message}\n`));
-      return { ...q, nudged: audience };
-    }
-    return q;
+    // The question is posted naming the agent, which is all it takes: naming
+    // an agent gives it the next turn, and the answer arrives over the feed.
+    return models.has(audience) ? { ...q, nudged: audience } : q;
   }),
 );
 
@@ -1668,12 +1677,16 @@ app.get('/api/floor', (_req, res) => send(res, () => hub.floor()));
  */
 app.post('/api/interrupt', (_req, res) =>
   send(res, () => {
+    // The turns that have not started go first, or stopping the one that is
+    // speaking just lets the next in line begin.
+    const waiting = rounds.clear();
     const seats = [];
     for (const [name, participant] of models) {
       if (!participant.busy) continue;
       participant.interrupt();
       seats.push(name);
     }
+    for (const name of waiting) if (!seats.includes(name)) seats.push(name);
 
     const runs = [];
     for (const run of hub.swarms({ limit: 50 })) {
@@ -1691,6 +1704,38 @@ app.get('/api/busy', (_req, res) =>
     runs: hub.swarms({ limit: 50 }).filter((r) => swarm.isRunning(r.id)).map((r) => r.id),
   })),
 );
+
+// ----------------------------------------------------------- whose turn it is
+
+/** Who is speaking, who is next, whether a one-to-one is going on, and the order. */
+app.get('/api/rounds', (req, res) =>
+  send(res, () => rounds.state(req.query.idea ? String(req.query.idea) : null)));
+
+/** The person ends a one-to-one themselves, without waiting for the coordinator to notice. */
+app.post('/api/rounds/open', (req, res) =>
+  send(res, () => ({ opened: rounds.open(req.body?.idea ?? null) })));
+
+/** Set the order agents answer in, or who sets it. */
+app.post('/api/rounds/order', (req, res) =>
+  send(res, () => {
+    try { return rounds.setOrder({ mode: req.body?.mode, order: req.body?.order }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
+/** Choose the coordinator: a seat by name, or nothing for the automation. */
+app.get('/api/coordinator', (_req, res) => send(res, () => rounds.coordinator()));
+app.post('/api/coordinator', (req, res) =>
+  send(res, () => {
+    try { return rounds.setCoordinator(req.body?.name); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
+/** Reactions added since a point, for a page that already has the messages. */
+app.get('/api/reactions', (req, res) =>
+  send(res, () => ({ reactions: hub.reactionsSince(req.query.since), head: hub.reactionHead() })));
+
+app.post('/api/react', (req, res) =>
+  send(res, () => hub.react({ message: req.body?.message, by: req.body?.as, emoji: req.body?.emoji })));
 
 /**
  * Ask one model directly and get the answer in this request, rather than waiting
@@ -1716,12 +1761,14 @@ app.post('/api/models/ask', async (req, res) => {
   try {
     // Post the question first so the room sees what was asked, then let the
     // model answer into the same thread.
-    hub.post({
+    const posted = hub.post({
       idea: req.body.idea ?? null,
       body: `@${participant.name} ${body}`,
       by: req.body.as,
       kind: 'question',
     });
+    // Answered here, in this request — so it must not also be given a turn.
+    rounds.skip(posted.id);
     const r = await participant.askDirect({ body, idea: req.body.idea ?? null, from: req.body.as });
     res.json({ ok: true, model: participant.name, ...r });
   } catch (err) {
@@ -1746,11 +1793,19 @@ app.get('/api/events', (req, res) => {
   res.flushHeaders();
 
   let last = Number(req.query.since ?? hub.head());
-  res.write(`event: hello\ndata: ${JSON.stringify({ head: last })}\n\n`);
+  let marks = hub.reactionHead();
+  res.write(`event: hello\ndata: ${JSON.stringify({ head: last, reactions: marks })}\n\n`);
 
   const tick = setInterval(() => {
     try {
       const head = hub.head();
+      // A reaction changes a message that is already on the page, so it does
+      // not move the head and has to be announced on its own.
+      const marked = hub.reactionHead();
+      if (marked > marks) {
+        res.write(`event: reactions\ndata: ${JSON.stringify({ since: marks, head: marked })}\n\n`);
+        marks = marked;
+      }
       if (head > last) {
         res.write(`event: messages\ndata: ${JSON.stringify({ since: last, head })}\n\n`);
         last = head;
@@ -1957,6 +2012,7 @@ function startScheduler() {
 
 function startParticipants() {
   syncSeats();
+  rounds.start();
   startScheduler();
 
   const token = config.secret('telegram_token');

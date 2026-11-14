@@ -46,6 +46,9 @@ function slugify(text, fallback = 'idea') {
   return base || fallback;
 }
 
+/** The receipt: this message was put in front of that agent. */
+const SEEN = '✓';
+
 /** Pull @mentions out of a body. @all and @human are addresses, not agents. */
 function parseMentions(body) {
   const found = new Set();
@@ -521,7 +524,14 @@ export class Hub {
     }
 
     const ts = now();
-    const mentions = parseMentions(body);
+    // "@Architect" means the agent called "architect". A mention that only
+    // works when the capitals match is one that silently reaches nobody, and
+    // the person who typed it has no way to tell that from being ignored.
+    const mentions = [...new Set(parseMentions(body).map((m) => {
+      if (/^(all|everyone)$/i.test(m)) return 'all';
+      if (/^human$/i.test(m)) return 'human';
+      return this.db.prepare('SELECT name FROM agents WHERE name = ? COLLATE NOCASE').get(m)?.name ?? m;
+    }))];
     let id;
     const tx = this.db.transaction(() => {
       const info = this.db
@@ -580,6 +590,7 @@ export class Hub {
       .prepare('SELECT name FROM mentions WHERE message_id = ?')
       .all(m.id)
       .map((r) => r.name);
+    const reactions = this.reactionsOn(m.id);
     return {
       id: m.id,
       idea: m.idea_slug ?? m.idea_id ?? null,
@@ -590,8 +601,102 @@ export class Hub {
       replyTo: m.reply_to ?? undefined,
       ref: m.ref_kind ? { kind: m.ref_kind, id: m.ref_id } : undefined,
       mentions: mentions.length ? mentions : undefined,
+      reactions,
       createdAt: m.created_at,
     };
+  }
+
+  // ------------------------------------------------- receipts and reactions
+
+  /**
+   * React to a message.
+   *
+   * A way of answering that adds nothing to the thread: "seen", "agreed",
+   * "this one". In a room of several models it is the difference between an
+   * agent that had nothing to add and one that never got the message.
+   */
+  react({ message, by, emoji }) {
+    const agent = this.#agent(by);
+    const mark = String(emoji ?? '').trim();
+    if (!mark) throw new Invalid('a reaction needs an emoji');
+    if (/\s/.test(mark) || [...mark].length > 8) throw new Invalid('a reaction is one emoji, not a sentence — say it with reply');
+    const row = this.db.prepare('SELECT id FROM messages WHERE id = ?').get(Number(message));
+    if (!row) throw new NotFound(`no message #${message} to react to`);
+    this.db.prepare('INSERT OR IGNORE INTO reactions (message_id, actor, emoji, created_at) VALUES (?, ?, ?, ?)')
+      .run(row.id, agent.name, mark, now());
+    return { message: row.id, by: agent.name, emoji: mark };
+  }
+
+  /**
+   * Mark messages as having reached this agent.
+   *
+   * Called at the moment they are put in front of the model, not when it
+   * answers — so the tick means exactly "this was in its context", whatever it
+   * then chose to say or not say.
+   */
+  acknowledge({ by, messages = [] }) {
+    const agent = this.#agent(by);
+    const ins = this.db.prepare(
+      `INSERT OR IGNORE INTO reactions (message_id, actor, emoji, created_at)
+       SELECT id, ?, ?, ? FROM messages WHERE id = ? AND author != ? AND author_kind != 'system'`,
+    );
+    const ts = now();
+    let marked = 0;
+    for (const id of messages) marked += Number(ins.run(agent.name, SEEN, ts, Number(id), agent.name).changes);
+    return { marked };
+  }
+
+  /** The reactions on one message, grouped by emoji, or nothing when there are none. */
+  reactionsOn(messageId) {
+    const groups = new Map();
+    for (const r of this.db.prepare('SELECT actor, emoji FROM reactions WHERE message_id = ? ORDER BY rowid').all(Number(messageId))) {
+      if (!groups.has(r.emoji)) groups.set(r.emoji, []);
+      groups.get(r.emoji).push(r.actor);
+    }
+    return groups.size ? [...groups].map(([emoji, by]) => ({ emoji, by })) : undefined;
+  }
+
+  /** Reactions added after a point, so a page that already has the messages can catch up. */
+  reactionsSince(seq = 0) {
+    return this.db
+      .prepare('SELECT rowid AS seq, message_id AS message, actor AS by, emoji FROM reactions WHERE rowid > ? ORDER BY rowid LIMIT 500')
+      .all(Number(seq) || 0);
+  }
+
+  reactionHead() {
+    return this.db.prepare('SELECT IFNULL(MAX(rowid), 0) AS seq FROM reactions').get().seq;
+  }
+
+  /**
+   * The tail of one thread, oldest first — the lobby when no idea is given.
+   *
+   * This is what an agent is shown before it speaks. The lobby has no brief,
+   * so without this an agent addressed there knew the one line aimed at it and
+   * nothing that had been said around it, including by the other agents.
+   */
+  recent({ idea = null, limit = 40 } = {}) {
+    const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, i.slug AS idea_slug FROM messages m
+         LEFT JOIN ideas i ON i.id = m.idea_id
+         WHERE ${ideaId === null ? 'm.idea_id IS NULL' : 'm.idea_id = ?'}
+         ORDER BY m.id DESC LIMIT ?`,
+      )
+      .all(...(ideaId === null ? [] : [ideaId]), Math.min(Math.max(1, Number(limit) || 40), 200));
+    return rows.reverse().map((m) => this.#messageView(m));
+  }
+
+  /** A line from the room itself, in a thread. Used to say out loud what would otherwise only be in a log. */
+  notice({ idea = null, body }) {
+    const ideaId = idea === null || idea === undefined ? null : this.#ideaId(idea);
+    const info = this.db
+      .prepare(
+        `INSERT INTO messages (idea_id, author, author_kind, kind, body, created_at)
+         VALUES (?, 'esprits', 'system', 'system', ?, ?)`,
+      )
+      .run(ideaId, String(body), now());
+    return { id: Number(info.lastInsertRowid), idea: ideaId };
   }
 
   /**
@@ -2753,4 +2858,4 @@ export class Hub {
   }
 }
 
-export { STAGES, TASK_STATUSES, URGENCY, FLOOR_HOLD_MS, PRESENCE_WINDOW_MS, parseMentions, slugify };
+export { STAGES, TASK_STATUSES, URGENCY, FLOOR_HOLD_MS, PRESENCE_WINDOW_MS, SEEN, parseMentions, slugify };

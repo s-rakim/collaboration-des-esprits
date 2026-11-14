@@ -152,6 +152,18 @@
   .msg:hover .acts{opacity:1}
   .msg .acts button{font-size:11px;padding:1px 7px;border-radius:5px}
   .msg .rl{font-size:11.5px;color:var(--faint);margin-bottom:3px}
+  .msg .rx{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:11.5px;color:var(--faint)}
+  .msg.me .rx{justify-content:flex-end}
+  .msg .rx .r{border:1px solid var(--line);border-radius:20px;padding:0 7px;color:var(--dim);background:var(--panel)}
+  .floor .n{color:var(--faint);font-family:var(--mono);font-size:11px;width:14px;flex:none}
+  .floor .tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none;color:var(--faint)}
+  .floor .now .tag{color:var(--good)}
+  .floor .mv{background:none;border:0;color:var(--faint);padding:0 3px;font-size:12px;line-height:1;cursor:pointer}
+  .floor .mv:hover{color:var(--text)}
+  .floor .mv:first-of-type{margin-left:auto}
+  .floor select{width:100%;font-size:12px;padding:4px 6px;margin-top:6px}
+  .floor .note{color:var(--faint);font-size:11.5px;line-height:1.45;margin:6px 2px 0}
+  .floor .note a{color:var(--dim)}
   .msg .rl b{color:var(--dim);font-weight:600}
   .chip{display:flex;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--accent);border-radius:7px;padding:5px 9px;font-size:12.5px}
   .chip b{color:var(--accent)}
@@ -182,6 +194,7 @@
     <div id="results"></div>
     <div id="context"></div>
     <h2>Speaking</h2>
+    <div class="floor" id="rounds"></div>
     <div class="floor" id="floor"></div>
     <h2>In the room</h2>
     <div id="roster"></div>
@@ -195,6 +208,10 @@
           <span class="chip" id="targetRow" style="display:none">
             asking <b id="targetName"></b> <span id="targetAbout"></span>
             <button id="targetClear" title="cancel">&times;</button>
+          </span>
+          <span class="chip" id="oneToOne" style="display:none">
+            talking with <b id="oneToOneWith"></b> — the others are holding
+            <button id="openFloor" title="End the one-to-one and let the others answer" style="font-size:12px;color:var(--text)">open the floor</button>
           </span>
         </div>
 
@@ -466,10 +483,9 @@ function renderIdeas() {
 function renderFloor() {
   const f = state.floor;
   const el = $('#floor');
-  if (!f || (!f.holder && !f.queue.length)) {
-    el.innerHTML = '<div class="empty">Nobody is queued. Agents speak freely until somebody asks for the floor.</div>';
-    return;
-  }
+  // The queue for the floor only matters when an agent from outside has asked
+  // for it; who answers next is the panel above.
+  if (!f || (!f.holder && !f.queue.length)) { el.innerHTML = ''; return; }
   const line = (q, cls) => `<div class="${cls}">
       <span>${esc(q.agent)}</span>
       ${q.reason ? `<span style="color:var(--faint);font-size:11.5px">${esc(q.reason)}</span>` : ''}
@@ -479,6 +495,132 @@ function renderFloor() {
     (f.holder ? line(f.holder, 'now') : '') +
     f.queue.map((q) => line(q, 'wait')).join('');
 }
+
+/**
+ * What was done with a message short of answering it.
+ *
+ * The tick is the receipt: those agents had this message in front of them
+ * when they last spoke. It is what tells "it had nothing to add" apart from
+ * "it never saw this".
+ */
+function reactionRow(m) {
+  if (!m.reactions?.length) return '';
+  const seen = m.reactions.find((r) => r.emoji === '✓');
+  const rest = m.reactions.filter((r) => r.emoji !== '✓');
+  return `<div class="rx">
+    ${rest.map((r) => `<span class="r" title="${esc(r.by.join(', '))}">${esc(r.emoji)} ${esc(r.by.join(', '))}</span>`).join('')}
+    ${seen ? `<span title="These agents had this message in their context when they last spoke">✓ read by ${esc(seen.by.join(', '))}</span>` : ''}
+  </div>`;
+}
+
+/** Reactions land on messages already on the page, so they are merged in rather than re-fetched. */
+async function loadReactions(since) {
+  const d = await api(`/api/reactions?since=${Number(since) || 0}`);
+  const byId = new Map(state.msgs.map((m) => [m.id, m]));
+  for (const r of d.reactions) {
+    const m = byId.get(r.message);
+    // Not on the page yet: it will arrive from the feed with this already on it.
+    if (!m) continue;
+    m.reactions ??= [];
+    let group = m.reactions.find((g) => g.emoji === r.emoji);
+    if (!group) m.reactions.push(group = { emoji: r.emoji, by: [] });
+    if (!group.by.includes(r.by)) group.by.push(r.by);
+  }
+  if (d.reactions.length) renderFeed();
+}
+
+/**
+ * Whose turn it is, and in what order.
+ *
+ * Everything about the order is here because this is where you look when you
+ * are waiting for an answer: who is speaking, who is next, whether the others
+ * are being held, and the two things you can change about it — the order
+ * itself and who the coordinator is.
+ */
+async function loadRounds() {
+  const q = state.idea ? `?idea=${encodeURIComponent(state.idea)}` : '';
+  state.rounds = await api(`/api/rounds${q}`);
+  renderRounds();
+}
+
+function renderRounds() {
+  const r = state.rounds; if (!r) return;
+  const el = $('#rounds');
+  // Rebuilding this under somebody choosing from one of its menus closes the menu.
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+
+  const one = r.oneToOne;
+  $('#oneToOne').style.display = one ? '' : 'none';
+  if (one) $('#oneToOneWith').textContent = one.seats.map((n) => `@${n}`).join(', ');
+  if (!state.target) {
+    $('#body').placeholder = one
+      ? `Still talking with ${one.seats.join(', ')}. Say "thanks" or open the floor to let the others in.`
+      : 'Say something — everyone answers in turn. @name to talk to one agent.';
+  }
+
+  const busy = r.running || r.queue.length;
+  const lines = [];
+  if (r.running) lines.push(`<div class="now"><span>${esc(r.running.seat)}</span><span class="tag">answering</span></div>`);
+  r.queue.forEach((j, i) => lines.push(`<div class="wait"><span class="n">${i + 1}</span><span>${esc(j.seat)}</span><span class="tag">next</span></div>`));
+
+  if (!busy) {
+    const able = new Set(r.speaking);
+    lines.push(r.order.length
+      ? `<div class="note" style="margin:0 2px 5px">${one ? 'When the floor opens, the order is:' : 'Say something and they answer in this order:'}</div>`
+      : '<div class="empty">No agent has a seat yet — add one, with its key, on the setup page.</div>');
+    r.order.forEach((name, i) => lines.push(`<div class="wait" ${able.has(name) ? '' : 'style="opacity:.5" title="no working connection — it is skipped"'}>
+      <span class="n">${i + 1}</span><span>${esc(name)}</span>
+      ${r.mode === 'custom' ? `<button class="mv" data-move="${i}" data-by="-1" title="Earlier" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="mv" data-move="${i}" data-by="1" title="Later" ${i === r.order.length - 1 ? 'disabled' : ''}>↓</button>` : ''}
+    </div>`));
+  }
+
+  const c = r.coordinator;
+  el.innerHTML = `${lines.join('')}
+    <select id="orderMode" title="Who decides the order the agents answer in">
+      <option value="added" ${r.mode === 'added' ? 'selected' : ''}>Order: as the keys were added</option>
+      <option value="custom" ${r.mode === 'custom' ? 'selected' : ''}>Order: mine — I set it</option>
+      <option value="coordinator" ${r.mode === 'coordinator' ? 'selected' : ''}>Order: the coordinator decides</option>
+    </select>
+    <select id="coordinatorPick" title="Who opens the floor after a one-to-one, sets the order when asked, and oversees builds">
+      <option value="">Coordinator: automation (no key)</option>
+      ${r.added.map((n) => `<option value="${esc(n)}" ${c.chosen === n ? 'selected' : ''}>Coordinator: ${esc(n)}</option>`).join('')}
+    </select>
+    <div class="note">${c.note ? `${esc(c.note)}. ` : ''}${c.automation
+      ? 'The automation opens the floor when you sign off or go quiet. To use a model instead, <a href="/setup">add an agent with its own key</a> and pick it here.'
+      : `${esc(c.name)} judges when a one-to-one is over, with its own model.`}</div>`;
+}
+
+$('#rounds').addEventListener('change', async (e) => {
+  try {
+    if (e.target.id === 'orderMode') {
+      // Starting your own order from the one on the screen, not from nothing.
+      const body = e.target.value === 'custom' ? { mode: 'custom', order: state.rounds.order } : { mode: e.target.value };
+      await api('/api/rounds/order', { method: 'POST', body: JSON.stringify(body) });
+    }
+    if (e.target.id === 'coordinatorPick') {
+      await api('/api/coordinator', { method: 'POST', body: JSON.stringify({ name: e.target.value }) });
+    }
+  } catch (x) { toast(x.message); }
+  e.target.blur();
+  loadRounds().catch(() => {});
+});
+$('#rounds').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-move]');
+  if (!b) return;
+  const order = [...state.rounds.order];
+  const from = Number(b.dataset.move), to = from + Number(b.dataset.by);
+  if (to < 0 || to >= order.length) return;
+  [order[from], order[to]] = [order[to], order[from]];
+  try { await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'custom', order }) }); }
+  catch (x) { toast(x.message); }
+  loadRounds().catch(() => {});
+});
+$('#openFloor').addEventListener('click', async () => {
+  try { await api('/api/rounds/open', { method: 'POST', body: JSON.stringify({ idea: state.idea }) }); }
+  catch (x) { toast(x.message); }
+  loadRounds().catch(() => {});
+});
 
 function renderFeed() {
   const shown = state.msgs.filter((m) => (state.idea === null ? true : m.idea === state.idea));
@@ -499,6 +641,7 @@ function renderFeed() {
         <span class="when">${ago(m.createdAt)}</span>
       </div>
       <div class="b">${renderBody(m.body)}</div>
+      ${reactionRow(m)}
     </div>`;
   }).join('') || '<div class="empty">Nothing said yet.</div>';
   if (near) $('#feed').scrollTop = $('#feed').scrollHeight;
@@ -624,7 +767,7 @@ async function loadFloor() {
 }
 
 async function refresh() {
-  try { await Promise.all([loadFeed(false), loadOverview(), loadBrief(), loadFloor()]); }
+  try { await Promise.all([loadFeed(false), loadOverview(), loadBrief(), loadFloor(), loadRounds()]); }
   catch (e) { toast(e.message); }
 }
 
@@ -747,7 +890,7 @@ function setTarget(agent, messageId) {
     $('#body').placeholder = `Ask ${agent} directly. Only ${agent} can answer this.`;
     $('#body').focus();
   } else {
-    $('#body').placeholder = 'Say something. @mention an agent by name, or @all for everyone.';
+    $('#body').placeholder = 'Say something — everyone answers in turn. @name to talk to one agent.';
   }
 }
 $('#targetClear').addEventListener('click', () => setTarget(null));
@@ -1508,7 +1651,7 @@ $('#genGo').addEventListener('click', async () => {
  * button exist for. So this is its own slow poll rather than a reaction to the
  * feed.
  */
-setInterval(() => { renderBusy().catch(() => {}); }, 2500);
+setInterval(() => { renderBusy().catch(() => {}); loadRounds().catch(() => {}); }, 2500);
 
 // ------------------------------------------------------------- the bar
 
@@ -1630,6 +1773,11 @@ $('#stop').addEventListener('click', async () => {
 function listen() {
   const es = new EventSource(`/api/events?since=${state.head}`);
   es.addEventListener('messages', () => refresh());
+  es.addEventListener('reactions', (e) => {
+    let since = 0;
+    try { since = JSON.parse(e.data).since; } catch { /* take them all */ }
+    loadReactions(since).catch(() => {});
+  });
   es.onerror = () => { es.close(); setTimeout(listen, 3000); };
 }
 

@@ -395,7 +395,7 @@ try {
 
   // ---------------------------------------------------------- every page loads
 
-  for (const path of ['/', '/dashboard', '/plugins', '/work', '/design', '/artifacts', '/setup']) {
+  for (const path of ['/', '/dashboard', '/plugins', '/work', '/threads', '/design', '/artifacts', '/setup']) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     watch(page, path);
     await page.goto(BASE + path, { waitUntil: 'networkidle' });
@@ -410,6 +410,15 @@ try {
     const tops = await page.$$eval('#shell-rail a.item', (a) => a.map((x) => Math.round(x.getBoundingClientRect().top)));
     if (tops.length < 6) note(path, `only ${tops.length} links in the rail`);
     if (new Set(tops).size !== tops.length) note(path, 'rail links share a row — they should stack');
+
+    // The terminal and the browser belong to the project, not to one tab: the
+    // same drawer has to open from the rail wherever you are, the chat included.
+    await page.click('#shell-rail [data-tool="terminal"]');
+    const opened = await page.waitForSelector('#tools.open #tCmd', { state: 'visible', timeout: 4000 }).catch(() => null);
+    if (!opened) note(path, 'the terminal did not open from the rail');
+    await page.click('#shell-rail [data-tool="browser"]');
+    await page.waitForTimeout(200);
+    if (!(await page.isVisible('#tools #bGo'))) note(path, 'the browser did not open from the rail');
     await page.close();
   }
 

@@ -673,8 +673,9 @@ you reload.
 
 ## The coordinator
 
-A seat with the `coordinator` role, whose job is not to contribute ideas but to
-check the ones that are made. It pulls the statements of fact out of what was
+In the conversation the coordinator keeps order and oversees builds — see
+*Taking turns* and *Threads*. As a seat in the room it also has a charter of its
+own: its job is not to contribute ideas but to check the ones that are made. It pulls the statements of fact out of what was
 said — numbers, versions, limits, prices, API shapes, "this is impossible" —
 and checks each one: first against the room's own recorded decisions, facts and
 artifacts with `check_claim`, and where the room cannot settle it, against the
@@ -691,9 +692,50 @@ showing a comfortable zero.
 
 ## Taking turns
 
-Without this, every agent answers the same message at once and you read six
-variations of one thought. So agents register an intent to speak with an
-**urgency**, and the highest-urgency waiter holds the floor:
+Who speaks next is decided in one place, and it follows the shape of a
+conversation rather than a race:
+
+- **Say something to the room and every agent answers, one after another.**
+  Each is shown the whole thread before it speaks — including what the agents
+  before it just said — so the third answer can be about the first two instead
+  of a third copy of the same thought.
+- **Name an agent (`@name`) and only that agent answers.** It stays a
+  one-to-one for as long as you keep talking: your next message goes to the same
+  agent whether or not you name it again, and everybody else holds. Capitals do
+  not matter — `@Architect` reaches `architect`.
+- **The coordinator opens the floor when the one-to-one is over.** Only then do
+  the others speak, with the whole exchange in front of them. You can also end
+  it yourself: `@all`, or **open the floor** above the message box.
+
+**The order** is the order you added the keys. You can change it in the
+*Speaking* panel — set your own with the arrows, or hand the choice to the
+coordinator, who then orders each round.
+
+**The coordinator** is one of two things, chosen in the same panel:
+
+| | |
+|---|---|
+| the automation | No model, no key. It opens the floor when you sign off ("thanks", "that's all") or when a one-to-one has been quiet for 90 seconds, and when asked to order a round it puts whoever has been silent longest first. |
+| an agent you pick | Any seat, on its own connection and key. It is asked — with its own model — whether your exchange is finished, and in what order the others should answer. If it cannot be reached, the automation's rules apply rather than everyone being held for ever. |
+
+The same choice decides who oversees a build (see *Threads*).
+
+**Agents talk to each other** by naming each other: an agent that `@mentions`
+another gives it a turn, and a reply can point at the one message it answers.
+They may hand a conversation back and forth six times before the room stops and
+waits for you.
+
+**Nothing is silent.** Every message shows which agents had it in their context
+when they last spoke (`✓ read by …`), an agent with nothing to add reacts
+instead of repeating somebody, and one that fails says so in the thread — "bo
+could not answer — the endpoint timed out" — instead of only in the server log,
+where it looks exactly like being ignored.
+
+### Agents that connect from outside
+
+Agents you connect over MCP run their own loops, so for them there is a floor.
+They register an intent to speak with an **urgency**, and the highest-urgency
+waiter holds it:
 
 | | |
 |---|---|
@@ -721,8 +763,49 @@ Two deliberate limits on the rule:
 attention, so you can talk over any of them, and you can break a deadlock they
 cannot.
 
-The chat page shows who is speaking and who is waiting, with each agent's stated
-reason.
+The chat page shows who is answering, who is next, and the order.
+
+## Threads — building what was approved
+
+The chat is where an idea gets argued into shape. When it is what you want,
+**hand it over**: the button at the top of the idea, or *Hand over an idea* on
+the Threads page. That is the approval. What the room has agreed is frozen as
+the brief, and the coordinator takes it from there:
+
+1. It cuts the work into **threads** that can run side by side.
+2. It gives each one a **necessity** (must / should / could) and an
+   **importance** (1–5), and from those a seat and an effort. The necessary and
+   important run first, think hardest, and get first pick of the models.
+3. The threads run in parallel, each with the terminal and the browser.
+4. It reports where the product stands, including what did not get done.
+
+Everything it allocated is a first answer. On the Threads page each thread's
+**seat, model and effort** can be changed, a thread can be told something
+mid-run, and any thread can be run again on its own.
+
+With the automation as coordinator there is no planning call: it takes the
+cutting the room already did — the idea's tasks if it has any (tasks that
+depend on each other stay in one thread), otherwise the items of the spec if it
+is a list, otherwise one thread — and its report is what each thread said,
+unedited, with the failures named. The threads themselves are always worked by
+models, so at least one seat needs a key.
+
+## The terminal and the browser
+
+Two things you share with the agents, opened from the rail on every page — the
+chat included — or with `Ctrl` + `` ` ``:
+
+- **A terminal** that starts in a **project folder** you choose. You and the
+  agents type into the same one, and every command is recorded with who ran it.
+  Agents can be switched off from it with one checkbox.
+- **A Firefox window**, a real one on your screen, on a profile of its own
+  rather than your everyday one. Search in it and the agents can read the
+  results; they search and you watch it happen. Install Firefox and the room
+  finds it; `ESPRITS_FIREFOX` points at one it cannot find.
+
+The folder is where commands *start*, not a wall around them: a shell command
+can reach whatever your account can. To confine the agents, run the whole
+server in a container or under a spare account.
 
 ## Tagging one agent
 
@@ -732,8 +815,8 @@ the researcher gets you the researcher's answer, not whoever is idle. You can
 always answer or close it yourself.
 
 The whole chain threads: the original message, your tagged question under it, and
-the answer under that. Tag one of your own models and it answers immediately
-rather than waiting for its watch loop.
+the answer under that. Tagging one of your own models is the same as naming it:
+it takes the next turn, and the conversation stays with it until it is over.
 
 ## Telegram
 
@@ -817,6 +900,12 @@ just takes precedence when both are present.
 | `ESPRITS_PAIR_CODE` | — | pairing secret; the bridge refuses to start without it |
 | `ESPRITS_HUMAN` | — | your handle |
 | `ESPRITS_KEY_<NAME>` | — | fallback key for the connection of that name |
+| `ESPRITS_WORKSPACE` | — | the project folder the shared terminal starts in |
+| `ESPRITS_TERMINAL_AGENTS` | `true` | whether agents may use the terminal |
+| `ESPRITS_FIREFOX` | found automatically | full path to Firefox |
+| `ESPRITS_COORDINATOR` | the automation | the seat that coordinates |
+| `ESPRITS_TURN_ORDER_MODE` | `added` | `added`, `custom` or `coordinator` |
+| `ESPRITS_FLOOR_IDLE_MS` | `90000` | how long a quiet one-to-one waits before the floor opens |
 
 ## Security
 

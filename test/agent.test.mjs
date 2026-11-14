@@ -478,3 +478,79 @@ test('a model is told which model it is and that the others differ', async () =>
   assert.match(system, /running on gpt-5-mini/);
   assert.match(system, /may be different models/);
 });
+
+// ------------------------------------------------- seeing the room, answering it
+
+test('an agent in the lobby is shown what was said there, including by the other agents', async () => {
+  const ctx = room();
+  ctx.hub.post({ body: 'should this be one service or two?', by: 'rakim' });
+  ctx.hub.post({ body: 'Two. The importer has a different failure mode.', by: 'crit' });
+  const { p, calls } = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])]);
+
+  await p.takeTurn({ trigger: 'rakim said: and you?' });
+  const sent = calls[0].messages.find((m) => m.role === 'user').content;
+  // The lobby has no brief. It used to arrive with the one line aimed at the
+  // agent and nothing else, so it answered a conversation it could not see.
+  assert.match(sent, /#\d+ rakim \(the human\): should this be one service or two\?/);
+  assert.match(sent, /#\d+ crit: Two\. The importer has a different failure mode\./);
+  assert.match(sent, /and you\?/);
+});
+
+test('what the agent itself said earlier is in front of it, marked as its own', async () => {
+  const ctx = room();
+  const { p, calls } = participant(ctx, [
+    msg(null, [{ name: 'reply', input: { body: 'Start with the importer.' } }]),
+    msg(null, [{ name: 'say_nothing', input: {} }]),
+  ]);
+  await p.takeTurn({ trigger: 'rakim said: where do we start?' });
+  await p.takeTurn({ trigger: 'rakim said: why there?' });
+  const second = calls[1].messages.find((m) => m.role === 'user').content;
+  assert.match(second, /gpt \(you\): Start with the importer\./, 'a model with no memory of its last answer contradicts it');
+});
+
+test('a reply can answer one message in particular', async () => {
+  const ctx = room();
+  const point = ctx.hub.post({ body: 'A queue is overkill here.', by: 'crit' });
+  const { p } = participant(ctx, [msg(null, [{ name: 'reply', input: { body: 'Agreed — a cron is enough.', reply_to: point.id } }])]);
+  await p.takeTurn({ trigger: 'crit made a point' });
+  const said = ctx.hub.recent({ limit: 1 })[0];
+  assert.equal(said.replyTo, point.id);
+});
+
+test('a reply aimed at a message that does not exist is still said', async () => {
+  const ctx = room();
+  const { p } = participant(ctx, [msg(null, [{ name: 'reply', input: { body: 'Here is my answer.', reply_to: 4242 } }])]);
+  const r = await p.takeTurn({ trigger: 'rakim said: well?' });
+  assert.deepEqual(r.actions, ['reply']);
+  assert.equal(ctx.hub.recent({ limit: 1 })[0].body, 'Here is my answer.');
+});
+
+test('an agent can react instead of adding words, and that ends its turn', async () => {
+  const ctx = room();
+  const point = ctx.hub.post({ body: 'Ship the cron first.', by: 'crit' });
+  const { p, calls } = participant(ctx, [msg(null, [{ name: 'react', input: { message_id: point.id, emoji: '👍' } }])]);
+  const r = await p.takeTurn({ trigger: 'crit made a point' });
+  assert.deepEqual(r.actions, ['react']);
+  assert.equal(calls.length, 1, 'one action, then stop');
+  const marks = ctx.hub.recent({ limit: 20 }).find((m) => m.id === point.id).reactions;
+  assert.ok(marks.some((m) => m.emoji === '👍' && m.by.includes('gpt')));
+});
+
+test('every message put in front of an agent gets its receipt, whatever it then says', async () => {
+  const ctx = room();
+  const a = ctx.hub.post({ body: 'first', by: 'rakim' });
+  const b = ctx.hub.post({ body: 'second', by: 'crit' });
+  const { p } = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])]);
+  await p.takeTurn({ trigger: 'rakim said: first' });
+  for (const id of [a.id, b.id]) {
+    const row = ctx.hub.db.prepare('SELECT actor FROM reactions WHERE message_id = ? AND emoji = ?').get(id, '✓');
+    assert.equal(row?.actor, 'gpt', `message #${id} was in its context and should say so`);
+  }
+});
+
+test('an agent addressed by name is told the human wants its answer', async () => {
+  const ctx = room();
+  const { p, calls } = participant(ctx, [msg(null, [{ name: 'reply', input: { body: 'Yes.' } }])]);
+  await p.takeTurn({ trigger: 'rakim addressed you by name: can it scale?', direct: true });
+  assert.match(calls[0].messages.find((m) => m.role === 'system').content, /addresses you by name, they want your answer/);
+});

@@ -74,6 +74,17 @@ CREATE TABLE IF NOT EXISTS mentions (
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_name ON mentions(name, message_id);
 
+-- What somebody did with a message without adding words to the thread. The
+-- receipt an agent leaves when a message has gone into its context is one of
+-- these, so "did it see that?" has an answer on the page.
+CREATE TABLE IF NOT EXISTS reactions (
+  message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  actor       TEXT NOT NULL,
+  emoji       TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (message_id, actor, emoji)
+);
+
 -- ------------------------------------------------------- questions & decisions
 
 -- The refinement loop's blocking input. An idea with open questions aimed at
