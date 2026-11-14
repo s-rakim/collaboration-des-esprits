@@ -183,7 +183,7 @@ test('old per-seat endpoints are lifted into a connection on open', () => {
  * off to regenerate a key that was fine all along.
  */
 test('the key is picked out of whatever it was pasted inside', () => {
-  const key = 'nvapi-kjb18jw3MH46A6BRmuWy4fAzfHazCsgbJuUSk4yWzE2xImJHC2GXPxC6qOq';
+  const key = 'nvapi-NOTAREALKEY0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL';
   const pastes = [
     key,
     `Bearer ${key}`,
@@ -228,7 +228,7 @@ test('a short or unusual credential is taken as typed rather than thrown away', 
 
 test('what is stored is the cleaned key, and its length is reported', () => {
   const { connections } = fresh();
-  const key = 'nvapi-kjb18jw3MH46A6BRmuWy4fAzfHazCsgbJuUSk4yWzE2xImJHC2GXPxC6qOq';
+  const key = 'nvapi-NOTAREALKEY0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL';
   connections.save({ name: 'nv', kind: 'chat', baseURL: 'https://x.test/v1', model: 'm', apiKey: `Bearer ${key}.` });
 
   assert.equal(connections.keyFor('nv'), key, 'the wrapper must not be stored with the key');
@@ -278,14 +278,14 @@ test('a key pasted on its own is never altered', () => {
     'sk-abc123!def456ghi789jkl012',
     'user:0123456789abcdef0123456789',
     'key%2Fwith%2Fescapes0123456789',
-    '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',
+    'nvapi-NOT-A-REAL-KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM',
     'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkw==',
   ]) {
     assert.equal(cleanKey(odd), odd, `${odd.slice(0, 12)}… was changed`);
   }
 
   // NAME=value has no spaces in it either, and the key is the right-hand side.
-  const key = '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';
+  const key = 'nvapi-NOT-A-REAL-KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM';
   assert.equal(cleanKey(`NVIDIA_API_KEY=${key}`), key);
   assert.equal(cleanKey(`NVIDIA_API_KEY="${key}"`), key);
   // But the "=" of base64 padding is not a separator, and only ever trails.
@@ -400,7 +400,7 @@ test("a provider's own example fills the whole row", () => {
   // transcription exercise with four chances to go subtly wrong — a truncated
   // key, a model id off a different vendor's page, a base URL missing its /v1 —
   // and not one of them announces itself.
-  const key = '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';
+  const key = 'nvapi-EXAMPLE-ONLY_ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcb';
 
   const python = parseSnippet(`from openai import OpenAI
 

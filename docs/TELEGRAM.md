@@ -35,7 +35,7 @@ It asks for two things:
 It replies with a token that looks like:
 
 ```
-8134567890:AAHk9_vX2LpQ7zR4tYuIoP-aSdFgHjKlZxC
+0123456789:EXAMPLE-not-a-real-token-0123456789
 ```
 
 Copy it. **That token is the bot** — anyone holding it can act as your bot, so
@@ -59,7 +59,7 @@ Either way works; if both are present the environment variable wins.
 **Or from a shell:**
 
 ```bash
-export ESPRITS_TELEGRAM_TOKEN='8134567890:AAHk9_vX2LpQ7zR4tYuIoP-aSdFgHjKlZxC'
+export ESPRITS_TELEGRAM_TOKEN='0123456789:EXAMPLE-not-a-real-token-0123456789'
 export ESPRITS_PAIR_CODE="$(openssl rand -hex 8)"
 npm start          # runs the bridge alongside the server
 ```
