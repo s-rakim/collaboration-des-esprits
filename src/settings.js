@@ -34,6 +34,14 @@ export const SETTINGS = {
     env: 'ESPRITS_SANDBOX_NETWORK', default: 'true',
     label: 'The sandbox may reach the network (to install packages)',
   },
+  editor: {
+    env: 'ESPRITS_EDITOR', default: '',
+    label: 'The command that starts your code editor, such as "code"',
+  },
+  linked_folders: {
+    env: 'ESPRITS_LINKED_FOLDERS', default: '',
+    label: 'Folders on this computer the room may work in directly',
+  },
   sandbox_unconfined: {
     env: 'ESPRITS_SANDBOX_UNCONFINED', default: 'false',
     label: 'Run commands with no sandbox when no engine is installed',

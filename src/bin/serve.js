@@ -698,6 +698,47 @@ app.post('/api/sandbox', fromOurPages, (req, res) =>
     return sandbox.status();
   }));
 
+/**
+ * Link a folder on this computer, so the room works in it — or let go of one.
+ *
+ * Only a person can: it is the room being handed something of theirs. With a
+ * container engine the folder is all the container is given; without one,
+ * commands run on the machine in that folder, and the status says so.
+ */
+app.post('/api/sandbox/link', fromOurPages, (req, res) =>
+  send(res, async () => {
+    person(req.body?.as);
+    try { sandbox.link({ path: req.body?.path, name: req.body?.name }); }
+    catch (err) { throw new Invalid(err.message); }
+    return { ...(await sandbox.status()), agentsAllowed: terminal.agentsAllowed() };
+  }));
+
+app.post('/api/sandbox/unlink', fromOurPages, (req, res) =>
+  send(res, async () => {
+    person(req.body?.as);
+    try { sandbox.unlink(String(req.body?.name ?? '')); }
+    catch (err) { throw new Invalid(err.message); }
+    return { ...(await sandbox.status()), agentsAllowed: terminal.agentsAllowed() };
+  }));
+
+/** Which editors are on this machine, and which one the room will use. */
+app.get('/api/editor', (_req, res) => send(res, () => sandbox.editors()));
+
+app.post('/api/editor', fromOurPages, (req, res) =>
+  send(res, async () => {
+    person(req.body?.as);
+    try { sandbox.setEditor(req.body?.command); } catch (err) { throw new Invalid(err.message); }
+    return sandbox.editors();
+  }));
+
+/** Open the folder, or one file in it, in the person's editor. A person's action: it starts a program on their machine. */
+app.post('/api/sandbox/open', fromOurPages, (req, res) =>
+  send(res, async () => {
+    person(req.body?.as);
+    try { return await sandbox.openInEditor({ folder: req.body?.folder, path: req.body?.path }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
 /** Get the container up — the first time, that is a download. */
 app.post('/api/sandbox/prepare', fromOurPages, (_req, res) =>
   send(res, async () => {

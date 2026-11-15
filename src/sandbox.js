@@ -17,6 +17,14 @@
  * the terminal refuses and says what to install. A person can choose to run
  * without isolation — it is their computer — but they have to choose it, it is
  * off until they do, and every status line says so while it is on.
+ *
+ * Linked folders are that choice made about one folder rather than about
+ * everything. A person points the room at a project on their own disk — the
+ * one they have open in their editor — and the room works there. With an
+ * engine, that folder is what the container is given, and it is still all it
+ * can see. Without one, commands run on the machine in that folder: not
+ * isolated, and said to be not isolated, but agreed to for that folder by the
+ * person who linked it.
  */
 
 import { spawn, execFile, execFileSync } from 'node:child_process';
@@ -25,7 +33,7 @@ import {
   cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, parse, resolve } from 'node:path';
 
 import { zip } from './skillpack.js';
 
@@ -51,7 +59,8 @@ export function createSandbox({
   gid = typeof process.getgid === 'function' ? process.getgid() : null,
 }) {
   const root = resolve(dataDir, 'sandbox');
-  mkdirSync(root, { recursive: true });
+  // The sandbox's own folder is always there to go back to, whatever else is linked.
+  mkdirSync(join(root, DEFAULT_FOLDER), { recursive: true });
   const container = `esprits-sandbox-${createHash('sha1').update(root).digest('hex').slice(0, 10)}`;
 
   /** One command to the engine, to its end. Never through a shell: the arguments are not ours to have reinterpreted. */
@@ -96,7 +105,8 @@ export function createSandbox({
 
   /** What the container must be, as one string: when this changes the old container is the wrong one. */
   const spec = () => createHash('sha1')
-    .update([image(), network() ? 'net' : 'no-net', root, uid ?? '', 'v1'].join('|')).digest('hex').slice(0, 12);
+    .update([image(), network() ? 'net' : 'no-net', root, uid ?? '', 'v2',
+      ...links().map((l) => `${l.name}=${l.path}`)].join('|')).digest('hex').slice(0, 12);
 
   async function ensure() {
     const bin = await detect();
@@ -123,6 +133,9 @@ export function createSandbox({
       'run', '-d', '--name', container, '--label', `esprits.spec=${wanted}`,
       '--init', '--pids-limit', '1024',
       '-v', `${root}:${INSIDE}`, '-w', INSIDE,
+      // A linked folder is given to the container under its name, beside the
+      // sandbox's own. It is the only other thing of the machine's it gets.
+      ...links().filter((l) => existsSync(l.path)).flatMap((l) => ['-v', `${l.path}:${INSIDE}/${l.name}`]),
       ...(network() ? [] : ['--network', 'none']),
       ...(asUser ? ['--user', `${uid}:${gid ?? uid}`, '-e', `HOME=${INSIDE}/.home`] : []),
       image(), 'sleep', 'infinity',
@@ -147,28 +160,88 @@ export function createSandbox({
 
   function folders() {
     return readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && !linkOf(d.name))
       .map((d) => d.name).sort();
   }
 
-  /** The folder commands start in. Always one inside the sandbox; it is a name, not a path. */
+  // ------------------------------------------------------- linked folders
+
+  /** The folders on this computer a person has linked: [{ name, path }]. */
+  function links() {
+    try {
+      const kept = JSON.parse(config.get('linked_folders') || '[]');
+      return Array.isArray(kept) ? kept.filter((l) => l && NAME.test(String(l.name)) && typeof l.path === 'string' && l.path) : [];
+    } catch { return []; }
+  }
+  const linkOf = (name) => links().find((l) => l.name === name) ?? null;
+  const within = (inner, outer) => inner === outer || inner.startsWith(outer + (process.platform === 'win32' ? '\\' : '/'));
+
+  /**
+   * Link a folder on this computer, so the room can work in it.
+   *
+   * It has to be a project folder and not everything the account owns, and
+   * it may not hold — or be held by — the room's own data: a folder with the
+   * database in it is a folder with every key in it, and an agent given that
+   * folder has been given those.
+   */
+  function link({ path: raw, name: wanted }) {
+    const typed = String(raw ?? '').trim().replace(/^["']|["']$/g, '').replace(/^~(?=$|[\\/])/, homedir());
+    if (!typed) throw new Error('say which folder — its full path on this computer');
+    if (!isAbsolute(typed)) throw new Error('give the full path of the folder');
+    const dir = resolve(typed);
+    if (!existsSync(dir)) throw new Error(`${dir} does not exist`);
+    if (!statSync(dir).isDirectory()) throw new Error(`${dir} is a file, not a folder`);
+    if (dir === parse(dir).root) throw new Error('link a project folder, not a whole drive');
+    if (dir === resolve(homedir())) throw new Error('link a project folder inside your home folder, not the home folder itself');
+    const data = resolve(dataDir);
+    if (within(data, dir)) throw new Error('that folder holds the room\'s own data, with your keys in it — link the project you want worked on, not a folder above the room');
+    if (within(dir, data)) throw new Error('that is inside the room\'s own data — choose a project folder of yours');
+
+    const all = links();
+    const already = all.find((l) => resolve(l.path) === dir);
+    if (already) { config.set('workspace', already.name); return folder(); }
+
+    // Named after the folder, in letters a mention or a path can carry.
+    let base = String(wanted ?? '').trim() || dir.split(/[\\/]/).filter(Boolean).at(-1) || 'linked';
+    base = base.replace(/[^\w.-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 48) || 'linked';
+    let name = base;
+    for (let n = 2; linkOf(name) || existsSync(join(root, name)); n++) name = `${base}-${n}`;
+
+    config.set('linked_folders', JSON.stringify([...all, { name, path: dir }]));
+    config.set('workspace', name);
+    return folder();
+  }
+
+  /** Stop working in a linked folder. Nothing in it is touched; the room simply lets go of it. */
+  function unlink(name) {
+    const all = links();
+    if (!all.some((l) => l.name === name)) throw new Error(`no linked folder called "${name}"`);
+    const rest = all.filter((l) => l.name !== name);
+    config.set('linked_folders', rest.length ? JSON.stringify(rest) : '');
+    if (config.get('workspace') === name) config.set('workspace', '');
+    return folder();
+  }
+
+  /** The folder commands start in: one of the sandbox's own, by name, or one the person linked. */
   function folder() {
     let name = String(config.get('workspace') ?? '').trim();
     // An older room stored a path on the machine here. That is exactly what
     // the sandbox exists not to run in, so it is not honoured.
     if (!NAME.test(name)) name = DEFAULT_FOLDER;
+    const linked = linkOf(name);
+    if (linked) return { name, hostDir: linked.path, inside: `${INSIDE}/${name}`, linked: true, missing: !existsSync(linked.path) };
     const hostDir = join(root, name);
     mkdirSync(hostDir, { recursive: true });
-    return { name, hostDir, inside: `${INSIDE}/${name}` };
+    return { name, hostDir, inside: `${INSIDE}/${name}`, linked: false };
   }
 
   function setFolder(raw) {
     const name = String(raw ?? '').trim();
     if (!name) { config.set('workspace', ''); return folder(); }
     if (!NAME.test(name)) {
-      throw new Error('a sandbox folder is a name — letters, numbers, dots, dashes and underscores — not a path on this computer');
+      throw new Error('a sandbox folder is a name — letters, numbers, dots, dashes and underscores — not a path on this computer. To work in a folder of yours, link it');
     }
-    mkdirSync(join(root, name), { recursive: true });
+    if (!linkOf(name)) mkdirSync(join(root, name), { recursive: true });
     config.set('workspace', name);
     return folder();
   }
@@ -176,8 +249,10 @@ export function createSandbox({
   /** A folder named by a caller, checked to be one of ours. */
   function named(name) {
     if (name === undefined || name === null || name === '') return folder();
+    const linked = NAME.test(String(name)) ? linkOf(String(name)) : null;
+    if (linked) return { name: linked.name, hostDir: linked.path, inside: `${INSIDE}/${linked.name}`, linked: true };
     if (!NAME.test(String(name)) || !existsSync(join(root, String(name)))) throw new Error(`there is no sandbox folder called "${name}"`);
-    return { name: String(name), hostDir: join(root, String(name)), inside: `${INSIDE}/${name}` };
+    return { name: String(name), hostDir: join(root, String(name)), inside: `${INSIDE}/${name}`, linked: false };
   }
 
   // ----------------------------------------------------------------- status
@@ -190,10 +265,13 @@ export function createSandbox({
       engine,
       isolated,
       unconfined: !isolated && unconfined(),
+      // The folder in use is one of the person's own, on their disk.
+      linked: Boolean(f.linked),
+      links: links().map((l) => ({ ...l, missing: !existsSync(l.path) })),
       // Whether a command can be run at all right now.
-      ready: isolated || unconfined(),
+      ready: (isolated || unconfined() || Boolean(f.linked)) && !f.missing,
       preparing: Boolean(preparing),
-      why: isolated ? '' : engineWhy,
+      why: f.missing ? `the linked folder ${f.hostDir} is no longer there` : isolated ? '' : engineWhy,
       error: prepareError || null,
       image: image(),
       network: network(),
@@ -202,7 +280,7 @@ export function createSandbox({
       // Where commands start, as whoever runs them sees it.
       dir: isolated ? f.inside : f.hostDir,
       hostDir: f.hostDir,
-      folders: folders(),
+      folders: [...folders(), ...links().map((l) => l.name)],
     };
   }
 
@@ -210,11 +288,11 @@ export function createSandbox({
   function peek() {
     const f = folder();
     const isolated = Boolean(engine);
-    const ok = isolated || unconfined();
+    const ok = (isolated || unconfined() || Boolean(f.linked)) && !f.missing;
     return {
-      name: f.name, hostDir: f.hostDir, isolated, ok,
+      name: f.name, hostDir: f.hostDir, isolated, ok, linked: Boolean(f.linked),
       dir: isolated ? f.inside : f.hostDir,
-      why: ok ? '' : (engineWhy || 'the sandbox has not been checked yet'),
+      why: ok ? '' : f.missing ? `the linked folder ${f.hostDir} is no longer there` : (engineWhy || 'the sandbox has not been checked yet'),
     };
   }
 
@@ -236,7 +314,9 @@ export function createSandbox({
    */
   async function start({ command, id, folder: which }) {
     const f = named(which);
-    mkdirSync(f.hostDir, { recursive: true });
+    if (f.linked) {
+      if (!existsSync(f.hostDir)) throw new Error(`the linked folder ${f.hostDir} is no longer there`);
+    } else mkdirSync(f.hostDir, { recursive: true });
     await detect();
     if (engine) {
       const bin = await prepare();
@@ -245,7 +325,11 @@ export function createSandbox({
       ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       return { child, isolated: true, cwd: f.inside };
     }
-    if (!unconfined()) throw new Error(`${engineWhy}. Nothing is run outside a sandbox unless you switch that on yourself`);
+    // A folder the person linked is one they have said the room may work in
+    // directly. Anywhere else needs them to have switched isolation off.
+    if (!f.linked && !unconfined()) {
+      throw new Error(`${engineWhy}. Nothing is run outside a sandbox unless you switch that on yourself — or link a folder of your own to work in`);
+    }
     const child = spawnImpl(String(command), {
       cwd: f.hostDir, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       // Its own process group, so stopping it stops what it started too.
@@ -289,6 +373,86 @@ export function createSandbox({
   function close() {
     if (!engine) return;
     try { execFileSync(engine, ['rm', '-f', container], { stdio: 'ignore', timeout: 20_000, windowsHide: true }); } catch { /* already gone */ }
+  }
+
+  // ------------------------------------------------------------- the editor
+
+  /**
+   * Editors that can be started from a command, by the name of that command.
+   *
+   * Any editor with one can be used — the list is only what is looked for
+   * when nobody has said. The room runs on the person's own machine, so
+   * opening a folder in their editor is starting a program they already have
+   * with a path, not a protocol each editor would have to support.
+   */
+  const KNOWN_EDITORS = [
+    ['code', 'VS Code'], ['cursor', 'Cursor'], ['windsurf', 'Windsurf'], ['codium', 'VSCodium'], ['zed', 'Zed'],
+    ['subl', 'Sublime Text'], ['idea', 'IntelliJ IDEA'], ['webstorm', 'WebStorm'], ['pycharm', 'PyCharm'],
+    ['phpstorm', 'PhpStorm'], ['goland', 'GoLand'], ['rider', 'Rider'], ['fleet', 'Fleet'], ['atom', 'Atom'],
+    ['notepad++', 'Notepad++'], ['gedit', 'gedit'], ['kate', 'Kate'],
+  ];
+  let editorsFound = null;
+
+  /** Which of those are on this machine. Looked for once; the answer does not change while the room runs. */
+  async function editors() {
+    if (!editorsFound) {
+      const finder = process.platform === 'win32' ? 'where' : 'which';
+      const hits = await Promise.all(KNOWN_EDITORS.map(async ([command, label]) =>
+        ((await call(finder, [command], { timeoutMs: 4000 })).ok ? { command, label } : null)));
+      editorsFound = hits.filter(Boolean);
+    }
+    const chosen = String(config.get('editor') ?? '').trim();
+    return {
+      found: editorsFound,
+      // What will be used: the person's choice, else the first one found, else whatever the system opens folders with.
+      editor: chosen || editorsFound[0]?.command || '',
+      chosen: chosen || null,
+    };
+  }
+
+  function setEditor(command) {
+    const typed = String(command ?? '').trim();
+    // A program and, at most, its own flags. Not a place to put a pipeline.
+    if (typed && /[;&|<>`$\n\r]/.test(typed)) throw new Error('an editor is the command that starts it, such as "code" or the full path to its program');
+    config.set('editor', typed);
+  }
+
+  /**
+   * Open a folder, or one file in it, in the person's editor.
+   *
+   * With no editor known, the folder is handed to the system to open the way
+   * it opens any folder — which is at least the right place.
+   */
+  async function openInEditor({ folder: which, path: file } = {}) {
+    const f = named(which);
+    if (!existsSync(f.hostDir)) throw new Error(`${f.hostDir} is not there to open`);
+    let target = f.hostDir;
+    if (file) {
+      target = resolve(f.hostDir, String(file));
+      if (!within(target, f.hostDir)) throw new Error('that is outside the folder');
+      if (!existsSync(target)) throw new Error(`there is no file ${file}`);
+    }
+    const { editor } = await editors();
+    const [bin, args] = editor
+      ? (() => { const parts = editor.match(/"[^"]+"|\S+/g).map((x) => x.replace(/^"|"$/g, '')); return [parts[0], [...parts.slice(1), ...(file ? [f.hostDir, target] : [target])]]; })()
+      : process.platform === 'win32' ? ['explorer', [target]]
+        : process.platform === 'darwin' ? ['open', [target]] : ['xdg-open', [target]];
+
+    return new Promise((done, fail) => {
+      let child;
+      try {
+        // On Windows the editors' commands are .cmd scripts, which only a shell can start.
+        const win = process.platform === 'win32';
+        // Through a shell there, arguments are joined with spaces — so one with a space in it needs its quotes back.
+        const quote = (a) => (win && /\s/.test(a) ? `"${a}"` : a);
+        child = spawnImpl(quote(bin), args.map(quote), { detached: true, stdio: 'ignore', windowsHide: true, shell: win });
+      } catch (err) { return fail(new Error(`could not start ${bin}: ${err.message}`)); }
+      child.once('error', (err) => fail(new Error(err.code === 'ENOENT'
+        ? `there is no program called "${bin}" on this computer — set the command that starts your editor`
+        : `could not start ${bin}: ${err.message}`)));
+      // Given a moment to fail to start; an editor that started stays running, and is not waited for.
+      setTimeout(() => { child.unref?.(); done({ opened: target, with: editor || 'the system\'s own opener' }); }, 400);
+    });
   }
 
   // ------------------------------------------------------------- what is in it
@@ -398,8 +562,9 @@ export function createSandbox({
   return {
     root, container,
     detect, prepare, restart, close, status, peek, configure,
-    folder, folders, setFolder,
+    folder, folders, setFolder, link, unlink, links,
     start, kill,
     files, read, exportZip, exportTo,
+    editors, setEditor, openInEditor,
   };
 }

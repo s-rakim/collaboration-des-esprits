@@ -165,6 +165,136 @@ test('a link pointing out of the sandbox does not carry its target out with the 
   assert.equal(sandbox.files().files.find((f) => f.path === 'innocent.txt').kind, 'link');
 });
 
+// ------------------------------------------------------------ linked folders
+
+/** A project of the person's own, somewhere on their disk. */
+const project = () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'my-project-')));
+  writeFileSync(join(dir, 'README.md'), '# mine');
+  return dir;
+};
+
+test('a folder of the person\'s own can be linked, and the room works in it without any engine', async () => {
+  const { sandbox, terminal } = fresh();                 // no engine, and isolation not switched off
+  const mine = project();
+  const f = sandbox.link({ path: mine });
+  assert.equal(f.linked, true);
+  assert.equal(f.hostDir, mine);
+  assert.match(f.name, /^my-project-/);
+
+  const s = await sandbox.status();
+  assert.deepEqual([s.isolated, s.linked, s.ready, s.unconfined], [false, true, true, false]);
+  assert.equal(s.dir, mine, 'it runs on the machine, so the path shown is the real one');
+
+  const out = await terminal.run({ command: 'echo made > from-the-room.txt && ls', by: 'malcolm' });
+  assert.equal(out.exitCode, 0);
+  assert.match(out.output, /README\.md/);
+  assert.equal(out.cwd, mine);
+  assert.equal(readFileSync(join(mine, 'from-the-room.txt'), 'utf8').trim(), 'made');
+
+  // Linking one folder is consent for that folder, not for running anywhere.
+  sandbox.setFolder('project');
+  await assert.rejects(() => terminal.run({ command: 'echo hi', by: 'malcolm' }), /Nothing is run outside a sandbox/);
+  sandbox.setFolder(f.name);
+  assert.equal((await terminal.run({ command: 'echo back', by: 'malcolm' })).exitCode, 0);
+});
+
+test('what may be linked is a project, never the machine or the room\'s own keys', () => {
+  const { sandbox, dataDir } = fresh();
+  assert.throws(() => sandbox.link({ path: '' }), /say which folder/);
+  assert.throws(() => sandbox.link({ path: 'relative/place' }), /full path/);
+  assert.throws(() => sandbox.link({ path: join(tmpdir(), 'not-there-at-all') }), /does not exist/);
+  assert.throws(() => sandbox.link({ path: '/' }), /not a whole drive/);
+  assert.throws(() => sandbox.link({ path: '~' }), /not the home folder itself/);
+  // The folder that holds the database holds every key in it.
+  assert.throws(() => sandbox.link({ path: dataDir }), /holds the room's own data, with your keys in it/);
+  assert.throws(() => sandbox.link({ path: join(dataDir, '..') }), /holds the room's own data/);
+  assert.throws(() => sandbox.link({ path: sandbox.root }), /inside the room's own data/);
+});
+
+test('linked folders are listed with the sandbox\'s own, can be let go of, and are never deleted', async () => {
+  const { sandbox } = fresh();
+  const mine = project();
+  const first = sandbox.link({ path: mine, name: 'shop site' });
+  assert.equal(first.name, 'shop-site', 'a name that can be typed and mounted');
+  assert.equal(sandbox.link({ path: mine }).name, 'shop-site', 'linking it again is the same link, not a second one');
+
+  const s = await sandbox.status();
+  assert.deepEqual(s.folders, ['project', 'shop-site']);
+  assert.deepEqual(s.links, [{ name: 'shop-site', path: mine, missing: false }]);
+  // Its files are seen and exported like any other folder's.
+  assert.deepEqual(sandbox.files().files.map((x) => x.path), ['README.md']);
+
+  const after = sandbox.unlink('shop-site');
+  assert.equal(after.name, 'project');
+  assert.ok(existsSync(join(mine, 'README.md')), 'letting go of a folder does not touch it');
+  assert.throws(() => sandbox.unlink('shop-site'), /no linked folder called/);
+});
+
+test('a linked folder that has gone says so rather than running somewhere else', async () => {
+  const { sandbox, terminal } = fresh();
+  const mine = project();
+  sandbox.link({ path: mine });
+  execFileSync('rm', ['-rf', mine]);
+  const s = await sandbox.status();
+  assert.equal(s.ready, false);
+  assert.match(s.why, /is no longer there/);
+  await assert.rejects(() => terminal.run({ command: 'echo hi', by: 'malcolm' }), /is no longer there/);
+});
+
+test('with an engine, a linked folder is what the container is given — and still all it can see', real, async () => {
+  const { sandbox, terminal, dataDir } = fresh({ engine: 'real' });
+  try {
+    const mine = project();
+    const f = sandbox.link({ path: mine });
+    writeFileSync(join(dataDir, 'room.db'), 'THE KEYS');
+
+    const out = await terminal.run({ command: `pwd; cat README.md; echo from-inside > made.txt; cat "${join(dataDir, 'room.db')}" 2>&1`, by: 'kestrel', kind: 'agent', timeoutMs: 300_000 });
+    assert.equal(out.cwd, `${INSIDE}/${f.name}`, 'it runs in the container, in the linked folder');
+    assert.match(out.output, new RegExp(`^/sandbox/${f.name}\\n# mine`));
+    assert.doesNotMatch(out.output, /THE KEYS/);
+    assert.equal(readFileSync(join(mine, 'made.txt'), 'utf8').trim(), 'from-inside', 'what it makes lands in the real folder');
+    assert.equal((await sandbox.status()).isolated, true);
+  } finally { cleanup(sandbox); }
+});
+
+// ---------------------------------------------------------------- the editor
+
+test('any editor that starts from a command can open the folder, or one file in it', async () => {
+  const started = [];
+  const db = openDb(':memory:');
+  const config = createConfig(db);
+  const sandbox = createSandbox({
+    config, dataDir: realpathSync(mkdtempSync(join(tmpdir(), 'esprits-ed-'))), env: { ESPRITS_SANDBOX_ENGINE: 'none' },
+    // Stands in for starting a program: records what would have been run.
+    spawnImpl: (bin, args) => { started.push([bin, ...args]); return { once() {}, unref() {} }; },
+    // Stands in for looking on the PATH: this machine has Zed, and nothing else.
+    execImpl: (bin, args, _opts, cb) => cb(args[0] === 'zed' ? null : new Error('not found'), args[0] === 'zed' ? '/usr/bin/zed' : '', ''),
+  });
+  const mine = project();
+  sandbox.link({ path: mine });
+
+  const found = await sandbox.editors();
+  assert.deepEqual(found.found, [{ command: 'zed', label: 'Zed' }]);
+  assert.equal(found.editor, 'zed', 'with nothing chosen, the one that is installed');
+
+  assert.deepEqual(await sandbox.openInEditor(), { opened: mine, with: 'zed' });
+  assert.deepEqual(started.at(-1), ['zed', mine]);
+  // A file is opened with its folder, so the editor shows it in its project rather than alone.
+  await sandbox.openInEditor({ path: 'README.md' });
+  assert.deepEqual(started.at(-1), ['zed', mine, join(mine, 'README.md')]);
+
+  // Anything else is a command the person types — a name, or a full path with its own flags.
+  sandbox.setEditor('"C:\\Program Files\\My Editor\\ed.exe" --reuse-window');
+  assert.equal((await sandbox.editors()).editor, '"C:\\Program Files\\My Editor\\ed.exe" --reuse-window');
+  await sandbox.openInEditor();
+  assert.deepEqual(started.at(-1), ['C:\\Program Files\\My Editor\\ed.exe', '--reuse-window', mine]);
+
+  assert.throws(() => sandbox.setEditor('code; rm -rf ~'), /the command that starts it/);
+  await assert.rejects(() => sandbox.openInEditor({ path: '../outside.txt' }), /outside the folder/);
+  await assert.rejects(() => sandbox.openInEditor({ path: 'nope.txt' }), /there is no file/);
+});
+
 // ------------------------------------------------------- a real container
 
 test('a command runs inside the container and its work lands in the sandbox folder', real, async () => {

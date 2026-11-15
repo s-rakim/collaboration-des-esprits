@@ -98,6 +98,10 @@ function build() {
       <div class="out">
         <a class="primary" id="fZip" style="text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--line);font-size:13px" download>Download as a zip</a>
         <button id="fCopy">Copy to a folder on this computer…</button>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button id="fOpen" title="Open this folder in your code editor">Open in editor</button>
+          <select id="fEditor" style="width:auto;font-size:12px;padding:5px 6px" title="Which editor"></select>
+        </span>
         <div class="say" id="fSay"></div>
       </div>
     </div>
@@ -152,12 +156,33 @@ function build() {
   root.addEventListener('change', async (e) => {
     if (e.target.matches('[data-folder]')) {
       let folder = e.target.value;
-      if (folder === '+') {
-        folder = prompt('A name for the new folder in the sandbox — letters, numbers, dashes.', '');
-        if (!folder) return refresh(true);
-      }
-      try { await post('/api/sandbox', { folder }); } catch (ex) { root.querySelector('#tErr').textContent = ex.message; }
+      const err = root.querySelector(shown === 'files' ? '#fSay' : '#tErr');
+      err.textContent = '';
+      try {
+        if (folder === '@') return await linkFolder();
+        if (folder === '-') {
+          const sb = await api('/api/sandbox');
+          if (confirm(`Stop working in ${sb.hostDir}?\n\nNothing in it is deleted; the room just lets go of it.`)) {
+            await post('/api/sandbox/unlink', { name: sb.folder, as: me() });
+          }
+          return refresh(true);
+        }
+        if (folder === '+') {
+          folder = prompt('A name for the new folder in the sandbox — letters, numbers, dashes.', '');
+          if (!folder) return refresh(true);
+        }
+        await post('/api/sandbox', { folder });
+      } catch (ex) { err.textContent = ex.message; }
       return refresh(true);
+    }
+    if (e.target.id === 'fEditor') {
+      let command = e.target.value;
+      if (command === '?') {
+        command = prompt('The command that starts your editor — its name if it is on the PATH (code, cursor, zed, subl, idea…), or the full path to its program.', '');
+        if (command === null) return refreshFiles();
+      }
+      try { await post('/api/editor', { command, as: me() }); } catch (ex) { root.querySelector('#fSay').textContent = ex.message; }
+      return refreshFiles();
     }
     if (e.target.id === 'tAgents') {
       await post('/api/workspace', { agentsAllowed: e.target.checked }).catch(() => {});
@@ -169,9 +194,20 @@ function build() {
     }
   });
 
+  /** Point the room at a folder of the person's own. */
+  async function linkFolder() {
+    const path = prompt('Link a folder on this computer — the full path of the project you want the room to work in.\n\n'
+      + 'With Docker running, that folder is all the agents can see. Without it, their commands run directly on this computer in that folder.', '');
+    if (!path) return refresh(true);
+    try { await post('/api/sandbox/link', { path, as: me() }); }
+    catch (ex) { root.querySelector(shown === 'files' ? '#fSay' : '#tErr').textContent = ex.message; }
+    return refresh(true);
+  }
+
   root.querySelector('#tWarn').addEventListener('click', async (e) => {
     const err = root.querySelector('#tErr');
     try {
+      if (e.target.closest('#sLink')) return await linkFolder();
       if (e.target.closest('#sCheck')) { err.textContent = 'checking…'; await api('/api/sandbox?recheck'); err.textContent = ''; }
       if (e.target.closest('#sLoose')) {
         const ok = confirm('Run commands on this computer with no sandbox?\n\n'
@@ -196,6 +232,15 @@ function build() {
         : f.text + (f.clipped ? '\n… the rest is not shown' : '');
     } catch (ex) { view.hidden = false; view.textContent = ex.message; }
   });
+  root.querySelector('#fOpen').addEventListener('click', async () => {
+    const say = root.querySelector('#fSay');
+    say.className = 'say'; say.textContent = 'opening…';
+    try {
+      const r = await post('/api/sandbox/open', { as: me() });
+      say.className = 'say ok'; say.textContent = `Opened ${r.opened} with ${r.with}`;
+    } catch (ex) { say.className = 'say err'; say.textContent = ex.message; }
+  });
+
   root.querySelector('#fCopy').addEventListener('click', async () => {
     const say = root.querySelector('#fSay');
     const to = prompt('Copy this folder to where? The full path of a folder on this computer.\n'
@@ -236,13 +281,20 @@ function build() {
 
 const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
-const folderPick = (sb) => `<select data-folder title="The folder inside the sandbox where commands start">
-  ${sb.folders.map((f) => `<option ${f === sb.folder ? 'selected' : ''}>${esc(f)}</option>`).join('')}
-  <option value="+">new folder…</option></select>`;
+const folderPick = (sb) => {
+  const linked = new Map((sb.links ?? []).map((l) => [l.name, l.path]));
+  return `<select data-folder title="Where commands start: a folder in the sandbox, or one of yours that you linked">
+  ${sb.folders.map((f) => `<option value="${esc(f)}" ${f === sb.folder ? 'selected' : ''}
+    ${linked.has(f) ? `title="${esc(linked.get(f))}"` : ''}>${esc(f)}${linked.has(f) ? ' ↗' : ''}</option>`).join('')}
+  <option value="+">new sandbox folder…</option>
+  <option value="@">link a folder on this computer…</option>
+  ${sb.linked ? '<option value="-">unlink this folder</option>' : ''}</select>`;
+};
 
 /** What the sandbox is, in a word — the thing a person most needs to be able to see at a glance. */
 const badge = (sb) => (sb.preparing ? '<span class="state wait">getting ready</span>'
   : sb.isolated ? `<span class="state" title="Commands run in a ${esc(sb.engine)} container (${esc(sb.image)}) that can see this folder and nothing else on the computer">sandboxed</span>`
+  : sb.linked ? '<span class="state wait" title="Commands run directly on this computer, in a folder you linked">linked folder</span>'
   : sb.unconfined ? '<span class="state off" title="Commands run directly on this computer">not sandboxed</span>'
   : '<span class="state off">no sandbox</span>');
 
@@ -267,13 +319,19 @@ async function refreshTerminal(all = false) {
   warn.innerHTML = sb.preparing
     ? 'Getting the sandbox ready. The first time, this downloads its image, which can take a few minutes; commands wait for it.'
     : sb.error ? `<b>The sandbox would not start.</b> ${esc(sb.error)}<div class="row"><button id="sCheck">Check again</button></div>`
+    : sb.linked
+      ? `<b>Working in your own folder.</b> Commands — yours and the agents' — run directly on this computer, in <code>${esc(sb.hostDir)}</code>. They are not sandboxed; with Docker running they would be, and could see only this folder.
+         <div class="row"><button id="sCheck">Check for Docker again</button></div>`
     : sb.unconfined
       ? `<b>Not sandboxed.</b> Commands — yours and the agents' — run directly on this computer, in ${esc(sb.hostDir)}, and can reach anything you can.
          <div class="row"><button id="sTight" class="primary">Stop running without a sandbox</button><button id="sCheck">Check for a sandbox again</button></div>`
       : `<b>Nothing can be run yet.</b> ${esc(sb.why)}. Work here runs in a sandbox — a container that sees one folder and nothing else on this computer — and there is no engine to make one.
-         <div class="row"><button id="sCheck" class="primary">Check again</button><a id="sLoose">run without a sandbox</a></div>`;
+         <div class="row"><button id="sLink" class="primary">Link a folder on this computer</button><button id="sCheck">Check again</button><a id="sLoose">run anywhere without a sandbox</a></div>
+         <div style="margin-top:8px;color:var(--faint);font-size:11.5px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
   root.querySelector('#tCmd').disabled = !sb.ready;
-  root.querySelector('#tCmd').placeholder = sb.isolated ? 'a command, run inside the sandbox' : sb.ready ? 'a command — NOT sandboxed' : 'no sandbox — see above';
+  root.querySelector('#tCmd').placeholder = sb.isolated ? 'a command, run inside the sandbox'
+    : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer`
+    : sb.ready ? 'a command — NOT sandboxed' : 'nowhere to run it yet — see above';
 
   const newest = t.runs.at(-1)?.id ?? 0;
   const stillRunning = t.runs.some((r) => r.running);
@@ -322,8 +380,18 @@ async function refreshBrowser() {
 
 async function refreshFiles() {
   if (!root) return;
-  let sb; let list;
-  try { [sb, list] = await Promise.all([api('/api/sandbox'), api('/api/sandbox/files')]); } catch { return; }
+  let sb; let list; let ed;
+  try { [sb, list, ed] = await Promise.all([api('/api/sandbox'), api('/api/sandbox/files'), api('/api/editor')]); } catch { return; }
+  const pick = root.querySelector('#fEditor');
+  if (document.activeElement !== pick) {
+    const known = ed.found.some((x) => x.command === ed.editor);
+    pick.innerHTML = [
+      ...ed.found.map((x) => `<option value="${esc(x.command)}" ${x.command === ed.editor ? 'selected' : ''}>${esc(x.label)}</option>`),
+      ed.editor && !known ? `<option value="${esc(ed.editor)}" selected>${esc(ed.editor)}</option>` : '',
+      !ed.editor ? '<option value="" selected>the system\'s file manager</option>' : '',
+      '<option value="?">another editor…</option>',
+    ].join('');
+  }
   const where = root.querySelector('#fWhere');
   if (!(where.contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) {
     where.innerHTML = `${badge(sb)} ${folderPick(sb)} <span>${list.files.filter((f) => f.kind === 'file').length} file(s), ${size(list.bytes)}</span>
