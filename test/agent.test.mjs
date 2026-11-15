@@ -567,9 +567,13 @@ test('only the tools that can work here are offered, so a turn is not slowed by 
     'use_skill', 'run_command', 'browser_search', 'browser_open', 'browser_read']) {
     assert.ok(!offered.includes(gone), `${gone} cannot work here and was offered anyway`);
   }
-  for (const kept of ['reply', 'react', 'say_nothing', 'ask', 'remember', 'save_artifact']) {
+  for (const kept of ['reply', 'react', 'say_nothing', 'ask', 'open_idea']) {
     assert.ok(offered.includes(kept), `${kept} should always be there`);
   }
+  // Talk is what most turns are, so that is all a turn starts with; the rest is one call away.
+  assert.ok(offered.length <= 6, `a turn starts with ${offered.length} tools`);
+  assert.ok(offered.includes('more_tools'));
+  assert.ok(!offered.includes('save_artifact'));
 
   // In an idea, the tools that act on one come back.
   const idea = ctx.hub.dropIdea({ title: 'Scoped', raw: '', by: 'rakim' });
@@ -579,11 +583,42 @@ test('only the tools that can work here are offered, so a turn is not slowed by 
 
   // And what is connected is offered: an image connection, and only that kind.
   const media = { image: async () => '/media/x.png', video: async () => '', audio: async () => '', available: (kind) => kind === 'image' };
-  const drawing = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])], () => {}, SEAT, media);
+  // It asks for the group, and the next request carries it — the image tool, and not the video one.
+  const drawing = participant(ctx, [
+    msg(null, [{ name: 'more_tools', input: { group: 'make' } }]),
+    msg(null, [{ name: 'say_nothing', input: {} }]),
+  ], () => {}, SEAT, media);
   await drawing.p.takeTurn({ trigger: 'rakim said: draw it' });
-  assert.ok(names(drawing.calls).includes('generate_image'));
-  assert.ok(!names(drawing.calls).includes('generate_video'));
-  assert.ok(names(drawing.calls).length < offered.length + 3);
+  const first = drawing.calls[0].tools.map((t) => t.function.name);
+  const second = drawing.calls[1].tools.map((t) => t.function.name);
+  assert.ok(!first.includes('generate_image'));
+  assert.match(drawing.calls[0].tools.find((t) => t.function.name === 'more_tools').function.description, /make — generate images/);
+  assert.ok(second.includes('generate_image'));
+  assert.ok(!second.includes('generate_video'));
+});
+
+test('a tool call written out as text is read for what it meant, and the wrapping never reaches the room', async () => {
+  const { leakedCall } = await import('../src/participants/agent.js');
+  assert.deepEqual(leakedCall('reply{body:<|"|>Use SQLite.<|"|>,reply_to:26}'), { name: 'reply', body: 'Use SQLite.', replyTo: 26 });
+  assert.deepEqual(leakedCall('reply({"body": "Two lines\\nhere", "reply_to": 4})'), { name: 'reply', body: 'Two lines\nhere', replyTo: 4 });
+  assert.equal(leakedCall('<tool_call>{"name": "reply", "arguments": {"body": "hi"}}</tool_call>').body, 'hi');
+  // A placeholder is the model quoting its instructions, not a message.
+  assert.equal(leakedCall('reply{body:<|"|>brief()<|"|>,replyto:26}').body, '');
+  assert.equal(leakedCall('say_nothing{}').name, 'say_nothing');
+  // Ordinary prose — even prose about tools — is left alone.
+  assert.equal(leakedCall('I would reply (briefly) that SQLite is enough.'), null);
+  assert.equal(leakedCall('Call reply({"body": "x"}) when you are done, then stop talking.'), null);
+
+  const ctx = room();
+  const said = () => ctx.hub.db.prepare("SELECT body FROM messages WHERE author = ? ORDER BY id").all(SEAT.name).map((m) => m.body);
+  const leaky = participant(ctx, [msg('reply{body:<|"|>Use SQLite.<|"|>,reply_to:1}', [])]);
+  await leaky.p.takeTurn({ trigger: 'rakim said: which database?' });
+  assert.deepEqual(said(), ['Use SQLite.']);
+
+  const empty = participant(ctx, [msg('reply{body:<|"|>brief()<|"|>,reply_to:1}', [])]);
+  const r = await empty.p.takeTurn({ trigger: 'rakim said: and?' });
+  assert.equal(r.garbled, true);
+  assert.deepEqual(said(), ['Use SQLite.']);
 });
 
 test('a turn reports how long it took and how long before the first word', async () => {

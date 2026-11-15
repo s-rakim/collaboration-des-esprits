@@ -498,6 +498,34 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
  * That is what makes the room "you and your different models" rather than you
  * and one assistant.
  */
+/**
+ * A tool call that came back written out as prose — `reply{body:<|"|>hi<|"|>,reply_to:26}`,
+ * `reply({"body": "hi"})`, `<tool_call>{"name":"reply",…}` — read for what it meant.
+ *
+ * Gives { name, body, replyTo } when the text is such a call, with `body`
+ * empty when there was nothing in it worth saying (a placeholder like
+ * `brief()` is the model quoting its own instructions, not a message).
+ * Gives null for ordinary prose, which is the usual case.
+ */
+export function leakedCall(text) {
+  const raw = String(text ?? '').trim();
+  // The quote tokens some models emit in place of quotation marks.
+  const t = raw.replace(/<\|"\|>/g, '"').replace(/<\/?tool_call>|<\|tool_call(?:_begin|_end)?\|>|<\|python_tag\|>/g, '').trim();
+  const NAMES = 'reply|react|say_nothing|ask|open_idea|more_tools|propose|weigh_in|answer|decide|choose|remember|run_command|browser_\\w+|web_\\w+|use_\\w+';
+  let name = t.match(new RegExp(`^(?:functions?[.:])?(${NAMES})\\s*[({]`))?.[1]
+    ?? t.match(new RegExp(`^\\{\\s*"(?:name|tool|function)"\\s*:\\s*"(${NAMES})"`))?.[1];
+  if (!name) return null;
+  // Only when the whole message is the call: prose that merely mentions reply(...) is prose.
+  if (!/[})\]]\s*;?$/.test(t) || t.length > 6000) return null;
+  const body = t.match(/["']?(?:body|text|message|content)["']?\s*[:=]\s*"((?:[^"\\]|\\.)*)"/s)?.[1]
+    ?? t.match(/["']?(?:body|text|message|content)["']?\s*[:=]\s*'((?:[^'\\]|\\.)*)'/s)?.[1] ?? '';
+  const replyTo = Number(t.match(/["']?reply_?to["']?\s*[:=]\s*"?(\d+)/i)?.[1]) || null;
+  let said = body.replace(/\\n/g, '\n').replace(/\\"/g, '"').trim();
+  // A bare call or a placeholder is not a message.
+  if (/^[\w.]+\(\s*\)$/.test(said) || /^<[^>]*>$/.test(said) || said === '...' || said === '…') said = '';
+  return { name, body: said, replyTo };
+}
+
 export function createModelParticipant({
   hub,
   seat,
@@ -650,6 +678,49 @@ export function createModelParticipant({
     return toolDefs().filter((t) => !off.has(t.name));
   }
 
+  /**
+   * The tools a turn starts with, and the rest in named groups.
+   *
+   * Every tool's description and schema is sent with every request, and a
+   * model reads all of it before it writes a word — thirty tools is thousands
+   * of tokens in front of "hello". Most turns are talk. So a turn starts with
+   * the handful that talk needs, and one more that fetches a group of the
+   * others when the work calls for it: a round trip for the turns that use
+   * tools, and a fast first word for the ones that do not.
+   */
+  const GROUPS = {
+    board: { what: 'proposals, objections, decisions, the spec and the plan', tools: ['propose', 'weigh_in', 'answer', 'decide', 'choose', 'refine_spec', 'remember', 'plan'] },
+    pc: { what: 'run commands on the Agents\' PC, and use programs the person allowed', tools: ['run_command', 'use_app'] },
+    web: { what: 'search, fetch and read the web, use the shared browser, check claims', tools: ['web_search', 'web_fetch', 'browser_search', 'browser_open', 'browser_read', 'browser_act', 'check_claim', 'record_check'] },
+    files: { what: 'save and read artifacts and files', tools: ['save_artifact', 'read_artifact', 'read_file'] },
+    make: { what: 'generate images, video and audio', tools: ['generate_image', 'generate_video', 'generate_audio'] },
+    extend: { what: 'plugins and skills', tools: ['use_plugin', 'list_plugins', 'use_skill'] },
+  };
+  const CORE = new Set(['reply', 'react', 'ask', 'open_idea', 'say_nothing']);
+
+  function leanTools(ideaSlug, loaded = new Set()) {
+    const all = toolsFor(ideaSlug);
+    const have = new Set(all.map((t) => t.name));
+    // Inside an idea the board is the work, so it is there from the start.
+    const open = new Set(ideaSlug ? ['board', ...loaded] : loaded);
+    const wanted = new Set(CORE);
+    for (const g of open) for (const n of GROUPS[g]?.tools ?? []) wanted.add(n);
+    const rest = Object.entries(GROUPS).filter(([g, def]) => !open.has(g) && def.tools.some((n) => have.has(n)));
+    const tools = all.filter((t) => wanted.has(t.name));
+    if (rest.length) {
+      tools.push({
+        name: 'more_tools',
+        description: `Get more tools for this turn. Call it first when the turn needs them, then use them. Groups: ${rest.map(([g, def]) => `${g} — ${def.what}`).join('; ')}.`,
+        parameters: {
+          type: 'object', additionalProperties: false,
+          properties: { group: { type: 'string', enum: rest.map(([g]) => g) } },
+          required: ['group'],
+        },
+      });
+    }
+    return tools;
+  }
+
   const systemPrompt = () => {
     const charter = describeRole(hub.roles, role);
     const { houseStyle, aboutMe } = custom() ?? {};
@@ -706,6 +777,10 @@ export function createModelParticipant({
         ? ['', '## Standing instructions from the human', houseStyle.trim(),
            'These outrank your own preferences. They do not outrank a decision already recorded.']
         : []),
+      '',
+      'You start each turn with only the tools for talking. Anything else — running commands, the web and the browser, files,',
+      'images, the board, plugins — is one call away: more_tools with the group you need, then use what it gives you.',
+      'Do not say you cannot do something before looking there.',
       '',
       `Take exactly one action per turn and then stop. End with reply or say_nothing.`,
     ].join('\n');
@@ -770,7 +845,8 @@ export function createModelParticipant({
     // tick on the page means "this was in its context", whatever it says next.
     try { hub.acknowledge({ by: name, messages: said.map((m) => m.id) }); } catch { /* a receipt must not cost the turn */ }
 
-    const turn = adapter().startTurn({ system: systemPrompt(), tools: toolsFor(ideaSlug) });
+    const loaded = new Set();
+    const turn = adapter().startTurn({ system: systemPrompt(), tools: leanTools(ideaSlug, loaded) });
     inFlight = turn;
     interrupted = false;
     const done = [];
@@ -795,16 +871,42 @@ export function createModelParticipant({
         // It answered in prose without calling reply. Post that rather than
         // dropping it on the floor.
         if (step.text) {
-          await speak(step.text, { idea: ideaSlug, urgency: replyUrgency });
-          done.push('reply');
+          // Some models write the tool call out as text instead of making it.
+          // That text is machinery, not something to say: what it meant to say
+          // is recovered and said, and the wrapping never reaches the room.
+          const leak = leakedCall(step.text);
+          if (leak?.name === 'reply' && leak.body) {
+            await speak(leak.body, { idea: ideaSlug, urgency: replyUrgency, ...(leak.replyTo ? { replyTo: leak.replyTo } : {}) });
+            done.push('reply');
+          } else if (leak) {
+            log(`${name}: wrote a ${leak.name} call out as text with nothing sayable in it — not posted`);
+            return { actions: done, garbled: true };
+          } else {
+            await speak(step.text, { idea: ideaSlug, urgency: replyUrgency });
+            done.push('reply');
+          }
         }
         return { actions: done };
       }
 
       const results = [];
       let finished = false;
+      let fetched = false;
       for (const call of step.toolCalls) {
         let out;
+        if (call.name === 'more_tools') {
+          // Not work, and not a turn spent: it is the model reaching for its toolbox.
+          const group = String(call.input?.group ?? '');
+          if (GROUPS[group]) {
+            loaded.add(group);
+            const now = leanTools(ideaSlug, loaded);
+            turn.setTools?.(now);
+            fetched = true;
+            out = `You now have: ${now.map((t) => t.name).filter((n) => GROUPS[group].tools.includes(n)).join(', ') || 'nothing more — none of that group is set up in this room'}. Use them now.`;
+          } else out = `FAILED: there is no group called ${group}`;
+          results.push({ id: call.id, name: call.name, output: out });
+          continue;
+        }
         try {
           if (doing && call.name !== 'reply') { doing.phase = 'working'; doing.tool = call.name; doing.text = ''; }
           const r = await act(call.name, call.input ?? {}, { ideaSlug, replyUrgency });
@@ -823,6 +925,8 @@ export function createModelParticipant({
 
       if (finished) return { actions: done };
       if (interrupted) return { actions: done, interrupted: true };
+      // Fetching tools does not count against the turn's allowance of round trips.
+      if (fetched && !done.length) requests--;
       if (requests >= MAX_TURNS) return { actions: done, exhausted: true };
       try {
         step = await turn.toolResults(results);

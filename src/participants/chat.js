@@ -154,7 +154,7 @@ export function chatAdapter({
 
     startTurn({ system, tools }) {
       const messages = [{ role: 'system', content: system }];
-      const toolDefs = asTools(tools);
+      let toolDefs = asTools(tools);
       // One controller for the whole turn, so "stop" reaches whichever request
       // is in flight rather than only the next one that has not started.
       const ctl = new AbortController();
@@ -362,6 +362,8 @@ export function chatAdapter({
         sent: () => messages,
         /** Cut the turn off wherever it is. */
         abort: () => ctl.abort(),
+        /** Change which tools the rest of this turn is offered. */
+        setTools(next) { toolDefs = asTools(next); },
         get aborted() { return ctl.signal.aborted; },
       };
     },

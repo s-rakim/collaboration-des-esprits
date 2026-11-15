@@ -43,7 +43,8 @@ export function messagesAdapter({
   return {
     model,
 
-    startTurn({ system, tools }) {
+    startTurn({ system, tools: given }) {
+      let tools = given;
       const messages = [{ role: 'system', content: system }];
       const ctl = new AbortController();
 
@@ -172,6 +173,8 @@ export function messagesAdapter({
         },
         sent: () => messages,
         abort: () => ctl.abort(),
+        /** Change which tools the rest of this turn is offered. */
+        setTools(next) { tools = next; },
         get aborted() { return ctl.signal.aborted; },
       };
     },

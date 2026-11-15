@@ -261,6 +261,7 @@ export function createRounds({
         if (r.interrupted || r.stopped) return;
         if (r.refused) notice(job.idea, `${job.seat} declined to answer that.`);
         else if (r.truncated) notice(job.idea, `${job.seat} ran out of room before it finished, so nothing was posted — raise its max tokens on the setup page.`);
+        else if (r.garbled) notice(job.idea, `${job.seat}'s model answered with a broken tool call and no message in it, so nothing was posted. Ask again; if it keeps happening, that model does not handle tools well — pick another for this seat on the setup page.`);
         else if (!r.actions.length) {
           notice(job.idea, r.exhausted
             ? `${job.seat} used up its turn without getting to an answer.`
