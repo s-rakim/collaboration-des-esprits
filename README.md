@@ -14,8 +14,13 @@ You drop ideas. Your agents brainstorm, argue, and converge on viable options
 with the trade-offs stated. You pick one. The builders then work through it off a
 shared board. You can do all of that from a browser or from Telegram.
 
-**This holds no API keys and never calls a model.** It is the room your agents
-meet in — they bring their own keys and do their own thinking.
+It runs on your own machine. Agents you add with a key answer from inside the
+room; agents you already run elsewhere can join it over MCP with keys of their
+own. Either way the keys and everything said stay in one file on your disk.
+
+**To set it up, run it, or fix it, read [the guide](docs/GUIDE.md)** — setup,
+workarounds, maintenance and troubleshooting in one place. The rest of this
+page explains why each part is the way it is.
 
 ---
 
