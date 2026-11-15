@@ -25,7 +25,7 @@ async function api(path, opts = {}) {
 }
 
 const CSS = `
-#tools{position:fixed;right:24px;bottom:24px;width:720px;height:440px;z-index:60;display:none;flex-direction:column;
+#tools{position:fixed;right:52px;bottom:24px;width:600px;height:380px;z-index:60;display:none;flex-direction:column;
   min-width:380px;min-height:230px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);
   background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;resize:both;
   box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
@@ -36,13 +36,25 @@ const CSS = `
 #tools .tbar .ttl{font-size:11px;color:var(--faint);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 @media (max-width:700px){#tools{left:8px!important;right:8px!important;top:auto!important;bottom:8px!important;width:auto!important;height:60vh!important;resize:none}}
 
-/* The browser: a share of the page, beside whatever the page is. */
-#dock{flex:none;width:46vw;min-width:340px;max-width:72vw;height:100vh;position:sticky;top:0;z-index:30;display:none;flex-direction:column;
-  background:var(--bg);border-left:1px solid var(--line)}
-#dock.open{display:flex}
-#dock .grip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2}
-#dock .grip:hover,#dock.sizing .grip{background:color-mix(in srgb,var(--text) 22%,transparent)}
-#dock .nav{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+/* The browser: a second small window, moved and sized like the terminal. */
+#dock{position:fixed;right:52px;top:72px;width:520px;height:400px;z-index:60;display:none;flex-direction:column;
+  min-width:340px;min-height:260px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);
+  background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;resize:both;
+  box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
+#dock.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
+#dock.moving,#tools.moving{user-select:none;opacity:.96}
+#tools.front,#dock.front{z-index:61}
+@media (max-width:700px){#dock{left:8px!important;right:8px!important;top:8px!important;bottom:auto!important;width:auto!important;height:55vh!important;resize:none}}
+
+/* The way in to both: tabs on the right-hand edge of every page. */
+#edge-tabs{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:59;display:flex;flex-direction:column;gap:6px}
+#edge-tabs button{writing-mode:vertical-rl;padding:14px 7px;font-size:12px;letter-spacing:.04em;color:var(--dim);
+  background:var(--panel);border:1px solid var(--line);border-right:0;border-radius:9px 0 0 9px;cursor:pointer;
+  transition:padding .12s ease,color .12s ease,background .12s ease}
+#edge-tabs button:hover{padding-right:12px;color:var(--text);background:var(--panel2)}
+#edge-tabs button.on{color:var(--bg);background:var(--text);border-color:var(--text)}
+@media (max-width:700px){#edge-tabs button{padding:10px 5px;font-size:11px}}
+#dock .nav{cursor:move;touch-action:none;display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
 #dock .nav button{padding:4px 9px;font-size:13px;line-height:1.2;background:none;border-color:transparent;color:var(--dim)}
 #dock .nav button:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}
 #dock .nav form{flex:1;min-width:0;display:flex}
@@ -66,9 +78,6 @@ const CSS = `
 #dock .text{white-space:pre-wrap;color:var(--dim);line-height:1.5;padding:0 12px 10px}
 #dock .visits div{padding:5px 12px;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
 #dock .visits b{color:var(--text);font-weight:550}
-body.dock-sizing{cursor:col-resize;user-select:none}
-/* On a narrow screen there is no page to share, so it lies over it instead. */
-@media (max-width:1100px){#dock{position:fixed;right:0;top:0;width:min(560px,100vw)!important;max-width:100vw;box-shadow:-12px 0 32px rgba(0,0,0,.35)}}
 #tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}
 #tools .tbar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
 #tools .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
@@ -423,7 +432,7 @@ const kept = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? 'nu
  * off the edge, or left where a smaller browser window no longer reaches, is
  * a window nobody can get back.
  */
-function floating(win) {
+function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
   const place = (g) => {
     const w = Math.min(g.w, innerWidth - 16);
     const h = Math.min(g.h, innerHeight - 16);
@@ -431,13 +440,17 @@ function floating(win) {
     const y = Math.max(8, Math.min(g.y, innerHeight - 60));
     Object.assign(win.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto', width: `${w}px`, height: `${h}px` });
   };
-  const was = kept('esprits.terminal');
+  const was = kept(key);
   if (was && Number.isFinite(was.x)) place(was);
 
-  const bar = win.querySelector('.tbar');
+  const bar = win.querySelector(handle);
+  // Whichever window was touched last is the one on top.
+  win.addEventListener('pointerdown', () => {
+    for (const w of document.querySelectorAll('#tools, #dock')) w.classList.toggle('front', w === win);
+  }, true);
   let from = null;
   bar.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button') || e.button !== 0) return;
+    if (e.target.closest('button, input, select, a, label') || e.button !== 0) return;
     const box = win.getBoundingClientRect();
     from = { dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, h: box.height };
     bar.setPointerCapture(e.pointerId);
@@ -452,15 +465,15 @@ function floating(win) {
     from = null;
     win.classList.remove('moving');
     const box = win.getBoundingClientRect();
-    keep('esprits.terminal', { x: box.left, y: box.top, w: box.width, h: box.height });
+    keep(key, { x: box.left, y: box.top, w: box.width, h: box.height });
   };
   bar.addEventListener('pointerup', drop);
   bar.addEventListener('pointercancel', drop);
   // Double-click the bar to send it back to its corner.
   bar.addEventListener('dblclick', (e) => {
-    if (e.target.closest('button')) return;
+    if (e.target.closest('button, input, select, a, label')) return;
     Object.assign(win.style, { left: '', top: '', right: '', bottom: '', width: '', height: '' });
-    try { localStorage.removeItem('esprits.terminal'); } catch { /* nothing kept */ }
+    try { localStorage.removeItem(key); } catch { /* nothing kept */ }
   });
 
   // Sized by its corner: remember that too, once it has stopped changing.
@@ -470,10 +483,10 @@ function floating(win) {
     clearTimeout(settle);
     settle = setTimeout(() => {
       const box = win.getBoundingClientRect();
-      if (box.width) keep('esprits.terminal', { x: box.left, y: box.top, w: box.width, h: box.height });
+      if (box.width) keep(key, { x: box.left, y: box.top, w: box.width, h: box.height });
     }, 300);
   }).observe(win);
-  addEventListener('resize', () => { const g = kept('esprits.terminal'); if (g && win.classList.contains('open')) place(g); });
+  addEventListener('resize', () => { const g = kept(key); if (g && win.classList.contains('open')) place(g); });
 }
 
 export function openTools(tab = 'terminal') {
@@ -511,7 +524,6 @@ function buildDock() {
   dock = document.createElement('div');
   dock.id = 'dock';
   dock.innerHTML = `
-    <div class="grip" title="Drag to resize"></div>
     <div class="nav">
       <button data-act="back" title="Back">←</button>
       <button data-act="forward" title="Forward">→</button>
@@ -528,12 +540,8 @@ function buildDock() {
     </form>
     <details id="bMore"><summary>What the page says, and where the browser has been</summary>
       <div class="text" id="bText"></div><div class="visits" id="bVisits"></div></details>`;
-  // Beside the page, as a part of it — or, on a page with no shell, at its edge.
-  const page = document.getElementById('shell-page');
-  if (page) page.after(dock); else document.body.append(dock);
-
-  const width = kept('esprits.dock');
-  if (Number.isFinite(width)) dock.style.width = `${width}px`;
+  document.body.append(dock);
+  floating(dock, { key: 'esprits.browser', handle: '.nav' });
 
   const say = (text) => { dock.querySelector('#bErr').textContent = text ?? ''; };
   const act = async (body) => {
@@ -597,22 +605,6 @@ function buildDock() {
 
   dock.querySelector('#bMore').addEventListener('toggle', () => look(true));
 
-  // Sized by its edge.
-  const grip = dock.querySelector('.grip');
-  let sizing = false;
-  grip.addEventListener('pointerdown', (e) => { sizing = true; grip.setPointerCapture(e.pointerId); dock.classList.add('sizing'); document.body.classList.add('dock-sizing'); });
-  grip.addEventListener('pointermove', (e) => {
-    if (!sizing) return;
-    dock.style.width = `${Math.max(340, Math.min(innerWidth * 0.72, innerWidth - e.clientX))}px`;
-  });
-  const done = () => {
-    if (!sizing) return;
-    sizing = false;
-    dock.classList.remove('sizing'); document.body.classList.remove('dock-sizing');
-    keep('esprits.dock', Math.round(dock.getBoundingClientRect().width));
-  };
-  grip.addEventListener('pointerup', done);
-  grip.addEventListener('pointercancel', done);
   return dock;
 }
 
@@ -665,7 +657,6 @@ async function look(now = false) {
 
 export function openBrowser() {
   buildDock().classList.add('open');
-  document.body.classList.add('dock-open');
   clearInterval(looking);
   look(true);
   // Looked at again often enough to watch an agent browse, while it is on the page.
@@ -675,6 +666,39 @@ export function openBrowser() {
 
 export function closeBrowser() {
   dock?.classList.remove('open');
-  document.body.classList.remove('dock-open');
   clearInterval(looking);
+}
+
+// ------------------------------------------------------------ the edge tabs
+
+/**
+ * Tabs on the right-hand edge of the page: the way in to the terminal, the
+ * browser and the files, from wherever you are. Each opens its small window,
+ * and shows that it is open; pressing it again puts the window away.
+ */
+function mark() {
+  const tabs = document.getElementById('edge-tabs');
+  if (!tabs) return;
+  const float = Boolean(root?.classList.contains('open'));
+  tabs.querySelector('[data-tool="terminal"]').classList.toggle('on', float && shown === 'terminal');
+  tabs.querySelector('[data-tool="files"]').classList.toggle('on', float && shown === 'files');
+  tabs.querySelector('[data-tool="browser"]').classList.toggle('on', Boolean(dock?.classList.contains('open')));
+}
+
+export function edgeTabs() {
+  if (document.getElementById('edge-tabs')) return;
+  style();
+  const tabs = document.createElement('div');
+  tabs.id = 'edge-tabs';
+  tabs.innerHTML = `
+    <button data-tool="terminal" title="The terminal you share with the agents (Ctrl \`)">Terminal</button>
+    <button data-tool="browser" title="The browser you share with the agents">Browser</button>
+    <button data-tool="files" title="What has been made, and exporting it">Files</button>`;
+  tabs.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tool]');
+    if (b) toggleTools(b.dataset.tool);
+  });
+  document.body.append(tabs);
+  // Windows open and close from other places too — the rail, a shortcut, their own ×.
+  new MutationObserver(mark).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
 }

@@ -181,12 +181,12 @@ agent saying "starting thread 1" in the lobby has not started anything.
    thread something; run one again. The coordinator's report says what was
    built and what was not.
 
-### The tools (rail, bottom section)
+### The tools (tabs on the right-hand edge, and in the rail)
 
 | Tool | Where it appears | Shortcut |
 |---|---|---|
 | **Terminal** | a floating window — drag its bar, size its corner, double-click the bar to send it home | `Ctrl`+`` ` `` |
-| **Browser** | docked into the page — drag its left edge to resize; click, scroll and type in the picture | |
+| **Browser** | a floating window, moved and sized the same way; click, scroll and type in the picture | |
 | **Files & export** | a tab of the terminal window | |
 
 Work stays in the sandbox (or your linked folder) until you export it from the

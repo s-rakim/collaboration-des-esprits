@@ -454,17 +454,37 @@ try {
     const state = (await page.textContent('#tools #fWhere .state').catch(() => '')) ?? '';
     if (!/sandboxed|no sandbox|getting ready|linked folder/.test(state)) note(path, `the window does not say whether work is sandboxed (it says "${state}")`);
 
-    // The browser is part of the page: it takes a share of the width, and the page keeps the rest.
-    const pageBefore = await (await page.$('#shell-page')).boundingBox();
-    await page.click('#shell-rail [data-tool="browser"]');
-    await page.waitForTimeout(300);
-    if (!(await page.isVisible('#dock #bGo'))) note(path, 'the browser did not open from the rail');
+    // The browser is a window too: small, over the page, and it moves.
+    await page.evaluate(() => localStorage.removeItem('esprits.browser'));
+    const tab = await page.$('#edge-tabs [data-tool="browser"]');
+    if (!tab) note(path, 'there are no tabs on the right-hand edge');
     else {
-      const dockBox = await (await page.$('#dock')).boundingBox();
-      const pageAfter = await (await page.$('#shell-page')).boundingBox();
-      if (dockBox.height < 600) note(path, 'the browser is not the height of the page');
-      if (pageAfter.width > pageBefore.width - 300) note(path, 'the browser covers the page instead of sitting beside it');
-      if (Math.abs(pageAfter.x + pageAfter.width - dockBox.x) > 2) note(path, 'the browser is not beside the page');
+      const tabBox = await tab.boundingBox();
+      const wide = await page.evaluate(() => innerWidth);
+      if (Math.abs(tabBox.x + tabBox.width - wide) > 1) note(path, 'the tabs are not on the right-hand edge');
+      if (tabBox.height < tabBox.width) note(path, 'the edge tabs are not vertical');
+      const pageBefore = await (await page.$('#shell-page')).boundingBox();
+      await tab.click();
+      await page.waitForTimeout(320);
+      if (!(await page.isVisible('#dock #bGo'))) note(path, 'the browser did not open from its edge tab');
+      else {
+        const win = await (await page.$('#dock')).boundingBox();
+        if (win.width > 800 || win.height > 650) note(path, `the browser is not a small window (${Math.round(win.width)}×${Math.round(win.height)})`);
+        const pageAfter = await (await page.$('#shell-page')).boundingBox();
+        if (Math.abs(pageAfter.width - pageBefore.width) > 1) note(path, 'opening the browser changed the width of the page');
+        await page.mouse.move(win.x + win.width - 60, win.y + 6);
+        await page.mouse.down();
+        await page.mouse.move(win.x + win.width - 60 - 150, win.y + 6 + 90, { steps: 6 });
+        await page.mouse.up();
+        const moved = await (await page.$('#dock')).boundingBox();
+        if (Math.abs(moved.x - (win.x - 150)) > 4 || Math.abs(moved.y - (win.y + 90)) > 4) {
+          note(path, `the browser window did not follow a drag (moved ${Math.round(moved.x - win.x)}, ${Math.round(moved.y - win.y)})`);
+        }
+        if (!(await page.$eval('#edge-tabs [data-tool="browser"]', (b) => b.classList.contains('on')))) note(path, 'the browser tab does not show that it is open');
+        await page.click('#edge-tabs [data-tool="browser"]');
+        await page.waitForTimeout(150);
+        if (await page.isVisible('#dock')) note(path, 'pressing the browser tab again did not put the window away');
+      }
     }
     await page.close();
   }

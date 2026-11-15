@@ -605,6 +605,8 @@ async function fill(rail) {
 }
 
 const rail = mount();
+// The tabs on the right-hand edge are on every page, so they are put there with the rail.
+import('/tools.js').then((tools) => tools.edgeTabs()).catch(() => {});
 render(rail, readMode(), [], (() => { try { return localStorage.getItem('esprits.me'); } catch { return null; } })());
 fill(rail);
 

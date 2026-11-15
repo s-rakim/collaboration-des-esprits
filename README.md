@@ -872,7 +872,9 @@ folder** of your computer and nothing else. Not your home folder, not the rest
 of the disk, and not the room's own database with your keys in it. Agents and
 you work in there; what gets made stays in there until **you** export it.
 
-Its tools are on every page — the chat included — from the rail:
+Its tools are on every page — the chat included — as **tabs on the right-hand
+edge** (and in the rail). Each tab opens a small window you can move; pressing
+it again puts the window away:
 
 - **Terminal**, a **floating window** (`Ctrl` + `` ` ``). Drag it by its bar,
   size it by its corner, leave it open while you do something else; it is
@@ -881,9 +883,9 @@ Its tools are on every page — the chat included — from the rail:
   who ran it. Commands start in a folder inside the sandbox
   (`/sandbox/project` to begin with); make more folders by name and switch
   between them. Agents can be switched off from it with one checkbox.
-- **Browser**, **docked into the page** beside whatever you are looking at —
-  drag its edge to give it more or less of the width. It is a real Firefox on
-  a profile of its own rather than your everyday one, with anything it
+- **Browser**, a second small window, moved and sized the same way. It is a
+  real Firefox on a profile of its own rather than your everyday one, with
+  anything it
   downloads landing in the sandbox. The view is live: **click, scroll and type
   in it from the page**, go back and forward, and watch the agents do the
   same. Install Firefox and the room finds it; `ESPRITS_FIREFOX` points at one
