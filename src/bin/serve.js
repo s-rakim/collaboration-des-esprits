@@ -24,6 +24,7 @@ import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
 import { createRounds } from '../rounds.js';
 import { createSandbox } from '../sandbox.js';
+import { addressKind, callerAllowed, shareBanner } from '../share.js';
 import {
   TOKENS as THEME_TOKENS, FONTS as THEME_FONTS, PRESETS as THEME_PRESETS,
   DEFAULT_PRESET, DEFAULTS as THEME_DEFAULTS, cleanTheme, resolveTheme, themeCss, defaultsCss,
@@ -102,6 +103,21 @@ const app = express();
 app.use(express.json({ limit: '4mb' }));
 // The sign-in page posts a form, so that one body shape is parsed too.
 app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+
+/**
+ * Private callers only, when the room has been opened to other devices.
+ *
+ * `npm run serve` listens on every interface, so that a VPN or a tailnet that
+ * comes up later is answered without a restart. On a machine with a public
+ * address that would also mean the internet — so the caller's own address is
+ * checked, and one that is not this machine or a private network is turned
+ * away before the token is even asked for.
+ */
+const PRIVATE_ONLY = /^(1|true|yes|on)$/i.test(process.env.ESPRITS_PRIVATE_ONLY ?? '');
+app.use((req, res, next) => {
+  if (!PRIVATE_ONLY || callerAllowed(req.socket.remoteAddress)) return next();
+  res.status(403).type('text').send('This room answers devices on its own private networks only.\n');
+});
 
 /**
  * Shared-secret auth, on when ESPRITS_TOKEN is set.
@@ -268,13 +284,23 @@ function unlockPage({ next = '/', error = '' } = {}) {
     <p>This room is reachable from outside this machine, so it asks for its token.</p>
     <label for="token">Access token</label>
     <input id="token" name="token" type="password" autocomplete="current-password" autofocus
-      placeholder="the value of ESPRITS_TOKEN">
+      placeholder="the access token">
     <input type="hidden" name="next" value="${esc(next)}">
     <button type="submit">Open the room</button>
     ${error ? `<p class="err">${esc(error)}</p>` : ''}
-    <p class="hint">Set on the machine running the room, as <code>ESPRITS_TOKEN</code>.
+    <p class="hint">It is printed by the machine running the room when it starts.
       Signing in here keeps this browser signed in for 30 days.</p>
   </form>
+  <script>
+    // A link can carry the token after the #. That part of an address is never
+    // sent to a server, so it reaches this page and nothing else — no log, no
+    // history on the other end, no referrer.
+    if (location.hash.length > 1) {
+      document.getElementById('token').value = decodeURIComponent(location.hash.slice(1));
+      history.replaceState(null, '', location.pathname + location.search);
+      document.forms[0].submit();
+    }
+  </script>
 </body></html>`;
 }
 
@@ -1931,26 +1957,7 @@ app.use(express.static(join(here, '..', 'web')));
  * interface, including whichever one faces the internet, and this database
  * holds every key you have pasted in.
  */
-function bindKind(host) {
-  const h = String(host).toLowerCase().replace(/^\[|\]$/g, '');
-  if (h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.')) return 'loopback';
-  if (h === '0.0.0.0' || h === '::' || h === '*') return 'everything';
-
-  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    // 100.64/10 is the shared-address range Tailscale hands out.
-    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
-        (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)) return 'private';
-    return 'public';
-  }
-  // Tailscale's own IPv6 range is inside fd00::/8, with the rest of unique-local.
-  if (/^f[cd][0-9a-f]{2}:/.test(h) || /^fe80:/.test(h)) return 'private';
-  // A hostname could be anything, so it is treated as though it were public.
-  return 'public';
-}
-
-const BIND = bindKind(HOST);
+const BIND = addressKind(HOST);
 
 if (BIND !== 'loopback' && !TOKEN) {
   if (BIND === 'private') {
@@ -2112,10 +2119,7 @@ function startScheduler() {
 function startParticipants() {
   syncSeats();
   rounds.start();
-  // Find out now what the sandbox is, so the first page to ask is told rather than kept waiting.
-  sandbox.detect().then((engine) => process.stdout.write(engine
-    ? `sandbox: commands run in a ${engine} container that sees only ${sandbox.root}\n`
-    : 'sandbox: no container engine is running — the terminal will refuse commands until one is, or until you allow it to run without\n'));
+
   startScheduler();
 
   const token = config.secret('telegram_token');
@@ -2131,19 +2135,37 @@ function startParticipants() {
   }
 }
 
-app.listen(PORT, HOST, () => {
+app.listen(PORT, HOST, async () => {
+  // Asked before the banner is written, so what the sandbox is appears with
+  // everything else rather than as a stray line some seconds later.
+  const engine = await sandbox.detect().catch(() => null);
+  const sandboxed = await sandbox.status().catch(() => null);
+  const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
   process.stdout.write(
     `collaboration-des-esprits\n` +
-      `  room       http://${HOST}:${PORT}/\n` +
-      `  setup      http://${HOST}:${PORT}/setup\n` +
-      `  connector  http://${HOST}:${PORT}/mcp\n` +
+      `  room       http://${shown}:${PORT}/\n` +
+      `  setup      http://${shown}:${PORT}/setup\n` +
+      `  connector  http://${shown}:${PORT}/mcp\n` +
       `  database   ${hub.db.name}\n` +
       `  auth       ${TOKEN ? 'token — sign in once per browser at /unlock' : `none (${BIND === 'loopback' ? 'loopback only' : 'anyone on this network'})`}\n` +
-      `  models     ${seats.enabled().map((s) => `${s.name}=${s.model || '?'}`).join(', ') || 'none — add some at /setup'}\n` +
+      `  models     ${seats.enabled().map((s) => `${s.name}=${seats.resolve(s.name)?.model || 'no model set'}`).join(', ') || 'none — add a chat key at /setup'}\n` +
       `  endpoints  ${connections.all().map((c) => `${c.name}(${c.kind})`).join(', ') || 'none'}\n` +
       `  schedules  ${hub.schedules().filter((s) => s.enabled).length} active\n` +
-      `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n`,
+      `  telegram   ${config.bool('telegram_enabled') ? 'on' : 'off'}\n` +
+      `  sandbox    ${engine
+        ? `on — commands run in a ${engine} container that sees only ${sandbox.root}`
+        : sandboxed?.unconfined
+          ? 'OFF, and you allowed commands to run without one — they run on this machine as you'
+          : `off: ${String(sandboxed?.why ?? 'no container engine was found').replace(/, then check again$/, '')}.\n` +
+            '             The terminal will not run commands until there is one; it is picked up without a restart.\n' +
+            '             Chat, images and the browser do not need it.'}\n`,
   );
+  if (process.env.ESPRITS_SHARE) {
+    process.stdout.write(shareBanner({
+      port: PORT, token: TOKEN,
+      from: process.env.ESPRITS_TOKEN_FROM ?? 'ESPRITS_TOKEN', file: process.env.ESPRITS_TOKEN_FILE ?? null,
+    }));
+  }
   startParticipants();
 });
 

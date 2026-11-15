@@ -71,6 +71,45 @@ A fresh agent calls it once and is caught up. That is what replaces re-briefing.
 The room is one process and one SQLite file, so "somewhere else" is a box you
 can SSH into. What changes is who can reach it.
 
+### From your other devices: `npm run serve`
+
+```
+npm run serve
+```
+
+The same room as `npm start`, reachable from a phone on the same Wi-Fi, a
+laptop on a VPN, or anything on your tailnet. It prints the address to open on
+each network the machine is on, and an **access token**:
+
+```
+Open the room from another device
+  Tailscale  http://100.101.102.103:4300/
+  Wi-Fi      http://192.168.1.24:4300/
+
+  Access token   k7fq-m2xw-9hpd-3vbt
+```
+
+Open the address on the other device, type the token once, and that browser
+stays signed in for 30 days. The token is made the first time and kept in
+`data/access-token`; delete that file for a new one, or set `ESPRITS_TOKEN` to
+choose your own.
+
+What it does to stay yours:
+
+- **It asks every device for the token**, including a browser on the machine
+  itself (the banner prints a link that signs that one in with a click).
+- **It answers private networks only** — your LAN, a VPN, your tailnet. It
+  listens on every interface so a network that connects later works without a
+  restart, and turns away any caller whose own address is a public one, so on
+  a machine with a public address it is still not on the internet.
+- **A LAN is not encrypted.** On Wi-Fi you share with strangers, use Tailscale:
+  its addresses work from anywhere and the traffic between your devices is
+  encrypted.
+
+On Windows, the first run asks whether to allow Node.js through the firewall —
+tick *Private networks*. If another device still cannot connect, the banner
+prints the one command that opens the port.
+
 ### On a tailnet (the good option)
 
 A tailnet already answers the question a password is usually there to answer —

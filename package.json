@@ -16,6 +16,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/bin/serve.js",
+    "serve": "node --disable-warning=ExperimentalWarning src/bin/share.js",
     "stdio": "node --disable-warning=ExperimentalWarning src/bin/stdio.js",
     "telegram": "node --disable-warning=ExperimentalWarning src/bin/telegram.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
