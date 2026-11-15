@@ -916,6 +916,38 @@ that starts it, or the full path to its program. Because the room works in the
 linked folder itself, whatever the agents write shows up in your editor as
 they write it.
 
+From a terminal — any editor's — the same link is one command, run in the
+room's folder while the room is running:
+
+```
+npm run link -- "C:\path\to\your\project"     # link that folder
+npm run link -- --unlink                         # let go of it again
+```
+
+### In VS Code, Cursor, Windsurf or VSCodium
+
+There is an extension for the editors built on VS Code, in
+[`extensions/vscode`](extensions/vscode):
+
+```
+code --install-extension extensions/vscode/esprits-room-0.1.0.vsix
+```
+
+(`cursor`, `windsurf` or `codium` in place of `code`.) It adds, under
+*Esprits* in the command palette and behind the *Room* item in the status bar:
+
+- **Link This Folder to the Room** — the agents work in the folder you have
+  open;
+- **Ask the Room (About the Selection)** — your question and the selected
+  code, with its file and lines, to everyone or to one agent
+  (`Ctrl`+`Alt`+`R`);
+- **Run in the Room's Terminal** — a command where the room is working, on its
+  record;
+- **Drop an Idea**, **Open the Room** in an editor tab, and an *Esprits room*
+  output panel that shows what the agents say and run as it happens.
+
+`npm run extension:package` rebuilds the `.vsix` after a change.
+
 **It needs a container engine**: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 or [Podman](https://podman.io), installed and running. The room finds whichever
 is there, starts a container from `node:22-bookworm` (the first time, that is a

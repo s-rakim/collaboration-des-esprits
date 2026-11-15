@@ -12,11 +12,13 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "bin": {
     "esprits": "src/bin/stdio.js",
-    "esprits-serve": "src/bin/serve.js"
+    "esprits-serve": "src/bin/serve.js",
+    "esprits-link": "src/bin/link.js"
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/bin/serve.js",
     "serve": "node --disable-warning=ExperimentalWarning src/bin/share.js",
+    "link": "node --disable-warning=ExperimentalWarning src/bin/link.js",
     "stdio": "node --disable-warning=ExperimentalWarning src/bin/stdio.js",
     "telegram": "node --disable-warning=ExperimentalWarning src/bin/telegram.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs",
@@ -24,7 +26,8 @@
     "check:pages": "node --disable-warning=ExperimentalWarning scripts/check-pages.mjs",
     "confirm": "node --disable-warning=ExperimentalWarning scripts/confirm.mjs",
     "skills:check": "node --disable-warning=ExperimentalWarning scripts/build-skills.mjs --check",
-    "skills:build": "node --disable-warning=ExperimentalWarning scripts/build-skills.mjs"
+    "skills:build": "node --disable-warning=ExperimentalWarning scripts/build-skills.mjs",
+    "extension:package": "node --disable-warning=ExperimentalWarning scripts/package-extension.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

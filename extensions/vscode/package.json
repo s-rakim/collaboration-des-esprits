@@ -1,0 +1,58 @@
+{
+  "name": "esprits-room",
+  "displayName": "Collaboration des Esprits",
+  "description": "Work with your room of AI agents from the editor: link the folder you have open, ask the room about a selection, run in the shared terminal, and see what the agents do.",
+  "version": "0.1.0",
+  "publisher": "s-rakim",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": { "type": "git", "url": "https://github.com/s-rakim/collaboration-des-esprits.git" },
+  "engines": { "vscode": "^1.82.0" },
+  "categories": ["Other", "Chat"],
+  "keywords": ["agents", "multi-agent", "room", "collaboration", "cursor", "windsurf", "vscodium"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "esprits.linkFolder", "title": "Link This Folder to the Room", "category": "Esprits" },
+      { "command": "esprits.openRoom", "title": "Open the Room", "category": "Esprits" },
+      { "command": "esprits.askRoom", "title": "Ask the Room (About the Selection)", "category": "Esprits" },
+      { "command": "esprits.runCommand", "title": "Run in the Room's Terminal", "category": "Esprits" },
+      { "command": "esprits.dropIdea", "title": "Drop an Idea", "category": "Esprits" },
+      { "command": "esprits.showActivity", "title": "Show What the Room Is Doing", "category": "Esprits" },
+      { "command": "esprits.menu", "title": "Room…", "category": "Esprits" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "esprits.askRoom", "when": "editorHasSelection", "group": "navigation@90" }
+      ]
+    },
+    "keybindings": [
+      { "command": "esprits.askRoom", "key": "ctrl+alt+r", "mac": "cmd+alt+r", "when": "editorTextFocus" }
+    ],
+    "configuration": {
+      "title": "Collaboration des Esprits",
+      "properties": {
+        "esprits.url": {
+          "type": "string",
+          "default": "http://127.0.0.1:4300",
+          "description": "Where the room is running. Start it with `npm start` (or `npm run serve` to reach it from other machines)."
+        },
+        "esprits.token": {
+          "type": "string",
+          "default": "",
+          "description": "The room's access token, if it asks for one (it does when started with `npm run serve`)."
+        },
+        "esprits.name": {
+          "type": "string",
+          "default": "",
+          "description": "Your name in the room. Asked for the first time it is needed."
+        },
+        "esprits.follow": {
+          "type": "boolean",
+          "default": true,
+          "description": "Write what the agents say and run to the \"Esprits room\" output panel as it happens."
+        }
+      }
+    }
+  }
+}
