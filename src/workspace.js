@@ -152,10 +152,28 @@ export function createTerminal({ db, config, sandbox }) {
       .map(view);
   }
 
+  /**
+   * Put something on the record that was not a shell command — one of the
+   * PC's own commands — so the history still shows everything that was typed.
+   */
+  function record({ command, by, kind = 'human', output = '', exitCode = 0 }) {
+    const at = now();
+    const id = Number(db.prepare(
+      `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at, exit_code, output, timed_out, finished_at)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 0, ?)`,
+    ).run(String(command), sandbox.peek().dir, String(by), kind, at, exitCode, String(output).slice(0, MAX_OUTPUT), at).lastInsertRowid);
+    return view(db.prepare('SELECT * FROM terminal_runs WHERE id = ?').get(id));
+  }
+
+  /** What is running this moment. */
+  const running = () => [...live.keys()].map((id) => view(db.prepare('SELECT * FROM terminal_runs WHERE id = ?').get(id))).filter(Boolean);
+
   return {
     folder,
     setFolder,
     run,
+    record,
+    running,
     stop,
     history,
     agentsAllowed: () => config.bool('terminal_agents'),

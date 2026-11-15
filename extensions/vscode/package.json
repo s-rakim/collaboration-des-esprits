@@ -1,6 +1,6 @@
 {
   "name": "esprits-room",
-  "displayName": "Collaboration des Esprits",
+  "displayName": "Esprits",
   "description": "Work with your room of AI agents from the editor: link the folder you have open, ask the room about a selection, run in the shared terminal, and see what the agents do.",
   "version": "0.1.0",
   "publisher": "s-rakim",
@@ -30,7 +30,7 @@
       { "command": "esprits.askRoom", "key": "ctrl+alt+r", "mac": "cmd+alt+r", "when": "editorTextFocus" }
     ],
     "configuration": {
-      "title": "Collaboration des Esprits",
+      "title": "Esprits",
       "properties": {
         "esprits.url": {
           "type": "string",

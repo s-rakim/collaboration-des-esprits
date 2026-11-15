@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Collaboration des Esprits</title>
+<title>Esprits</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/theme.css">
 <style>
@@ -13,14 +13,26 @@
   .stats{display:flex;gap:14px;color:var(--dim);font-size:12px;flex-wrap:wrap}
   .stats b{color:var(--text)}
   .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
-  main{display:grid;grid-template-columns:230px minmax(0,1fr) 340px;gap:0;height:calc(100vh - 53px);
-    transition:grid-template-columns .16s ease}
+  main{--L:var(--col-l,200px);--R:var(--col-r,340px);position:relative;
+    display:grid;grid-template-columns:var(--L) minmax(0,1fr) var(--R);gap:0;height:calc(100vh - 53px)}
+  /* The columns are dragged by the lines between them. */
+  main>.colsplit{position:absolute;top:0;bottom:0;width:7px;z-index:5;cursor:col-resize;touch-action:none}
+  main>.colsplit::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:1px;background:transparent;transition:background .12s ease}
+  main>.colsplit:hover::after,main>.colsplit.dragging::after{background:var(--accent);width:3px;left:2px}
+  #splitL{left:calc(var(--L) - 4px)} #splitR{right:calc(var(--R) - 4px)}
+  body.panel-ctx-closed #splitR{display:none}
+  /* The sections of the left column each take a share, and the share is dragged. */
+  aside .sect{overflow:auto;min-height:26px}
+  #rounds{max-height:var(--h-rounds,210px)} #roster{max-height:var(--h-roster,132px)}
+  aside .rowsplit{height:9px;margin:2px 0;cursor:row-resize;position:relative;touch-action:none}
+  aside .rowsplit::after{content:'';position:absolute;left:35%;right:35%;top:3px;height:3px;border-radius:3px;background:var(--line);transition:background .12s ease}
+  aside .rowsplit:hover::after,aside .rowsplit.dragging::after{background:var(--accent);left:10%;right:10%}
   /* Put away, the column keeps just enough width to hold its own way back. */
-  body.panel-ctx-closed main{grid-template-columns:230px minmax(0,1fr) 38px}
+  body.panel-ctx-closed main{--R:38px}
   body.panel-ctx-closed .ctx>*:not(.panel-toggle){display:none}
   body.panel-ctx-closed .ctx{padding:0;overflow:hidden}
-  @media (max-width:1340px){main{grid-template-columns:210px minmax(0,1fr) 290px}}
-  @media (max-width:1080px){main{grid-template-columns:1fr;height:auto}aside,section{border:0!important}}
+  @media (max-width:1340px){main{--L:var(--col-l,190px);--R:var(--col-r,290px)}}
+  @media (max-width:1080px){main{grid-template-columns:1fr;height:auto}aside,section{border:0!important}main>.colsplit{display:none}}
   aside,.mid,.ctx{overflow-y:auto;padding:14px}
   aside{border-right:1px solid var(--line)}
   .ctx{position:relative;border-left:1px solid var(--line)}
@@ -282,7 +294,9 @@
   .floor .wait.over{box-shadow:inset 0 2px 0 var(--text)}
   .floor .grip{color:var(--faint);font-size:11px;letter-spacing:-2px;opacity:0;transition:opacity .12s;margin-left:auto}
   .floor .wait:hover .grip{opacity:1}
-  .agent{gap:9px;padding:4px 0}
+  .agent{gap:7px;padding:2px 0;font-size:12px;min-width:0}
+  .agent>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+  .agent>span:nth-child(3){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 0;min-width:0}
   .agent .av{position:relative;overflow:visible}
   .agent .av .dot{position:absolute;right:-2px;bottom:-2px;box-shadow:0 0 0 2px var(--bg)}
   .stats span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 10px}
@@ -300,7 +314,7 @@
   <div class="me">
     <span id="meLabel">not identified</span>
     <button id="setMe">change</button>
-    <button id="toolTerminal" title="The sandbox's terminal — you and the agents both use it">Terminal</button>
+    <button id="toolTerminal" title="The Agents' PC's terminal — you and the agents both use it">Terminal</button>
     <button id="toolBrowser" title="The Firefox window you and the agents both use">Browser</button>
     <button id="handover" hidden title="Approve this idea and hand it to the coordinator to be built as threads">Hand over to build</button>
     <button class="primary" id="newIdea">Drop an idea</button>
@@ -314,11 +328,15 @@
     <div id="results"></div>
     <div id="context"></div>
     <h2>Speaking</h2>
-    <div class="floor" id="rounds"></div>
+    <div class="floor sect" id="rounds"></div>
+    <div class="rowsplit" id="splitRounds" title="Drag to resize · double-click to reset"></div>
     <div class="floor" id="floor"></div>
-    <h2>In the room</h2>
-    <div id="roster"></div>
+    <h2 style="margin-top:8px">In the room</h2>
+    <div class="sect" id="roster"></div>
+    <div class="rowsplit" id="splitRoster" title="Drag to resize · double-click to reset"></div>
   </aside>
+  <div class="colsplit" id="splitL" title="Drag to resize · double-click to reset"></div>
+  <div class="colsplit" id="splitR" title="Drag to resize · double-click to reset"></div>
 
   <div class="mid">
     <div class="feed" id="feed">
@@ -618,6 +636,8 @@ function inline(text) {
   h = h.replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s).,!?:;]|$)/gm, '$1<em>$2</em>');
   h = h.replace(/^#{1,4}\s+(.+)$/gm, '<strong class="hd">$1</strong>');
   h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // A link to somewhere in the room itself — a thread, say — opens here, not in another tab.
+  h = h.replace(/\[([^\]\n]+)\]\((\/(?!\/)[^\s)]*)\)/g, '<a href="$2" class="in">$1</a>');
   h = h.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
   h = h.replace(/(^|\s)@([a-zA-Z0-9][\w.-]*)/g, '$1<span class="mention">@$2</span>');
   return h;
@@ -2350,6 +2370,29 @@ if (new URLSearchParams(location.search).get('do') === 'new-idea') {
   history.replaceState(null, '', location.pathname + (state.idea ? `?idea=${encodeURIComponent(state.idea)}` : ''));
   $('#newIdea').click();
 }
+</script>
+<script type="module">
+// The lines between the columns and the sections are dragged to resize them.
+const { splitter } = await import('/tools.js');
+const main = document.querySelector('main');
+const px = (name, fallback) => parseFloat(getComputedStyle(main).getPropertyValue(name)) || fallback;
+const col = (id, prop, measure, invert) => splitter(document.getElementById(id), {
+  axis: 'x', invert, key: `esprits.chat.${prop}`, min: 140, max: () => Math.min(520, innerWidth * 0.4),
+  size: measure, set: (v) => { if (v === null) main.style.removeProperty(prop); else main.style.setProperty(prop, `${v}px`); },
+});
+col('splitL', '--col-l', () => document.querySelector('main>aside').getBoundingClientRect().width, false);
+col('splitR', '--col-r', () => document.querySelector('main>.ctx').getBoundingClientRect().width, true);
+const row = (id, target, prop) => {
+  const el = document.getElementById(target);
+  splitter(document.getElementById(id), {
+    axis: 'y', key: `esprits.chat.${prop}`, min: 28, max: () => innerHeight * 0.7,
+    size: () => el.getBoundingClientRect().height,
+    // Dragged taller than what is in it, the section simply keeps the room.
+    set: (v) => { if (v === null) { el.style.removeProperty(prop); el.style.height = ''; } else { el.style.setProperty(prop, `${v}px`); el.style.height = `${v}px`; } },
+  });
+};
+row('splitRounds', 'rounds', '--h-rounds');
+row('splitRoster', 'roster', '--h-roster');
 </script>
 <script type="module" src="/nav.js"></script>
 </body>

@@ -1,4 +1,4 @@
-# Collaboration des Esprits
+# Esprits
 
 A groupchat for you and all your AI agents — and, more to the point, the shared
 memory underneath it.
@@ -23,6 +23,21 @@ workarounds, maintenance and troubleshooting in one place. The rest of this
 page explains why each part is the way it is.
 
 ---
+
+## The Agents' PC
+
+The machine the agents work on — a folder, a terminal and a browser, inside a
+container when Docker or Podman is running — is yours to look into and drive:
+
+- tabs on the right-hand edge of every page open it as small movable windows,
+  and **Desktop** (`/pc`) shows it as a whole page;
+- a live **Explorer** shows files appear, change and disappear as agents work;
+- **Code** and **Notes** edit files in place and follow the disk while you watch;
+- the **Terminal** takes shell commands and `pc …` commands that control the
+  machine itself (`pc help`);
+- while a thread works you can **steer** it from any of those windows.
+
+See [docs/GUIDE.md](docs/GUIDE.md#3b-the-agents-pc).
 
 ## How the work moves
 

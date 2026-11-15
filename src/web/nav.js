@@ -38,6 +38,8 @@ const ICON = {
   coordinator: '<path d="M10 2.5l6 2.5v5c0 4-2.6 6.6-6 7.5-3.4-.9-6-3.5-6-7.5v-5z"/><path d="M7.5 10l2 2 3.5-4"/>',
   idea: '<path d="M7.5 15h5M8 17.5h4"/><path d="M10 2.5a5 5 0 0 1 3 9v1.5H7V11.5a5 5 0 0 1 3-9z"/>',
   threads: '<path d="M5 3v9a3 3 0 0 0 3 3h7"/><path d="M5 7h10"/><path d="M12.5 4.5L15 7l-2.5 2.5M12.5 12.5L15 15l-2.5 2.5"/>',
+  desktop: '<rect x="2.5" y="3.5" width="15" height="10" rx="1.5"/><path d="M7 16.5h6M10 13.5v3"/>',
+  folder: '<path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12A1.5 1.5 0 0 0 17.5 15V7.5A1.5 1.5 0 0 0 16 6h-6L8.2 3.8H4A1.5 1.5 0 0 0 2.5 5.3z"/>',
   terminal: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5"/>',
   browser: '<circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.4 2.2 2.4 12.8 0 15M10 2.5c-2.4 2.2-2.4 12.8 0 15"/>',
   collapse: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M8 3.5v13"/>',
@@ -101,6 +103,7 @@ const PAGE_MODE = {
   '/work': 'work', '/work.html': 'work',
   '/plugins': 'work', '/plugins.html': 'work',
   '/threads': 'work', '/threads.html': 'work',
+  '/pc': 'work', '/pc.html': 'work',
 };
 
 const RAIL_WIDE = 232;
@@ -344,7 +347,7 @@ function render(rail, mode, ideas, me) {
   rail.innerHTML = `
     <div class="top">
       <button class="fold" title="${folded ? 'Widen the rail' : 'Narrow the rail'}">${icon('collapse')}</button>
-      <span class="brand">Collaboration des Esprits</span>
+      <span class="brand">Esprits</span>
     </div>
 
     <div class="seg">
@@ -360,15 +363,21 @@ function render(rail, mode, ideas, me) {
 
     ${m.links.map(item).join('')}
 
-    <div class="head">The sandbox</div>
+    <div class="head">Agents' PC</div>
+    <a class="item ${location.pathname.startsWith('/pc') ? 'on' : ''}" href="/pc" title="The Agents' PC as a desktop: files, editors, terminal, browser">
+      ${icon('desktop')}<span class="t">Desktop</span>
+    </a>
     <button class="item" data-tool="terminal" title="The terminal you share with the agents, in a window you can move (Ctrl \`)">
       ${icon('terminal')}<span class="t">Terminal</span>
     </button>
-    <button class="item" data-tool="browser" title="The browser you share with the agents, beside the page">
+    <button class="item" data-tool="browser" title="The browser you share with the agents">
       ${icon('browser')}<span class="t">Browser</span>
     </button>
-    <button class="item" data-tool="files" title="What has been made in the sandbox, and the way to export it">
-      ${icon('artifacts')}<span class="t">Files &amp; export</span>
+    <button class="item" data-tool="explorer" title="The files on the Agents' PC, changing as the agents work">
+      ${icon('folder')}<span class="t">Explorer</span>
+    </button>
+    <button class="item" data-tool="files" title="What has been made on the Agents' PC, and the way to export it">
+      ${icon('artifacts')}<span class="t">Export</span>
     </button>
 
     ${threads(ideas)}

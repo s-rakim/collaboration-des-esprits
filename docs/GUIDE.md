@@ -194,6 +194,88 @@ Files tab: **Download as a zip**, or **Copy to a folder on this computer**.
 
 ---
 
+## 3b. The Agents' PC
+
+The Agents' PC is the machine the agents work on: one folder, a terminal, a
+browser, and — when Docker or Podman is running — a container around all
+three. (Earlier versions called this "the sandbox"; it is the same thing.)
+Agents reach it from the lobby and from every thread, and so do you.
+
+### Where to find it
+
+- **The tabs on the right-hand edge of every page** — *Agents' PC*, *Terminal*,
+  *Browser*, *Explorer*. Each opens a small window you can drag by its bar,
+  resize by its corner, and leave open while you carry on in the chat.
+- **Desktop** in the left rail (`/pc`) — the same PC as a whole page: icons
+  for every program, the folder's files on the desktop, and a taskbar showing
+  what is open and what is running.
+
+### The programs
+
+| Program | What it is for |
+| --- | --- |
+| **Explorer** | The folder as a tree and a list. It is live: a file an agent makes is tagged *new*, one it rewrites *changed*, one it deletes fades out, and a folder with changes inside carries a dot. Click a file to preview it; double-click to open it. New file, new folder, rename, delete, download, export as zip. |
+| **Code** | A code editor: tabs, line numbers, Tab and auto-indent, `Ctrl S`, and *Run* for `.js`, `.py`, `.sh` and `.ts` files. |
+| **Notes** | A text editor for prose: wraps, counts words. |
+| **Terminal** | The command line you share with the agents. `Stop` on anything running; up/down recall what you typed. |
+| **Browser** | The Firefox window you share with the agents. |
+| **Activity** | What the PC is, its switches (network, whether agents may use the terminal, restart), running commands with *Stop*, and the threads at work with a box to steer each. |
+| **Export** | Download the folder as a zip, copy it out, or open it in your own editor. |
+
+An open file **follows the disk** until you type in it, so you can watch an
+agent write it. Once you have typed, nothing is taken from you: if the file
+changes underneath, the editor says so and you choose *Load theirs* or
+*Keep mine*; saving never silently overwrites an agent's newer version.
+
+The bars between sections — the explorer's tree and preview, the PC window's
+sections, the chat page's columns and its *Speaking* / *In the room* lists —
+are dragged to resize them. Double-click a bar to put it back.
+
+### Driving it from the command line
+
+Anything typed in the Terminal runs on the PC as a shell command, except a
+line that starts with `pc`, which is for the machine itself:
+
+```
+pc status                 what the PC is and where it is working
+pc folders                the folders on it
+pc use <name>             work in that folder (made if it is new)
+pc link <path> [name]     work in a folder of this computer
+pc unlink [name]          let go of a linked folder (nothing is deleted)
+pc ls [dir]               what is in the folder
+pc cat <file>             a file's text
+pc write <file> <text>    put text in a file
+pc mkdir <dir>            make a folder
+pc mv <from> <to>         rename or move
+pc rm <path>              delete a file or folder
+pc ps                     what is running, commands and threads
+pc stop <id|all>          stop a running command
+pc tell <thread> <text>   say something to a thread while it works
+pc network on|off         whether it can reach the internet
+pc agents on|off          whether agents may use the terminal
+pc restart                start it afresh (files are kept)
+pc open [file]            open the folder, or a file, in your editor
+pc export <path>          copy the folder out to this computer
+pc browse <address>       open a page in the shared browser
+```
+
+`pc` commands are yours alone — an agent's command line goes to the shell —
+and they are written to the terminal's history like everything else.
+
+### Steering an agent while it works
+
+While a thread is running, a **Steer** strip appears at the foot of the
+Terminal, Browser, Explorer and Agents' PC windows. What you type there
+reaches the thread at its next step — the same as the box on the thread's own
+card, or `pc tell <id> …`.
+
+### Threads are opened by link
+
+Threads do not open themselves. When a build is planned, the coordinator
+posts one message in the lobby (and in the idea's own conversation) with a
+link to every thread; click one to open that thread's conversation and steer
+it. On the Threads page, clicking a thread's row does the same.
+
 ## 4. Workarounds
 
 ### 4.1 No Docker

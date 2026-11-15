@@ -181,6 +181,27 @@ test('an approved idea is cut into threads, built in the folder, and reported ba
   assert.equal(r.hub.getIdea(r.idea.slug).stage, 'building');
 });
 
+test('the coordinator drops a link to every thread in the lobby, and nothing is opened for anybody', async () => {
+  const r = room();
+  const p = provider({ planned: PLAN });
+  const threads = createThreads({ ...r, db: r.hub.db, createClient: p.createClient });
+  const started = threads.handOver({ idea: r.idea.slug, by: 'malcolm', workers: 2 });
+  const build = await settle(threads, started.id);
+
+  const lobby = r.hub.db.prepare(`SELECT author, body FROM messages WHERE idea_id IS NULL AND body LIKE '%/threads?build=%'`).all();
+  assert.equal(lobby.length, 1);
+  assert.equal(lobby[0].author, 'overseer');
+  for (const t of build.threads) {
+    assert.ok(lobby[0].body.includes(`(/threads?build=${build.id}&thread=${t.id})`), `no link to thread ${t.seq}`);
+    assert.ok(lobby[0].body.includes(t.title));
+  }
+  // The idea's own conversation has them too.
+  const inIdea = r.hub.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE idea_id IS NOT NULL AND body LIKE '%/threads?build=%'`).get();
+  assert.equal(inIdea.n, 1);
+  // And the threads that are working can be asked for, to be steered from anywhere.
+  assert.deepEqual(threads.running(), []);
+});
+
 test('a thread can look something up, and the page is handed over marked as somebody else\'s', async () => {
   const r = room();
   const p = provider({

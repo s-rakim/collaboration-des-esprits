@@ -150,7 +150,7 @@ export function shareBanner({ port, token, from, file, addresses = reachable(), 
       '  If another device cannot connect, Windows Firewall is the usual reason. When Windows asks',
       '  whether to allow Node.js, tick "Private networks". If it never asked, run this once in an',
       '  administrator PowerShell:',
-      `    netsh advfirewall firewall add rule name="Collaboration des Esprits" dir=in action=allow protocol=TCP localport=${port}`,
+      `    netsh advfirewall firewall add rule name="Esprits" dir=in action=allow protocol=TCP localport=${port}`,
     );
   }
   lines.push('');

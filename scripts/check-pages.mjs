@@ -406,7 +406,7 @@ try {
 
   // ---------------------------------------------------------- every page loads
 
-  for (const path of ['/', '/dashboard', '/plugins', '/work', '/threads', '/design', '/artifacts', '/setup']) {
+  for (const path of ['/', '/dashboard', '/plugins', '/work', '/threads', '/design', '/artifacts', '/setup', '/pc']) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     watch(page, path);
     await page.goto(BASE + path, { waitUntil: 'networkidle' });
@@ -426,6 +426,13 @@ try {
     // have to open from the rail wherever you are, the chat included.
     // The window remembers where it was left, and these pages share that memory;
     // each is checked from where a window starts, not from where the last one was dragged to.
+    // The desktop arrives with its explorer open; put it away so each window is checked on its own.
+    if (path === '/pc') {
+      if (!(await page.waitForSelector('#explorer.open', { state: 'visible', timeout: 4000 }).catch(() => null))) note(path, 'the desktop did not arrive with the explorer open');
+      else await page.click('#explorer .tbar .x');
+      if ((await page.$$('#apps [data-app]')).length < 6) note(path, 'the desktop is missing its programs');
+      if ((await page.$$('#tasks [data-task]')).length < 6) note(path, 'the desktop has no taskbar');
+    }
     await page.evaluate(() => localStorage.removeItem('esprits.terminal'));
     await page.click('#shell-rail [data-tool="terminal"]');
     const opened = await page.waitForSelector('#tools.open #tCmd', { state: 'visible', timeout: 4000 }).catch(() => null);
@@ -486,6 +493,27 @@ try {
         if (await page.isVisible('#dock')) note(path, 'pressing the browser tab again did not put the window away');
       }
     }
+
+    // The Agents' PC is a window of its own on every page, and so is its file explorer.
+    for (const [tool, win] of [['pc', '#pcwin'], ['explorer', '#explorer']]) {
+      await page.evaluate((w) => localStorage.removeItem(`esprits.win.${w.slice(1)}`), win);
+      if (await page.isVisible(win)) await page.click(`#edge-tabs [data-tool="${tool}"]`);
+      await page.click(`#edge-tabs [data-tool="${tool}"]`);
+      const up = await page.waitForSelector(`${win}.open`, { state: 'visible', timeout: 4000 }).catch(() => null);
+      if (!up) { note(path, `the ${tool} window did not open from its edge tab`); continue; }
+      await page.waitForTimeout(260);
+      await page.evaluate((w) => document.querySelector(w).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })), win);
+      const was = await (await page.$(win)).boundingBox();
+      await page.mouse.move(was.x + 60, was.y + 14);
+      await page.mouse.down();
+      await page.mouse.move(was.x + 60 - 90, was.y + 14 + 70, { steps: 6 });
+      await page.mouse.up();
+      const now = await (await page.$(win)).boundingBox();
+      if (Math.abs(now.x - (was.x - 90)) > 4 || Math.abs(now.y - (was.y + 70)) > 4) note(path, `the ${tool} window did not follow a drag`);
+      await page.click(`${win} .tbar .x`);
+      if (await page.isVisible(win)) note(path, `the ${tool} window did not close`);
+    }
+    if ((await page.textContent('#shell-rail .brand')).trim() !== 'Esprits') note(path, 'the rail does not carry the name Esprits');
     await page.close();
   }
 

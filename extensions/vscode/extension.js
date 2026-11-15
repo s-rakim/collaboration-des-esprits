@@ -33,7 +33,7 @@ function activate(context) {
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   status.command = 'esprits.menu';
   status.text = '$(comment-discussion) Room';
-  status.tooltip = 'Collaboration des Esprits';
+  status.tooltip = 'Esprits';
   status.show();
   context.subscriptions.push(channel, status);
 
@@ -172,7 +172,7 @@ function activate(context) {
       { label: '$(lightbulb) Drop an idea', run: 'esprits.dropIdea' },
       { label: '$(output) Show what the room is doing', run: 'esprits.showActivity' },
       { label: '$(browser) Open the room', run: 'esprits.openRoom' },
-    ], { title: 'Collaboration des Esprits' });
+    ], { title: 'Esprits' });
     if (pick) await vscode.commands.executeCommand(pick.run);
   };
 

@@ -1,6 +1,6 @@
 /**
- * The sandbox's tools, on every page: a terminal that floats, and a browser
- * that is part of the page.
+ * The Agents' PC's tools, on every page: a terminal and a browser, each a
+ * small window that floats.
  *
  * They are shaped by how each is used. A terminal is something you glance at
  * and type a line into while doing something else, so it is a window you put
@@ -14,13 +14,13 @@
  * a person exports it from there.
  */
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const me = () => { try { return localStorage.getItem('esprits.me') || ''; } catch { return ''; } };
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const me = () => { try { return localStorage.getItem('esprits.me') || ''; } catch { return ''; } };
 
-async function api(path, opts = {}) {
+export async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...opts });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(body.error ?? `the server answered ${res.status}`), { code: body.code });
   return body;
 }
 
@@ -78,6 +78,13 @@ const CSS = `
 #dock .text{white-space:pre-wrap;color:var(--dim);line-height:1.5;padding:0 12px 10px}
 #dock .visits div{padding:5px 12px;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
 #dock .visits b{color:var(--text);font-weight:550}
+.split{flex:none;background:transparent;position:relative;z-index:2;touch-action:none}
+.split.x{width:7px;margin:0 -3px;cursor:col-resize}
+.split.y{height:7px;margin:-3px 0;cursor:row-resize}
+.split::after{content:'';position:absolute;inset:0;margin:auto;background:var(--line);transition:background .12s ease}
+.split.x::after{width:1px;height:100%} .split.y::after{height:1px;width:100%}
+.split:hover::after,.split.dragging::after{background:var(--accent)}
+.split.x:hover::after,.split.x.dragging::after{width:3px} .split.y:hover::after,.split.y.dragging::after{height:3px}
 #tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}
 #tools .tbar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
 #tools .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
@@ -133,9 +140,12 @@ let root = null;
 let timer = null;
 let lastRun = 0;
 let shown = 'terminal';
+const typed = [];
+let typedAt = 0;
+const steer = { terminal: null, browser: null };
 
 let styled = false;
-const style = () => { if (!styled) { styled = true; document.head.insertAdjacentHTML('beforeend', `<style>${CSS}</style>`); } };
+export const style = () => { if (!styled) { styled = true; document.head.insertAdjacentHTML('beforeend', `<style>${CSS}</style>`); } };
 
 function build() {
   if (root) return root;
@@ -145,7 +155,7 @@ function build() {
   root.innerHTML = `
     <div class="tbar">
       <button class="tab" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="files">Files</button>
+      <button class="tab" data-tab="files">Export</button>
       <span class="ttl" id="tTitle"></span>
       <button class="x" title="Close (Ctrl \`)">×</button>
     </div>
@@ -171,6 +181,7 @@ function build() {
         <input id="tCmd" placeholder="a command, run in the project folder" autocomplete="off" spellcheck="false">
         <button class="primary">Run</button>
       </form>
+      <div id="tSteer"></div>
     </div>`;
   document.body.append(root);
 
@@ -188,8 +199,12 @@ function build() {
     err.textContent = '';
     box.disabled = true;
     try {
-      await api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command, as: me() }) });
+      typed.push(command); typedAt = typed.length;
       box.value = '';
+      // Not waited for: a long command is watched as it runs, and can be stopped.
+      api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command, as: me() }) })
+        .catch((ex) => { err.textContent = ex.message; }).finally(() => refreshTerminal(true));
+      await new Promise((r) => setTimeout(r, 150));
     } catch (ex) {
       err.textContent = ex.message;
     } finally {
@@ -198,6 +213,22 @@ function build() {
       refreshTerminal();
     }
   });
+
+  // Up and down bring back what was typed before, as a terminal does.
+  root.querySelector('#tCmd').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (!typed.length) return;
+    e.preventDefault();
+    typedAt = Math.max(0, Math.min(typed.length, typedAt + (e.key === 'ArrowUp' ? -1 : 1)));
+    e.target.value = typed[typedAt] ?? '';
+  });
+  root.querySelector('#tRuns').addEventListener('click', async (e) => {
+    const stop = e.target.closest('[data-stop]');
+    if (!stop) return;
+    await post(`/api/terminal/${stop.dataset.stop}/stop`, {}).catch(() => {});
+    refreshTerminal(true);
+  });
+  import('/desk.js').then((desk) => { steer.terminal = desk.steerStrip(root.querySelector('#tSteer')); }).catch(() => {});
 
   /** Choosing a folder is the same wherever it is done: one of the sandbox's, or a new name. */
   root.addEventListener('change', async (e) => {
@@ -215,7 +246,7 @@ function build() {
           return refresh(true);
         }
         if (folder === '+') {
-          folder = prompt('A name for the new folder in the sandbox — letters, numbers, dashes.', '');
+          folder = prompt('A name for the new folder on the Agents’ PC — letters, numbers, dashes.', '');
           if (!folder) return refresh(true);
         }
         await post('/api/sandbox', { folder });
@@ -303,14 +334,14 @@ function build() {
   return root;
 }
 
-const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+export const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
 const folderPick = (sb) => {
   const linked = new Map((sb.links ?? []).map((l) => [l.name, l.path]));
-  return `<select data-folder title="Where commands start: a folder in the sandbox, or one of yours that you linked">
+  return `<select data-folder title="Where commands start: a folder on the Agents' PC, or one of yours that you linked">
   ${sb.folders.map((f) => `<option value="${esc(f)}" ${f === sb.folder ? 'selected' : ''}
     ${linked.has(f) ? `title="${esc(linked.get(f))}"` : ''}>${esc(f)}${linked.has(f) ? ' ↗' : ''}</option>`).join('')}
-  <option value="+">new sandbox folder…</option>
+  <option value="+">new folder on the PC…</option>
   <option value="@">link a folder on this computer…</option>
   ${sb.linked ? '<option value="-">unlink this folder</option>' : ''}</select>`;
 };
@@ -339,8 +370,8 @@ async function refreshTerminal(all = false) {
   const warn = root.querySelector('#tWarn');
   warn.hidden = sb.isolated && !sb.preparing && !sb.error;
   warn.innerHTML = sb.preparing
-    ? 'Getting the sandbox ready. The first time, this downloads its image, which can take a few minutes; commands wait for it.'
-    : sb.error ? `<b>The sandbox would not start.</b> ${esc(sb.error)}<div class="row"><button id="sCheck">Check again</button></div>`
+    ? 'Getting the Agents\' PC ready. The first time, this downloads its image, which can take a few minutes; commands wait for it.'
+    : sb.error ? `<b>The Agents' PC would not start.</b> ${esc(sb.error)}<div class="row"><button id="sCheck">Check again</button></div>`
     : sb.linked
       ? `<b>Working in your own folder.</b> Commands — yours and the agents' — run directly on this computer, in <code>${esc(sb.hostDir)}</code>. They are not sandboxed; with Docker running they would be, and could see only this folder.
          <div class="row"><button id="sCheck">Check for Docker again</button></div>`
@@ -351,10 +382,10 @@ async function refreshTerminal(all = false) {
          <div class="row"><button id="sLink" class="primary">Link a folder on this computer</button><button id="sCheck">Check again</button><a id="sLoose">run anywhere without a sandbox</a></div>
          <div style="margin-top:8px;color:var(--faint);font-size:11.5px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
   root.querySelector('#tTitle').textContent = sb.dir;
-  root.querySelector('#tCmd').disabled = !sb.ready;
-  root.querySelector('#tCmd').placeholder = sb.isolated ? 'a command, run inside the sandbox'
-    : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer`
-    : sb.ready ? 'a command — NOT sandboxed' : 'nowhere to run it yet — see above';
+  root.querySelector('#tCmd').placeholder = sb.isolated ? "a command, run on the Agents' PC — or pc help"
+    : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer — or pc help`
+    : sb.ready ? 'a command — NOT sandboxed — or pc help' : 'nowhere to run it yet — see above (pc help still works)';
+  steer.terminal?.update();
 
   const newest = t.runs.at(-1)?.id ?? 0;
   const stillRunning = t.runs.some((r) => r.running);
@@ -367,10 +398,10 @@ async function refreshTerminal(all = false) {
       <div class="trun">
         <div class="cmd"><b>$</b> ${esc(r.command)}<span class="who ${esc(r.kind)}">${esc(r.by)}${r.thread ? ` · thread ${r.thread}` : ''}</span></div>
         ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}
-        <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? 'running…' : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
+        <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? `running… <button data-stop="${r.id}" style="padding:0 8px;font-size:11px;margin-left:6px">Stop</button>` : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
       </div>`).join('')
     : `<p class="empty">Nothing has been run yet.<br>This is the same terminal the agents use: what you run here they can see,
-       and what they run appears here with their name on it. What gets made stays in the sandbox until you export it from the Files tab.</p>`;
+       and what they run appears here with their name on it. What gets made stays on the Agents' PC until you export it — watch it appear in the Explorer.</p>`;
   if (atBottom || all) box.scrollTop = box.scrollHeight;
 }
 
@@ -391,7 +422,7 @@ async function refreshFiles() {
   const where = root.querySelector('#fWhere');
   if (!(where.contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) {
     where.innerHTML = `${badge(sb)} ${folderPick(sb)} <span>${list.files.filter((f) => f.kind === 'file').length} file(s), ${size(list.bytes)}</span>
-      <label style="margin-left:auto" title="Whether commands in the sandbox can reach the internet, for installing packages">
+      <label style="margin-left:auto" title="Whether commands on the Agents' PC can reach the internet, for installing packages">
         <input type="checkbox" id="fNet" ${sb.network ? 'checked' : ''}> network</label>`;
   }
   const box = root.querySelector('#fList');
@@ -403,7 +434,7 @@ async function refreshFiles() {
       : `<div class="file ${f.kind}">${esc(f.path)}<span>${f.kind === 'heavy' ? 'not listed' : 'a link'}</span></div>`).join('')
       + (list.clipped ? '<p class="empty">…and more. Export the folder to see all of it.</p>' : '')
     : `<p class="empty">Nothing has been made in <b>${esc(list.folder)}</b> yet.<br>Everything the agents and you create from the terminal lands here,
-       inside the sandbox. When it is worth keeping, export it — as a zip, or copied to a folder of yours. Nothing leaves any other way.</p>`);
+       on the Agents' PC. When it is worth keeping, export it — as a zip, or copied to a folder of yours. Nothing leaves any other way.</p>`);
   if (keep !== null) { const v = box.querySelector('#fView'); v.hidden = false; v.textContent = keep; }
   root.querySelector('#fZip').href = `/api/sandbox/export.zip?folder=${encodeURIComponent(list.folder)}`;
   root.querySelector('#fZip').style.pointerEvents = list.files.length ? '' : 'none';
@@ -432,7 +463,7 @@ const kept = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? 'nu
  * off the edge, or left where a smaller browser window no longer reaches, is
  * a window nobody can get back.
  */
-function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
+export function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
   const place = (g) => {
     const w = Math.min(g.w, innerWidth - 16);
     const h = Math.min(g.h, innerHeight - 16);
@@ -446,7 +477,7 @@ function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
   const bar = win.querySelector(handle);
   // Whichever window was touched last is the one on top.
   win.addEventListener('pointerdown', () => {
-    for (const w of document.querySelectorAll('#tools, #dock')) w.classList.toggle('front', w === win);
+    for (const w of document.querySelectorAll('#tools, #dock, .fwin')) w.classList.toggle('front', w === win);
   }, true);
   let from = null;
   bar.addEventListener('pointerdown', (e) => {
@@ -489,7 +520,47 @@ function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
   addEventListener('resize', () => { const g = kept(key); if (g && win.classList.contains('open')) place(g); });
 }
 
+/**
+ * A bar between two sections that is dragged to share the space differently.
+ *
+ * `size` reads the section's size and `set` gives it a new one; which way is
+ * bigger depends on which side of the bar the section is, hence `invert`.
+ * Where it was left is remembered, and a double-click puts it back.
+ */
+export function splitter(handle, { axis = 'x', size, set, min = 60, max = 1200, key = null, invert = false }) {
+  const was = key ? kept(key) : null;
+  if (Number.isFinite(was)) set(Math.max(min, Math.min(max, was)));
+  let from = null;
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    from = { at: axis === 'x' ? e.clientX : e.clientY, size: size() };
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!from) return;
+    const d = (axis === 'x' ? e.clientX : e.clientY) - from.at;
+    set(Math.max(min, Math.min(typeof max === 'function' ? max() : max, from.size + (invert ? -d : d))));
+  });
+  const drop = () => {
+    if (!from) return;
+    from = null;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    if (key) keep(key, Math.round(size()));
+  };
+  handle.addEventListener('pointerup', drop);
+  handle.addEventListener('pointercancel', drop);
+  handle.addEventListener('dblclick', () => { set(null); if (key) { try { localStorage.removeItem(key); } catch { /* nothing kept */ } } });
+}
+
+/** The windows that live in desk.js: the PC itself, the explorer, the editors, the activity monitor. */
+const DESK = ['pc', 'explorer', 'code', 'notes', 'activity'];
+
 export function openTools(tab = 'terminal') {
+  if (DESK.includes(tab)) return import('/desk.js').then((desk) => desk.openApp(tab));
   if (tab === 'browser') return openBrowser();
   build().classList.add('open');
   show(tab);
@@ -505,6 +576,7 @@ export function close() {
 }
 
 export function toggleTools(tab) {
+  if (DESK.includes(tab)) return import('/desk.js').then((desk) => desk.toggleApp(tab));
   if (tab === 'browser') return dock?.classList.contains('open') ? closeBrowser() : openBrowser();
   if (root?.classList.contains('open') && shown === tab) close();
   else openTools(tab);
@@ -516,7 +588,7 @@ let dock = null;
 let looking = null;
 let shotBusy = false;
 
-const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
+export const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
 function buildDock() {
   if (dock) return dock;
@@ -539,8 +611,10 @@ function buildDock() {
       <button title="Type it, then press Enter in the page">Type ↵</button>
     </form>
     <details id="bMore"><summary>What the page says, and where the browser has been</summary>
-      <div class="text" id="bText"></div><div class="visits" id="bVisits"></div></details>`;
+      <div class="text" id="bText"></div><div class="visits" id="bVisits"></div></details>
+    <div id="bSteer"></div>`;
   document.body.append(dock);
+  import('/desk.js').then((desk) => { steer.browser = desk.steerStrip(dock.querySelector('#bSteer')); }).catch(() => {});
   floating(dock, { key: 'esprits.browser', handle: '.nav' });
 
   const say = (text) => { dock.querySelector('#bErr').textContent = text ?? ''; };
@@ -646,6 +720,7 @@ async function look(now = false) {
     }
   }
 
+  steer.browser?.update();
   if (dock.querySelector('#bMore').open) {
     const page = b.running ? await api('/api/browser/page').catch(() => null) : null;
     dock.querySelector('#bText').textContent = page ? (page.text ?? '').slice(0, 6000) || '(no readable text)' : '';
@@ -673,7 +748,7 @@ export function closeBrowser() {
 
 /**
  * Tabs on the right-hand edge of the page: the way in to the terminal, the
- * browser and the files, from wherever you are. Each opens its small window,
+ * browser and the file explorer, from wherever you are. Each opens its small window,
  * and shows that it is open; pressing it again puts the window away.
  */
 function mark() {
@@ -681,8 +756,9 @@ function mark() {
   if (!tabs) return;
   const float = Boolean(root?.classList.contains('open'));
   tabs.querySelector('[data-tool="terminal"]').classList.toggle('on', float && shown === 'terminal');
-  tabs.querySelector('[data-tool="files"]').classList.toggle('on', float && shown === 'files');
   tabs.querySelector('[data-tool="browser"]').classList.toggle('on', Boolean(dock?.classList.contains('open')));
+  tabs.querySelector('[data-tool="explorer"]').classList.toggle('on', Boolean(document.querySelector('#explorer.open')));
+  tabs.querySelector('[data-tool="pc"]').classList.toggle('on', Boolean(document.querySelector('#pcwin.open')));
 }
 
 export function edgeTabs() {
@@ -691,9 +767,10 @@ export function edgeTabs() {
   const tabs = document.createElement('div');
   tabs.id = 'edge-tabs';
   tabs.innerHTML = `
+    <button data-tool="pc" title="The Agents' PC: everything on the machine the agents work on">Agents' PC</button>
     <button data-tool="terminal" title="The terminal you share with the agents (Ctrl \`)">Terminal</button>
     <button data-tool="browser" title="The browser you share with the agents">Browser</button>
-    <button data-tool="files" title="What has been made, and exporting it">Files</button>`;
+    <button data-tool="explorer" title="The files on the Agents' PC, changing as the agents work">Explorer</button>`;
   tabs.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tool]');
     if (b) toggleTools(b.dataset.tool);

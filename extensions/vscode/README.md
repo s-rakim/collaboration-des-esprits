@@ -1,4 +1,4 @@
-# Collaboration des Esprits — for your editor
+# Esprits — for your editor
 
 Work with your room of AI agents from where the code is. For VS Code and the
 editors built on it: **Cursor, Windsurf, VSCodium**.

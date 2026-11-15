@@ -396,17 +396,36 @@ export function createThreads({ db, hub, seats, terminal, browser, config = null
   }
 
   /** Speak in the idea's own thread as the coordinator, so the room sees the hand-over and the result. */
-  function announce(build, body) {
-    if (!build.idea_id) return;
+  function announce(build, body, { lobby = false } = {}) {
+    if (!build.idea_id && !lobby) return;
     try {
       hub.join({
         name: build.coordinator, role: 'coordinator', kind: 'agent',
         ...(build.coordinator === BOT ? { model: 'automation — rules, no model' } : {}),
       });
-      hub.post({ idea: build.idea_id, by: build.coordinator, kind: 'status', body });
+      hub.post({ idea: lobby ? null : build.idea_id, by: build.coordinator, kind: 'status', body });
     } catch (err) {
-      log(`build ${build.id}: could not post to the idea — ${err.message}`);
+      log(`build ${build.id}: could not post to the ${lobby ? 'lobby' : 'idea'} — ${err.message}`);
     }
+  }
+
+  /**
+   * The way in to every thread, dropped in the lobby by the coordinator.
+   *
+   * Threads are not opened for anybody: the coordinator says what it cut the
+   * work into and gives a link to each piece, and a person opens the ones
+   * they want to watch or steer.
+   */
+  function linkThreads(build) {
+    const rows = threadsOf(build.id);
+    if (!rows.length) return;
+    const body = [
+      `Build #${build.id} — “${build.title}” — is cut into ${rows.length} thread${rows.length === 1 ? '' : 's'}. Open one to watch it work and steer it:`,
+      ...rows.map((t) => `- [${t.seq}. ${t.title}](/threads?build=${build.id}&thread=${t.id}) — ${t.seat || 'no seat yet'}, ${t.necessity}`),
+    ].join('\n');
+    announce(build, body, { lobby: true });
+    // The idea's own conversation gets them too, when the build came from one.
+    if (build.idea_id) announce(build, body);
   }
 
   // ---------------------------------------------------------------- hand-over
@@ -586,6 +605,7 @@ export function createThreads({ db, hub, seats, terminal, browser, config = null
         );
         for (const p of pieces) insert.run(id, p.seq, p.title, p.brief, p.necessity, p.importance, p.seat, p.effort);
         log(`build ${id}: ${pieces.length} thread(s) planned`);
+        if (!state.cancelled) linkThreads(buildRow(id));
       }
       if (state.cancelled) return buildView(buildRow(id));
 
@@ -724,6 +744,11 @@ export function createThreads({ db, hub, seats, terminal, browser, config = null
       };
     },
     isLive: (id) => live.has(Number(id)),
+    /** The threads being worked on this moment — the ones a person could say something to. */
+    running: () => db.prepare(
+      `SELECT t.id, t.title, t.seat, t.build_id AS build, b.title AS buildTitle FROM threads t
+       JOIN builds b ON b.id = t.build_id WHERE t.status = 'running' ORDER BY t.started_at`,
+    ).all(),
     seats: () => usable().map((s) => ({ name: s.name, role: s.role, model: seats.resolve(s.name).model })),
   };
 }

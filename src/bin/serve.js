@@ -20,6 +20,7 @@ import { probe as probeEndpoint, tryKey } from '../probe.js';
 import { detectShape } from '../participants/messages.js';
 import { createRouters } from '../routers.js';
 import { createTerminal } from '../workspace.js';
+import { createPc, isPcCommand } from '../pc.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
 import { createRounds } from '../rounds.js';
@@ -72,6 +73,8 @@ const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA), downloadDir
 const threads = createThreads({
   db: hub.db, hub, seats, terminal, browser, config, log: (m) => process.stdout.write(`${m}\n`),
 });
+/** The PC's own commands — `pc …` typed into the terminal. */
+const pc = createPc({ sandbox, terminal, threads, browser });
 const plugins = createPlugins(hub.db, { log: (m) => process.stdout.write(`${m}\n`) });
 const web = createWebBridge({ connections, log: (m) => process.stdout.write(`${m}\n`) });
 // A skill's binary files are kept next to the generated media, so a skill that
@@ -259,7 +262,7 @@ function unlockPage({ next = '/', error = '' } = {}) {
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Collaboration des Esprits</title><link rel="icon" href="data:,">
+<title>Esprits</title><link rel="icon" href="data:,">
 <style>
   :root{--bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e6e8ee;--dim:#98a0b3;--faint:#6b7488;--accent:#7aa2f7;--bad:#f7768e}
   @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--panel:#fff;--line:#dde1e8;--text:#12151b;--dim:#5b6373;--faint:#8b93a5;--accent:#2d5bd7;--bad:#c3364f}}
@@ -280,7 +283,7 @@ function unlockPage({ next = '/', error = '' } = {}) {
 </style></head>
 <body>
   <form method="post" action="/unlock">
-    <h1>Collaboration des Esprits</h1>
+    <h1>Esprits</h1>
     <p>This room is reachable from outside this machine, so it asks for its token.</p>
     <label for="token">Access token</label>
     <input id="token" name="token" type="password" autocomplete="current-password" autofocus
@@ -753,8 +756,37 @@ app.post('/api/sandbox/restart', fromOurPages, (_req, res) =>
 app.get('/api/sandbox/files', (req, res) =>
   send(res, () => { try { return sandbox.files({ folder: req.query.folder }); } catch (err) { throw new Invalid(err.message); } }));
 
+/** Folders and files, with when each last changed — what the explorer watches. */
+app.get('/api/sandbox/tree', (req, res) =>
+  send(res, () => { try { return sandbox.tree({ folder: req.query.folder }); } catch (err) { throw new Invalid(err.message); } }));
+
 app.get('/api/sandbox/file', (req, res) =>
   send(res, () => { try { return sandbox.read({ folder: req.query.folder, path: req.query.path }); } catch (err) { throw new Invalid(err.message); } }));
+
+/** A file as it is — for showing a picture, or anything a browser can show. Never run: sent as a download unless it is an image. */
+app.get('/api/sandbox/raw', (req, res) => {
+  try {
+    const full = sandbox.locate({ folder: req.query.folder, path: req.query.path });
+    const image = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(full);
+    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" });
+    if (image) res.sendFile(full, { dotfiles: 'allow' }); else res.download(full);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+/**
+ * Change what is in the folder from the PC's own desktop: save a file, make a
+ * folder, rename, delete. A person's actions; the agents have the terminal.
+ */
+const fileChange = (path, fn) => app.post(path, fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    try { return fn(req.body ?? {}); }
+    catch (err) { const e = new Invalid(err.message); if (err.conflict) e.code = 'conflict'; throw e; }
+  }));
+fileChange('/api/sandbox/write', (b) => sandbox.write({ folder: b.folder, path: b.path, text: b.text, expect: b.expect }));
+fileChange('/api/sandbox/mkdir', (b) => sandbox.makeDir({ folder: b.folder, path: b.path }));
+fileChange('/api/sandbox/move', (b) => sandbox.move({ folder: b.folder, from: b.from, to: b.to }));
+fileChange('/api/sandbox/remove', (b) => sandbox.remove({ folder: b.folder, path: b.path }));
 
 /** The results, as a zip. */
 app.get('/api/sandbox/export.zip', (req, res) => {
@@ -787,9 +819,25 @@ app.get('/api/terminal', (req, res) =>
 app.post('/api/terminal/run', fromOurPages, (req, res) =>
   send(res, async () => {
     const by = person(req.body?.as);
-    try { return await terminal.run({ command: req.body?.command, by, kind: 'human' }); }
+    const command = String(req.body?.command ?? '').trim();
+    // A line that starts `pc` is for the machine itself, not for its shell.
+    if (isPcCommand(command)) {
+      const out = await pc.run(command, by);
+      return terminal.record({ command, by, output: out.text, exitCode: out.ok ? 0 : 1 });
+    }
+    try { return await terminal.run({ command, by, kind: 'human' }); }
     catch (err) { throw new Invalid(err.message); }
   }));
+
+/** What is running on the PC this moment: commands, and the threads at work. */
+app.get('/api/pc', (_req, res) =>
+  send(res, async () => ({
+    ...(await sandbox.status()),
+    agentsAllowed: terminal.agentsAllowed(),
+    commands: terminal.running(),
+    threads: threads.running(),
+    help: pc.help,
+  })));
 
 app.post('/api/terminal/:id/stop', fromOurPages, (req, res) =>
   send(res, () => ({ stopped: terminal.stop(req.params.id) })));
@@ -861,6 +909,9 @@ app.post('/api/ideas/:ref/handover', (req, res) =>
 
 app.post('/api/builds/:id/cancel', (req, res) =>
   send(res, () => { try { return threads.cancel(req.params.id); } catch (err) { throw new NotFound(err.message); } }));
+
+/** The threads being worked on right now, so they can be steered from wherever the person is. */
+app.get('/api/threads/running', (_req, res) => send(res, () => ({ threads: threads.running() })));
 
 app.get('/api/threads/:id', (req, res) =>
   send(res, () => { try { return threads.thread(req.params.id, { since: req.query.since }); } catch (err) { throw new NotFound(err.message); } }));
@@ -2036,7 +2087,7 @@ app.get('/api/events', (req, res) => {
  * link that carries one — /work?do=new-task arrives as a plain /work.html and
  * the thing you asked for never happens, with nothing to show you why.
  */
-for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads']) {
+for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads', 'pc']) {
   app.get(`/${page}`, (req, res) => {
     const query = req.originalUrl.slice(req.path.length);
     res.redirect(`/${page}.html${query}`);

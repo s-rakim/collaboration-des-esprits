@@ -30,10 +30,10 @@
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync,
+  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, parse, resolve } from 'node:path';
+import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 
 import { zip } from './skillpack.js';
 
@@ -482,6 +482,40 @@ export function createSandbox({
     return { folder: f.name, files: out, clipped, bytes: out.reduce((n, x) => n + x.size, 0) };
   }
 
+  /**
+   * The folder as a tree: every folder and file, with its size and when it
+   * last changed. Asked for again and again by the explorer, which is how a
+   * person watches the agents' work appear — so it is a walk of the disk and
+   * nothing cleverer, bounded so a huge folder cannot make it slow.
+   */
+  function tree({ folder: which } = {}) {
+    const f = named(which);
+    const out = [];
+    let clipped = false;
+    const walk = (dir, rel) => {
+      let list;
+      try { list = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const d of list.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))) {
+        if (out.length >= LIST_LIMIT) { clipped = true; return; }
+        const path = rel ? `${rel}/${d.name}` : d.name;
+        const full = join(dir, d.name);
+        let st = null;
+        try { st = statSync(full); } catch { /* went away as we looked */ }
+        const mtime = st ? Math.round(st.mtimeMs) : 0;
+        if (d.isSymbolicLink()) { out.push({ path, kind: 'link', size: 0, mtime }); continue; }
+        if (d.isDirectory()) {
+          const heavy = HEAVY.has(d.name);
+          out.push({ path, kind: heavy ? 'heavy' : 'dir', size: 0, mtime });
+          if (!heavy) walk(full, path);
+          continue;
+        }
+        out.push({ path, kind: 'file', size: st?.size ?? 0, mtime });
+      }
+    };
+    if (existsSync(f.hostDir)) walk(f.hostDir, '');
+    return { folder: f.name, linked: Boolean(f.linked), hostDir: f.hostDir, entries: out, clipped, at: Date.now() };
+  }
+
   /** One file's text, for looking at a result without exporting it. */
   function read({ folder: which, path }) {
     const f = named(which);
@@ -493,7 +527,78 @@ export function createSandbox({
     const size = statSync(full).size;
     const data = readFileSync(full);
     const binary = data.subarray(0, 8000).includes(0);
-    return { path: String(path), size, binary, text: binary ? '' : data.subarray(0, 200_000).toString('utf8'), clipped: !binary && size > 200_000 };
+    return { path: String(path), size, mtime: Math.round(statSync(full).mtimeMs), binary, text: binary ? '' : data.subarray(0, 200_000).toString('utf8'), clipped: !binary && size > 200_000 };
+  }
+
+  // ------------------------------------------------------- changing what is in it
+
+  /** A path inside a folder, refused if it would be anywhere else. */
+  function inFolder(f, path, { self = false } = {}) {
+    const rel = String(path ?? '').trim().replace(/^[\\/]+/, '');
+    const full = resolve(f.hostDir, rel);
+    const inside = full.startsWith(f.hostDir + (process.platform === 'win32' ? '\\' : '/'));
+    if (!(inside || (self && full === f.hostDir))) throw new Error('that is outside the folder');
+    return full;
+  }
+
+  /** Where a file really is, for sending it as it is — a picture, say. */
+  function locate({ folder: which, path }) {
+    const full = inFolder(named(which), path);
+    if (!existsSync(full) || !statSync(full).isFile()) throw new Error(`there is no file ${path}`);
+    return full;
+  }
+
+  /**
+   * Save a file's text. `expect` is the time the file had when it was opened:
+   * given, a file that has changed since — an agent was writing it too — is
+   * not written over, and the caller is told so.
+   */
+  function write({ folder: which, path, text, expect }) {
+    const f = named(which);
+    const full = inFolder(f, path);
+    if (existsSync(full)) {
+      const st = statSync(full);
+      if (!st.isFile()) throw new Error(`${path} is a folder`);
+      if (expect !== undefined && expect !== null && Math.round(st.mtimeMs) !== Number(expect)) {
+        const err = new Error(`${path} has changed since you opened it`);
+        err.conflict = true;
+        throw err;
+      }
+    }
+    const body = String(text ?? '');
+    if (body.length > 2_000_000) throw new Error('that is too large to save from here');
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, body);
+    const st = statSync(full);
+    return { folder: f.name, path: String(path), size: st.size, mtime: Math.round(st.mtimeMs) };
+  }
+
+  function makeDir({ folder: which, path }) {
+    const f = named(which);
+    const full = inFolder(f, path);
+    if (existsSync(full)) throw new Error(`${path} is already there`);
+    mkdirSync(full, { recursive: true });
+    return { folder: f.name, path: String(path) };
+  }
+
+  /** Rename or move, never over something that is already there. */
+  function move({ folder: which, from, to }) {
+    const f = named(which);
+    const a = inFolder(f, from);
+    const b = inFolder(f, to);
+    if (!existsSync(a)) throw new Error(`there is no ${from}`);
+    if (existsSync(b)) throw new Error(`${to} is already there`);
+    mkdirSync(dirname(b), { recursive: true });
+    renameSync(a, b);
+    return { folder: f.name, from: String(from), to: String(to) };
+  }
+
+  function remove({ folder: which, path }) {
+    const f = named(which);
+    const full = inFolder(f, path);
+    if (!existsSync(full)) throw new Error(`there is no ${path}`);
+    rmSync(full, { recursive: true, force: true });
+    return { folder: f.name, path: String(path) };
   }
 
   // ---------------------------------------------------------------- export
@@ -564,7 +669,7 @@ export function createSandbox({
     detect, prepare, restart, close, status, peek, configure,
     folder, folders, setFolder, link, unlink, links,
     start, kill,
-    files, read, exportZip, exportTo,
+    files, tree, read, locate, write, makeDir, move, remove, exportZip, exportTo,
     editors, setEditor, openInEditor,
   };
 }

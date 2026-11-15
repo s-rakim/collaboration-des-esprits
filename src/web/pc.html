@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents' PC — Esprits</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  /* The machine the agents work on, laid out as one: a desktop, icons, a taskbar. */
+  #desk{flex:1;min-width:0;height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden;
+    background:
+      radial-gradient(900px 520px at 78% 12%, color-mix(in srgb,var(--accent) 16%,transparent), transparent 70%),
+      radial-gradient(700px 480px at 12% 88%, color-mix(in srgb,var(--good) 10%,transparent), transparent 70%),
+      var(--bg)}
+  #top{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:12.5px;color:var(--dim)}
+  #top h1{font-family:var(--serif);font-weight:500;font-size:19px;margin:0;color:var(--text);letter-spacing:-.01em}
+  #top .state{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--good);border-radius:20px;padding:1px 9px;color:var(--good)}
+  #top .state.off{color:var(--bad);border-color:var(--bad)} #top .state.wait{color:var(--warn);border-color:var(--warn)}
+  #top code{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  #surface{flex:1;min-height:0;overflow:auto;padding:8px 14px 14px;display:flex;gap:28px;align-items:flex-start}
+  .icons{display:grid;grid-template-rows:repeat(auto-fill,96px);grid-auto-flow:column;grid-auto-columns:96px;gap:4px;height:100%;flex:none}
+  .icons.files{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,96px);grid-template-rows:none;grid-auto-rows:96px;flex:1;height:auto;align-content:start}
+  .ic{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;padding:10px 4px 6px;border:1px solid transparent;border-radius:10px;
+    background:none;color:var(--text);font:inherit;font-size:12px;cursor:default;text-align:center;user-select:none;height:92px;position:relative}
+  .ic:hover{background:color-mix(in srgb,var(--text) 6%,transparent);border-color:color-mix(in srgb,var(--text) 10%,transparent)}
+  .ic:focus-visible{outline:2px solid var(--accent)}
+  .ic .g{width:44px;height:44px;border-radius:11px;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25);flex:none}
+  .ic .g svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .ic.app .g{color:var(--accent)}
+  .ic.dir .g{color:var(--accent)} .ic.file .g{color:var(--dim)}
+  .ic span{max-width:88px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;overflow-wrap:anywhere}
+  .ic .new{position:absolute;top:6px;right:14px;width:9px;height:9px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--bg)}
+  .ic.fresh{animation:pop .5s cubic-bezier(.2,.8,.3,1.2)}
+  @keyframes pop{from{transform:scale(.6);opacity:0}}
+  .hint{color:var(--faint);font-size:12.5px;line-height:1.6;max-width:340px;padding:14px 6px}
+  #bar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--line);
+    background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px);position:relative;z-index:62}
+  #bar .apps{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto}
+  #bar button.tb{display:flex;align-items:center;gap:7px;padding:6px 11px;font-size:12.5px;background:none;border:1px solid transparent;border-radius:8px;color:var(--dim);white-space:nowrap;position:relative}
+  #bar button.tb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  #bar button.tb:hover{background:var(--panel2);color:var(--text)}
+  #bar button.tb.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+  #bar button.tb.on::after{content:'';position:absolute;left:30%;right:30%;bottom:-1px;height:2px;border-radius:2px;background:var(--accent)}
+  #bar .busy{font-size:11.5px;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 8px;border-radius:7px}
+  #bar .busy:hover{background:var(--panel2)}
+  #bar .busy i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  #bar .busy.on i{background:var(--good);animation:blink 1.4s ease-in-out infinite}
+  @keyframes blink{50%{opacity:.25}}
+  #bar .clock{font-size:11.5px;color:var(--dim);text-align:right;line-height:1.25;font-variant-numeric:tabular-nums;padding:0 6px;white-space:nowrap}
+  @media (max-width:700px){.icons{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,84px);grid-template-rows:none;height:auto} #surface{flex-direction:column} #bar .clock{display:none}}
+</style>
+</head>
+<body>
+<div id="desk">
+  <div id="top">
+    <nav id="nav"></nav>
+    <h1>Agents' PC</h1>
+    <span class="state wait" id="state">checking</span>
+    <code id="where"></code>
+  </div>
+  <div id="surface">
+    <div class="icons" id="apps"></div>
+    <div class="icons files" id="files"></div>
+  </div>
+  <div id="bar">
+    <div class="apps" id="tasks"></div>
+    <span class="busy" id="busy" title="What is running — open Activity"><i></i><span></span></span>
+    <div class="clock" id="clock"></div>
+  </div>
+</div>
+
+<script type="module">
+import { esc, api, openTools, toggleTools, closeBrowser, close as closeTerminal } from '/tools.js';
+import { openApp, toggleApp, isOpen } from '/desk.js';
+
+const $ = (s) => document.querySelector(s);
+const svg = (d) => `<svg viewBox="0 0 20 20">${d}</svg>`;
+const GLYPH = {
+  explorer: svg('<path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12A1.5 1.5 0 0 0 17.5 15V7.5A1.5 1.5 0 0 0 16 6h-6L8.2 3.8H4A1.5 1.5 0 0 0 2.5 5.3z"/>'),
+  code: svg('<path d="M7 6l-4 4 4 4M13 6l4 4-4 4M11.5 4l-3 12"/>'),
+  notes: svg('<path d="M5 2.5h10A1.5 1.5 0 0 1 16.5 4v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 16V4A1.5 1.5 0 0 1 5 2.5z"/><path d="M6.5 7h7M6.5 10h7M6.5 13h4"/>'),
+  terminal: svg('<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l2.5 2L6 12M10.5 12.500h3.5"/>'),
+  browser: svg('<circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.4 2.2 2.4 12.8 0 15M10 2.5c-2.4 2.2-2.4 12.8 0 15"/>'),
+  activity: svg('<path d="M2.5 10h3.500l2-5.5 3.5 11 2.2-5.500h3.8"/>'),
+  files: svg('<path d="M10 3v9M6.5 8.500L10 12l3.5-3.500M3.5 14v1.500A1.5 1.5 0 0 0 5 17h10a1.5 1.5 0 0 0 1.5-1.500V14"/>'),
+  dir: svg('<path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12A1.5 1.5 0 0 0 17.5 15V7.5A1.5 1.5 0 0 0 16 6h-6L8.2 3.8H4A1.5 1.5 0 0 0 2.5 5.3z"/>'),
+  file: svg('<path d="M5 2.5h6.500L15.5 6.500V16A1.5 1.5 0 0 1 14 17.500H5A1.5 1.5 0 0 1 3.5 16V4A1.5 1.5 0 0 1 5 2.5z"/><path d="M11.5 2.500V6.500h4"/>'),
+};
+
+/** Everything the PC has, in the order a person reaches for it. */
+const APPS = [
+  { id: 'explorer', name: 'Explorer', hint: 'The files, changing as the agents work' },
+  { id: 'code', name: 'Code', hint: 'A code editor' },
+  { id: 'notes', name: 'Notes', hint: 'A text editor' },
+  { id: 'terminal', name: 'Terminal', hint: 'The command line you share with the agents' },
+  { id: 'browser', name: 'Browser', hint: 'The browser you share with the agents' },
+  { id: 'activity', name: 'Activity', hint: 'What is running, and the PC\'s switches' },
+  { id: 'files', name: 'Export', hint: 'Take the work off the PC' },
+];
+const DESK = ['explorer', 'code', 'notes', 'activity'];
+
+const open = (id) => (DESK.includes(id) ? openApp(id, id === 'code' || id === 'notes' ? {} : undefined) : openTools(id));
+const toggle = (id) => (DESK.includes(id) ? toggleApp(id) : toggleTools(id));
+const shown = (id) => {
+  if (DESK.includes(id)) return isOpen(id);
+  if (id === 'browser') return Boolean($('#dock.open'));
+  const t = $('#tools.open');
+  return Boolean(t) && Boolean(t.querySelector(`[data-tab="${id}"].on`));
+};
+
+$('#apps').innerHTML = APPS.map((a) => `<button class="ic app" data-app="${a.id}" title="${esc(a.hint)} — double-click to open">
+  <i class="g">${GLYPH[a.id]}</i><span>${a.name}</span></button>`).join('');
+$('#apps').addEventListener('dblclick', (e) => { const b = e.target.closest('[data-app]'); if (b) open(b.dataset.app); });
+// Enter on a chosen icon opens it, as it does on any desktop.
+$('#apps').addEventListener('keydown', (e) => { const b = e.target.closest('[data-app]'); if (b && e.key === 'Enter') open(b.dataset.app); });
+
+function tasks() {
+  $('#tasks').innerHTML = APPS.map((a) => `<button class="tb ${shown(a.id) ? 'on' : ''}" data-task="${a.id}" title="${esc(a.hint)}">${GLYPH[a.id]}${a.name}</button>`).join('');
+}
+$('#tasks').addEventListener('click', (e) => { const b = e.target.closest('[data-task]'); if (b) { toggle(b.dataset.task); setTimeout(tasks, 60); } });
+$('#busy').addEventListener('click', () => open('activity'));
+tasks();
+let pending = null;
+new MutationObserver(() => { clearTimeout(pending); pending = setTimeout(tasks, 40); })
+  .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+
+// ---------------------------------------------------- the files on the desktop
+
+let known = null;
+const fresh = new Map();
+let filesSig = '';
+
+async function look() {
+  const [p, t] = await Promise.all([api('/api/pc').catch(() => null), api('/api/sandbox/tree').catch(() => null)]);
+  if (p) {
+    const st = $('#state');
+    st.className = `state ${p.preparing ? 'wait' : p.isolated ? '' : p.linked ? 'wait' : 'off'}`;
+    st.textContent = p.preparing ? 'getting ready' : p.isolated ? 'sandboxed' : p.linked ? 'linked folder' : p.unconfined ? 'not sandboxed' : 'cannot run yet';
+    st.title = p.isolated ? `A ${p.engine} container that can see one folder and nothing else on this computer`
+      : p.linked ? 'Commands run directly on this computer, in the folder you linked' : p.why || '';
+    $('#where').textContent = `${p.folder} — ${p.hostDir}`;
+    const n = p.commands.length; const m = p.threads.length;
+    $('#busy').classList.toggle('on', n + m > 0);
+    $('#busy span').textContent = n + m ? [n ? `${n} command${n === 1 ? '' : 's'}` : '', m ? `${m} thread${m === 1 ? '' : 's'} at work` : ''].filter(Boolean).join(' · ') : 'idle';
+  }
+  if (!t) return;
+  const top = t.entries.filter((e) => !e.path.includes('/'));
+  const now = new Map(top.map((e) => [e.path, e.mtime]));
+  if (known && known.folder === t.folder) for (const [path] of now) if (!known.map.has(path)) fresh.set(path, Date.now());
+  known = { folder: t.folder, map: now };
+  for (const [path, at] of fresh) if (Date.now() - at > 30_000 || !now.has(path)) fresh.delete(path);
+  const sig = JSON.stringify([t.folder, top.map((e) => e.path), [...fresh.keys()]]);
+  if (sig === filesSig) return;
+  const had = new Set([...document.querySelectorAll('#files [data-path]')].map((x) => x.dataset.path));
+  const first = filesSig === '';
+  filesSig = sig;
+  $('#files').innerHTML = top.length
+    ? top.slice(0, 60).map((e) => {
+      const dir = e.kind !== 'file' && e.kind !== 'link';
+      return `<button class="ic ${dir ? 'dir' : 'file'} ${!first && !had.has(e.path) ? 'fresh' : ''}" data-path="${esc(e.path)}" data-dir="${dir ? 1 : ''}" title="${esc(e.path)} — double-click to open">
+        <i class="g">${dir ? GLYPH.dir : GLYPH.file}</i><span>${esc(e.path)}</span>${fresh.has(e.path) ? '<b class="new" title="just made"></b>' : ''}</button>`;
+    }).join('')
+    : `<div class="hint" style="grid-column:1/-1">The PC's folder <b>${esc(t.folder)}</b> is empty.<br>
+        What the agents make lands here as they make it. Open the Terminal and type <code>pc help</code> to drive the machine by hand,
+        or start a file in Code or Notes.</div>`;
+}
+$('#files').addEventListener('dblclick', async (e) => {
+  const b = e.target.closest('[data-path]');
+  if (!b) return;
+  const path = b.dataset.path;
+  if (b.dataset.dir) return openApp('explorer');
+  const prose = /\.(txt|md|markdown|rst|log)$/i.test(path) || !/\./.test(path);
+  return openApp(prose ? 'notes' : 'code', { path, folder: known.folder });
+});
+
+function clock() {
+  const d = new Date();
+  $('#clock').innerHTML = `${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<br>${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}`;
+}
+clock(); setInterval(clock, 15_000);
+await look(); setInterval(look, 1500);
+
+// A desktop with nothing on it says nothing: arrive with the explorer open.
+const want = new URLSearchParams(location.search).get('open');
+open(APPS.some((a) => a.id === want) ? want : 'explorer');
+</script>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>
