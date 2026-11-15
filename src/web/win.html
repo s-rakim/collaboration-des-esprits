@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Esprits</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body class="solo">
+<script type="module">
+// One of the Agents' PC's windows, as a real window of its own: popped out of
+// the page so it can sit anywhere on the screen, or on another one.
+import { openTools } from '/tools.js';
+import { openApp } from '/desk.js';
+
+const q = new URLSearchParams(location.search);
+const app = q.get('app') || 'terminal';
+const NAMES = { pc: "Agents' PC", terminal: 'Terminal', files: 'Export', browser: 'Browser', explorer: 'Explorer', code: 'Code', notes: 'Notes', activity: 'Activity', permissions: 'Permissions' };
+document.title = `${NAMES[app] ?? app} — Esprits`;
+
+if (['terminal', 'files', 'browser'].includes(app)) openTools(app);
+else {
+  const arg = {};
+  for (const k of ['path', 'folder', 'cwd']) if (q.has(k)) arg[k] = q.get(k);
+  openApp(app, Object.keys(arg).length ? arg : (app === 'code' || app === 'notes' ? {} : undefined));
+}
+</script>
+</body>
+</html>

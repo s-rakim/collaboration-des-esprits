@@ -58,6 +58,10 @@ export const SETTINGS = {
     env: 'ESPRITS_TURN_ORDER_MODE', default: '',
     label: 'Who sets the order agents answer in: added (default), custom, coordinator',
   },
+  permissions: {
+    env: 'ESPRITS_PERMISSIONS', default: '',
+    label: 'Which websites and programs the agents may read and write',
+  },
   avatars: {
     env: 'ESPRITS_AVATARS', default: '',
     label: 'How each name is drawn: a glyph, a colour, or a picture',
@@ -78,6 +82,11 @@ export const SETTINGS = {
 
 /** Secrets: write-only from the outside. */
 export const SECRETS = {
+  github_token: {
+    env: 'ESPRITS_GITHUB_TOKEN',
+    label: 'GitHub token',
+    hint: 'A personal access token, so git and gh on the Agents\' PC can sign in. Use a read-only one unless agents should push.',
+  },
   telegram_token: {
     env: 'ESPRITS_TELEGRAM_TOKEN',
     label: 'Telegram bot token',

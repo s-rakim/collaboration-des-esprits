@@ -430,6 +430,33 @@ function toolDefs() {
       parameters: { type: 'object', additionalProperties: false, properties: {} },
     },
     {
+      name: 'browser_act',
+      description:
+        'Act on the page the shared browser is showing: click something, or type into a field. Name the thing ' +
+        'by the words on it. Only works on sites the person has allowed agents to write to; a refusal says how they can allow it.',
+      parameters: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          action: { type: 'string', enum: ['click', 'type'] },
+          target: { type: 'string', description: 'The words on the button or link, or the label or placeholder of the field.' },
+          text: { type: 'string', description: 'For type: what to put in the field.' },
+          submit: { type: 'boolean', description: 'For type: submit the form afterwards.' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'use_app',
+      description:
+        'Use a program on the person\'s computer that they have allowed. Give a file from the project folder to open it in ' +
+        'the program; if the program allows it, give args to run it with and get back what it printed.',
+      parameters: {
+        type: 'object', additionalProperties: false,
+        properties: { app: { type: 'string' }, file: { type: 'string' }, args: { type: 'string' } },
+        required: ['app'],
+      },
+    },
+    {
       name: 'open_idea',
       description:
         'Turn what is being discussed in the lobby into an idea of its own, so it can be proposed against, planned ' +
@@ -498,6 +525,7 @@ export function createModelParticipant({
   // so everything done through them is on the record under this seat's name.
   terminal = null,
   browser = null,
+  permissions = null,
 }) {
   const name = seat?.name ?? 'model';
   const role = seat?.role ?? 'generalist';
@@ -615,7 +643,10 @@ export function createModelParticipant({
     if (!canRun) off.add('run_command');
     let canBrowse = false;
     try { canBrowse = Boolean(browser && browser.status?.().installed !== false); } catch { /* no browser */ }
+    if (!canBrowse || !browser.actOn) off.add('browser_act');
     if (!canBrowse) for (const n of ['browser_search', 'browser_open', 'browser_read']) off.add(n);
+    // A program is only worth offering when the person has listed one.
+    if (!(permissions?.appsFor?.() ?? []).length) off.add('use_app');
     return toolDefs().filter((t) => !off.has(t.name));
   }
 
@@ -978,6 +1009,26 @@ export function createModelParticipant({
             : tool === 'browser_open' ? await browser.open({ url: input.url, by: name, kind: 'agent' })
             : await browser.read();
           return { text: pageForModel(page), ends: false };
+        } catch (err) {
+          return { text: `FAILED: ${err.message}`, ends: false };
+        }
+      }
+
+      case 'browser_act': {
+        if (!browser?.actOn) return { text: 'FAILED: this room has no browser to act on', ends: false };
+        try {
+          const r = await browser.actOn({ action: input.action, target: input.target, text: input.text, submit: input.submit });
+          return { text: `${r.did}\n\n${pageForModel(r.page)}`, ends: false };
+        } catch (err) {
+          return { text: `FAILED: ${err.message}`, ends: false };
+        }
+      }
+
+      case 'use_app': {
+        if (!permissions) return { text: 'FAILED: no programs are available here', ends: false };
+        try {
+          const r = await permissions.useApp({ name: input.app, file: input.file, args: input.args, by: name });
+          return { text: r.output.slice(0, 12_000), ends: false };
         } catch (err) {
           return { text: `FAILED: ${err.message}`, ends: false };
         }

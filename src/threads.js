@@ -115,6 +115,33 @@ const TOOLS = [
     parameters: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
+    name: 'browser_act',
+    description:
+      'Act on the page the shared browser is showing: click something, or type into a field. Name the thing by the words on it. '
+      + 'Only works on sites a person has allowed agents to write to; a refusal says how they can allow it.',
+    parameters: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        action: { type: 'string', enum: ['click', 'type'] },
+        target: { type: 'string', description: 'The words on the button or link, or the label or placeholder of the field.' },
+        text: { type: 'string', description: 'For type: what to put in the field.' },
+        submit: { type: 'boolean', description: 'For type: submit the form afterwards.' },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'use_app',
+    description:
+      'Use a program on the person\'s computer that they have allowed. Give a file from the project folder to open it in the program; '
+      + 'if the program allows it, give args to run it with and get back what it printed.',
+    parameters: {
+      type: 'object', additionalProperties: false,
+      properties: { app: { type: 'string' }, file: { type: 'string' }, args: { type: 'string' } },
+      required: ['app'],
+    },
+  },
+  {
     name: 'done',
     description: 'Finish your thread. Say what you built, where it is, and how to check it.',
     parameters: {
@@ -299,7 +326,7 @@ export function allocate(pieces, roster) {
   });
 }
 
-export function createThreads({ db, hub, seats, terminal, browser, config = null, log = () => {}, createClient = null, maxSteps = 24 }) {
+export function createThreads({ db, hub, seats, terminal, browser, permissions = null, config = null, log = () => {}, createClient = null, maxSteps = 24 }) {
   const now = () => new Date().toISOString();
   /** build id -> { cancelled, turns: Set } for the builds running in this process. */
   const live = new Map();
@@ -517,6 +544,16 @@ export function createThreads({ db, hub, seats, terminal, browser, config = null
       case 'browser_search': return pageForModel(await browser.search({ query: input.query, ...as }));
       case 'browser_open': return pageForModel(await browser.open({ url: input.url, ...as }));
       case 'browser_read': return pageForModel(await browser.read());
+      case 'browser_act': {
+        if (!browser.actOn) return 'FAILED: this browser cannot be acted on';
+        const r = await browser.actOn({ action: input.action, target: input.target, text: input.text, submit: input.submit });
+        return `${r.did}\n\n${pageForModel(r.page)}`;
+      }
+      case 'use_app': {
+        if (!permissions) return 'FAILED: no programs are available here';
+        const r = await permissions.useApp({ name: input.app, file: input.file, args: input.args, by: thread.seat });
+        return r.output.slice(0, 12_000);
+      }
       default: return `FAILED: there is no tool called ${call.name}`;
     }
   }

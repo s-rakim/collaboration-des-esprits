@@ -55,6 +55,50 @@ const READ_PAGE = `JSON.stringify({
     .filter(function (l) { return l.text && /^https?:/.test(l.href); }).slice(0, 40)
 })`;
 
+/** Run in the page: find the thing meant by its words, and click it or fill it in. */
+const ACT_ON = `function (o) {
+  const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const want = norm(o.target);
+  const seen = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+  const label = (el) => {
+    const byFor = el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]') : null;
+    return [el.innerText, el.value, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('placeholder'), el.getAttribute('name'), el.id, byFor && byFor.innerText, el.closest('label') && el.closest('label').innerText].map(norm).filter(Boolean);
+  };
+  const best = (els) => {
+    let hit = null; let rank = 0;
+    for (const el of els) {
+      if (!seen(el)) continue;
+      for (const l of label(el)) {
+        const r = l === want ? 3 : l.startsWith(want) ? 2 : l.includes(want) ? 1 : 0;
+        if (r > rank) { hit = el; rank = r; }
+      }
+    }
+    return hit;
+  };
+  if (o.action === 'click') {
+    if (!want) return JSON.stringify({ ok: false, why: 'say what to click, by the words on it' });
+    const el = best(document.querySelectorAll('a,button,[role=button],[role=link],[role=tab],[role=menuitem],input[type=submit],input[type=button],input[type=checkbox],input[type=radio],summary,label'));
+    if (!el) return JSON.stringify({ ok: false, why: 'nothing on the page is labelled "' + o.target + '"' });
+    el.scrollIntoView({ block: 'center' }); el.click();
+    return JSON.stringify({ ok: true, did: 'clicked "' + (el.innerText || el.value || o.target).trim().slice(0, 80) + '"' });
+  }
+  const fields = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]),textarea,[contenteditable=""],[contenteditable=true]')].filter(seen);
+  const el = want ? best(fields) : (fields.includes(document.activeElement) ? document.activeElement : fields[0]);
+  if (!el) return JSON.stringify({ ok: false, why: want ? 'no field on the page is labelled "' + o.target + '"' : 'there is no field on the page to type into' });
+  el.scrollIntoView({ block: 'center' }); el.focus();
+  if (el.isContentEditable) { el.textContent = o.text; }
+  else {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, o.text);
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+  if (o.submit) {
+    if (el.form) { if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit(); }
+    else for (const type of ['keydown', 'keypress', 'keyup']) el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+  }
+  return JSON.stringify({ ok: true, did: 'typed into "' + (label(el)[0] || 'the field').slice(0, 60) + '"' + (o.submit ? ' and submitted' : '') });
+}`;
+
 export function createBrowser({
   db,
   dataDir,
@@ -328,6 +372,25 @@ export function createBrowser({
     return where();
   }
 
+  /**
+   * Do one thing to the page by what it says rather than where it is: click
+   * the thing labelled so, or put text in the field labelled so. This is how
+   * a model acts on a page — it reads text, and cannot see a picture to aim at.
+   */
+  async function actOn({ action, target = '', text = '', submit = false }) {
+    if (!['click', 'type'].includes(action)) throw new Error('a page can be clicked on or typed into');
+    const ctx = await tab();
+    const out = await send('script.evaluate', {
+      expression: `(${ACT_ON})(${JSON.stringify({ action, target: String(target).slice(0, 200), text: String(text).slice(0, 4000), submit: Boolean(submit) })})`,
+      target: { context: ctx }, awaitPromise: false, resultOwnership: 'none',
+    }, 10_000);
+    const v = JSON.parse(out?.result?.value ?? '{}');
+    if (!v.ok) throw new Error(v.why || 'the page did not take it');
+    // A moment for the page to answer — a click is often a journey.
+    await new Promise((r) => setTimeout(r, 900));
+    return { did: v.did, page: await read() };
+  }
+
   function visits({ limit = 30, thread = undefined } = {}) {
     const rows = thread === undefined || thread === null
       ? db.prepare('SELECT * FROM browser_visits ORDER BY id DESC LIMIT ?').all(Math.min(limit, 200))
@@ -342,7 +405,7 @@ export function createBrowser({
     return { running: connected(), ours: Boolean(child), port, installed: connected() || Boolean(locate()) };
   }
 
-  return { start, stop, status, open, search, read, where, act, screenshot, visits };
+  return { start, stop, status, open, search, read, where, act, actOn, screenshot, visits };
 }
 
 /**

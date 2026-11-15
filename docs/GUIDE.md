@@ -217,7 +217,8 @@ Agents reach it from the lobby and from every thread, and so do you.
 | **Explorer** | The folder as a tree and a list. It is live: a file an agent makes is tagged *new*, one it rewrites *changed*, one it deletes fades out, and a folder with changes inside carries a dot. Click a file to preview it; double-click to open it. New file, new folder, rename, delete, download, export as zip. |
 | **Code** | A code editor: tabs, line numbers, Tab and auto-indent, `Ctrl S`, and *Run* for `.js`, `.py`, `.sh` and `.ts` files. |
 | **Notes** | A text editor for prose: wraps, counts words. |
-| **Terminal** | The command line you share with the agents. `Stop` on anything running; up/down recall what you typed. |
+| **Terminal** | Tabs of command lines — the PC's own, Ubuntu, Kali, zsh, Git Bash, PowerShell, cmd. See below. |
+| **Permissions** | Which websites, GitHub and programs the agents may read and write. |
 | **Browser** | The Firefox window you share with the agents. |
 | **Activity** | What the PC is, its switches (network, whether agents may use the terminal, restart), running commands with *Stop*, and the threads at work with a box to steer each. |
 | **Export** | Download the folder as a zip, copy it out, or open it in your own editor. |
@@ -257,10 +258,99 @@ pc restart                start it afresh (files are kept)
 pc open [file]            open the folder, or a file, in your editor
 pc export <path>          copy the folder out to this computer
 pc browse <address>       open a page in the shared browser
+pc empty                  delete everything in the PC's folder
+pc perms                  what the agents may read and write
+pc allow read|write <site>   let agents read, or write to, a site
+pc deny read|write <site>    stop them
 ```
 
 `pc` commands are yours alone — an agent's command line goes to the shell —
 and they are written to the terminal's history like everything else.
+
+### The terminal: tabs, and a shell in each
+
+The Terminal is laid out like Windows Terminal: tabs along the top, and under
+them a page that is only the prompt — the folder you are standing in, and the
+cursor. Opening it asks **which command line** you want; **+** adds another
+tab, **⌄** opens a shell directly, and there is no limit on how many tabs or
+which kinds. Each tab is its own instance: its own folder (`cd` moves that tab
+only), its own history (↑/↓), its own page (`clear`, `cls` or `Ctrl L` wipes
+it). Tabs are remembered when you close the window.
+
+| Tab | What runs your command |
+| --- | --- |
+| **Agents' PC** | The PC itself — its container with Docker, its folder without. Also shows what the agents run. |
+| **Ubuntu** | A `ubuntu:24.04` container with Docker; otherwise WSL's Ubuntu on Windows (`wsl --install -d Ubuntu`). |
+| **Kali Linux** | A `kalilinux/kali-rolling` container with Docker; otherwise WSL's Kali (`wsl --install -d kali-linux`). |
+| **macOS (zsh)** | zsh on a Mac. Elsewhere it is zsh — the Mac's shell — in the PC's container or on the machine; macOS itself only runs on a Mac. |
+| **Git Bash** | Git for Windows' bash on Windows; bash elsewhere. |
+| **PowerShell** | Windows PowerShell on Windows; `pwsh` elsewhere (in a container with Docker). |
+| **Command Prompt** | `cmd.exe` — Windows only. |
+
+Nothing is imitated: a shell this computer cannot run is listed as
+unavailable, with what to install. Every tab starts in the PC's folder and
+cannot `cd` out of it. `pc …` commands work in every tab.
+
+A shell that runs on the computer rather than in a container (WSL, Git Bash,
+PowerShell, cmd — anything, when Docker is not running) is **not sandboxed**;
+it opens only in a folder you linked, or after you chose to run without a
+sandbox. The picker says which way each one runs.
+
+Each command is run on its own, so a tab remembers its folder but not shell
+variables from one line to the next; chain with `&&` when that matters.
+Programs that take over the screen (`vim`, `top`) need a real terminal.
+
+### Windows that leave the page
+
+Every window — Terminal, Browser, Explorer, the editors, the PC, Activity,
+Permissions — can hang over any edge of the page. To put one *outside* the
+browser, press **↗** on its bar, or drag it out of the page and let go: it
+opens as a real window of its own, which you can place anywhere on your
+screen or on another monitor. (A web page cannot draw outside its browser
+window, so this is the only way a window can.) If nothing opens, allow
+pop-ups for the page.
+
+### Permissions: what agents may read and write
+
+**Agents' PC → Permissions** (also under the terminal's **⌄**) decides what
+the agents may reach beyond their own folder. The rules bind agents, never
+you.
+
+- **Read** is looking: opening a page, fetching, cloning.
+- **Write** is changing something there: clicking and typing on the site,
+  submitting a form, `git push`, `gh pr create`.
+
+*Websites.* Sites not listed get the default — read, no write. Add a site to
+give it its own rule (a rule covers its subdomains). Untick read on "every
+other site" and agents can reach only what you listed.
+
+*GitHub* is listed from the start, read-only. Tick write to let agents push
+and open pull requests. Save a **token** and `git` and `gh` on the PC sign in
+with it (private repositories, pushing). The token is stored with your other
+keys and never shown again. It can do whatever GitHub lets it — give a
+read-only token if agents must only read.
+
+*Programs on this computer.* Add a program by name and command (`code`,
+`notepad`, a full path). With read, an agent can open a file from the PC's
+folder in it; with write, it can run it with its own arguments and read what
+it prints. These run on your computer, as you.
+
+From the terminal: `pc perms`, `pc allow write github.com`,
+`pc deny read all`.
+
+How firm this is: the browser and the fetch tool are checked exactly — every
+request names its site. A shell command is checked by reading it (the sites
+it names, whether it pushes or posts), which stops the ordinary routes and
+tells the agent why. It is not a wall round a shell; the wall is
+`pc network off`.
+
+### Emptying the PC, and saving the project
+
+**Save as zip** downloads the project files (dependencies and `.git` left
+out). **Empty…** deletes everything in the PC's folder and keeps the folder.
+Both are in the Explorer's footer, the Agents' PC window, Activity, and the
+terminal's Export page; `pc empty` does the same from the command line. A
+folder of your own that you linked is never emptied from here.
 
 ### Steering an agent while it works
 

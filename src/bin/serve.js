@@ -21,6 +21,8 @@ import { detectShape } from '../participants/messages.js';
 import { createRouters } from '../routers.js';
 import { createTerminal } from '../workspace.js';
 import { createPc, isPcCommand } from '../pc.js';
+import { createPermissions } from '../permissions.js';
+import { cdTarget } from '../shells.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
 import { createRounds } from '../rounds.js';
@@ -70,11 +72,19 @@ const swarm = createSwarmRunner({ hub, seats, log: (m) => process.stdout.write(`
 const sandbox = createSandbox({ config, dataDir: dirname(MEDIA) });
 const terminal = createTerminal({ db: hub.db, config, sandbox });
 const browser = createBrowser({ db: hub.db, dataDir: dirname(MEDIA), downloadDir: join(sandbox.root, 'downloads') });
+/**
+ * What the agents may reach: which websites, which programs. They are handed
+ * the terminal and the browser through it, so every command and every page
+ * they ask for is checked; a person's own hands are not.
+ */
+const permissions = createPermissions({ config, sandbox });
+const agentTerminal = permissions.guardTerminal(terminal);
+const agentBrowser = permissions.guardBrowser(browser);
 const threads = createThreads({
-  db: hub.db, hub, seats, terminal, browser, config, log: (m) => process.stdout.write(`${m}\n`),
+  db: hub.db, hub, seats, terminal: agentTerminal, browser: agentBrowser, permissions, config, log: (m) => process.stdout.write(`${m}\n`),
 });
 /** The PC's own commands — `pc …` typed into the terminal. */
-const pc = createPc({ sandbox, terminal, threads, browser });
+const pc = createPc({ sandbox, terminal, threads, browser, permissions });
 const plugins = createPlugins(hub.db, { log: (m) => process.stdout.write(`${m}\n`) });
 const web = createWebBridge({ connections, log: (m) => process.stdout.write(`${m}\n`) });
 // A skill's binary files are kept next to the generated media, so a skill that
@@ -788,6 +798,32 @@ fileChange('/api/sandbox/mkdir', (b) => sandbox.makeDir({ folder: b.folder, path
 fileChange('/api/sandbox/move', (b) => sandbox.move({ folder: b.folder, from: b.from, to: b.to }));
 fileChange('/api/sandbox/remove', (b) => sandbox.remove({ folder: b.folder, path: b.path }));
 
+/** Empty a folder of the PC. A person's action, and one that cannot be taken back. */
+app.post('/api/sandbox/empty', fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    try { return sandbox.empty({ folder: req.body?.folder }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
+// --------------------------------------------------------------- permissions
+
+/** What the agents may read and write: websites, and programs on this computer. */
+app.get('/api/permissions', (_req, res) => send(res, () => permissions.view()));
+
+app.post('/api/permissions', fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    return permissions.save({ sites: req.body?.sites, apps: req.body?.apps });
+  }));
+
+app.post('/api/permissions/github-token', fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    try { return permissions.setGithubToken(req.body?.token); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
+
 /** The results, as a zip. */
 app.get('/api/sandbox/export.zip', (req, res) => {
   try {
@@ -813,19 +849,46 @@ app.post('/api/sandbox/export', fromOurPages, (req, res) =>
 app.get('/api/terminal', (req, res) =>
   send(res, () => ({
     ...terminal.folder(),
-    runs: terminal.history({ since: req.query.since, thread: req.query.thread, limit: req.query.limit }),
+    runs: terminal.history({ since: req.query.since, thread: req.query.thread, limit: req.query.limit, shell: req.query.shell }),
   })));
+
+/** The shells a tab can be opened in, and whether this machine can run each. */
+app.get('/api/terminal/shells', (req, res) =>
+  send(res, async () => ({ shells: await sandbox.shells({ recheck: req.query.recheck !== undefined }), ...(await sandbox.status()) })));
+
+/** A tab changing folder. It stays inside the PC's folder; where it lands is what the tab remembers. */
+app.post('/api/terminal/cd', fromOurPages, (req, res) =>
+  send(res, () => {
+    try { return sandbox.resolveCwd({ cwd: req.body?.cwd, to: req.body?.to }); }
+    catch (err) { throw new Invalid(err.message); }
+  }));
 
 app.post('/api/terminal/run', fromOurPages, (req, res) =>
   send(res, async () => {
     const by = person(req.body?.as);
     const command = String(req.body?.command ?? '').trim();
-    // A line that starts `pc` is for the machine itself, not for its shell.
+    const shell = String(req.body?.shell ?? 'pc') || 'pc';
+    // Where the tab is standing, as a path — so what is recorded shows the folder it was typed in.
+    let standing = null;
+    try {
+      const at = sandbox.resolveCwd({ cwd: req.body?.cwd, to: '' }).cwd;
+      const base = sandbox.peek().dir;
+      standing = at ? `${base}${base.includes('\\') ? '\\' : '/'}${at}` : base;
+    } catch { /* the folder it was in has gone; the base will do */ }
+    // A line that starts `pc` is for the machine itself, not for its shell — in whichever tab it is typed.
     if (isPcCommand(command)) {
       const out = await pc.run(command, by);
-      return terminal.record({ command, by, output: out.text, exitCode: out.ok ? 0 : 1 });
+      return terminal.record({ command, by, output: out.text, exitCode: out.ok ? 0 : 1, shell, cwd: standing });
     }
-    try { return await terminal.run({ command, by, kind: 'human' }); }
+    // A line that only changes folder moves the tab; there is no shell left running to remember it.
+    const cd = cdTarget(command);
+    if (cd) {
+      try {
+        const at = sandbox.resolveCwd({ cwd: req.body?.cwd, to: cd.to });
+        return { ...terminal.record({ command, by, output: '', exitCode: 0, shell, cwd: standing }), movedTo: at.cwd };
+      } catch (err) { return terminal.record({ command, by, output: err.message, exitCode: 1, shell, cwd: standing }); }
+    }
+    try { return await terminal.run({ command, by, kind: 'human', shell, cwd: req.body?.cwd, env: permissions.githubEnv('human') }); }
     catch (err) { throw new Invalid(err.message); }
   }));
 
@@ -2087,7 +2150,7 @@ app.get('/api/events', (req, res) => {
  * link that carries one — /work?do=new-task arrives as a plain /work.html and
  * the thing you asked for never happens, with nothing to show you why.
  */
-for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads', 'pc']) {
+for (const page of ['setup', 'design', 'work', 'dashboard', 'plugins', 'artifacts', 'threads', 'pc', 'win']) {
   app.get(`/${page}`, (req, res) => {
     const query = req.originalUrl.slice(req.path.length);
     res.redirect(`/${page}.html${query}`);
@@ -2216,11 +2279,12 @@ function syncSeats() {
         // could only say "not configured" is not offered in the first place.
         available: (kind) => Boolean(connections.ofKind(CONNECTION_FOR[kind] ?? kind)[0]),
       },
-      web,
+      web: permissions.guardWeb(web),
       plugins,
       skills,
-      terminal,
-      browser,
+      terminal: agentTerminal,
+      browser: agentBrowser,
+      permissions,
     });
     models.set(seat.name, p);
     // One model failing must not take the others, or the server, down.

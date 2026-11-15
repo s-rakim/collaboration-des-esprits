@@ -55,6 +55,7 @@ export function createTerminal({ db, config, sandbox }) {
     by: r.actor,
     kind: r.actor_kind,
     thread: r.thread_id ?? null,
+    shell: r.shell || 'pc',
     exitCode: r.exit_code,
     running: r.exit_code === null && !r.finished_at,
     output: r.output,
@@ -69,7 +70,7 @@ export function createTerminal({ db, config, sandbox }) {
    * Recorded before it starts, so a command that hangs or takes the server
    * down with it is still in the history as the last thing that was asked for.
    */
-  function run({ command, by, kind = 'human', thread = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  function run({ command, by, kind = 'human', thread = null, timeoutMs = DEFAULT_TIMEOUT_MS, shell = 'pc', cwd = '', env = {} }) {
     const text = String(command ?? '').trim();
     if (!text) return Promise.reject(new Error('there is no command to run'));
     if (!by) return Promise.reject(new Error('a command needs somebody to have run it'));
@@ -84,9 +85,9 @@ export function createTerminal({ db, config, sandbox }) {
     const limit = Math.min(Math.max(1000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
     // Recorded before it starts, with where it is about to run.
     const id = Number(db.prepare(
-      `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(text, sandbox.peek().dir, String(by), kind, thread, now()).lastInsertRowid);
+      `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at, shell)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(text, sandbox.peek().dir, String(by), kind, thread, now(), String(shell || 'pc')).lastInsertRowid);
 
     return new Promise((done, fail) => {
       let out = '';
@@ -112,7 +113,7 @@ export function createTerminal({ db, config, sandbox }) {
         done(view(db.prepare('SELECT * FROM terminal_runs WHERE id = ?').get(id)));
       };
 
-      sandbox.start({ command: text, id }).then((run) => {
+      sandbox.start({ command: text, id, shell: shell || 'pc', cwd, env }).then((run) => {
         // Where it really ran: the sandbox may have had to be found first.
         db.prepare('UPDATE terminal_runs SET cwd = ? WHERE id = ?').run(run.cwd, id);
         live.set(id, run);
@@ -138,13 +139,14 @@ export function createTerminal({ db, config, sandbox }) {
   function stop(id) {
     const run = live.get(Number(id));
     if (!run) return false;
-    sandbox.kill({ child: run.child, id: Number(id), isolated: run.isolated });
+    sandbox.kill({ child: run.child, id: Number(id), isolated: run.isolated, oneOff: run.oneOff });
     return true;
   }
 
-  function history({ limit = 40, thread = undefined, since = 0 } = {}) {
+  function history({ limit = 40, thread = undefined, since = 0, shell = undefined } = {}) {
     const where = ['id > ?'];
     const params = [Number(since) || 0];
+    if (shell) { where.push('shell = ?'); params.push(String(shell)); }
     if (thread !== undefined && thread !== null) { where.push('thread_id = ?'); params.push(Number(thread)); }
     return db.prepare(`SELECT * FROM terminal_runs WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`)
       .all(...params, Math.min(Number(limit) || 40, 200))
@@ -156,12 +158,12 @@ export function createTerminal({ db, config, sandbox }) {
    * Put something on the record that was not a shell command — one of the
    * PC's own commands — so the history still shows everything that was typed.
    */
-  function record({ command, by, kind = 'human', output = '', exitCode = 0 }) {
+  function record({ command, by, kind = 'human', output = '', exitCode = 0, shell = 'pc', cwd = null }) {
     const at = now();
     const id = Number(db.prepare(
-      `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at, exit_code, output, timed_out, finished_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 0, ?)`,
-    ).run(String(command), sandbox.peek().dir, String(by), kind, at, exitCode, String(output).slice(0, MAX_OUTPUT), at).lastInsertRowid);
+      `INSERT INTO terminal_runs (command, cwd, actor, actor_kind, thread_id, started_at, exit_code, output, timed_out, finished_at, shell)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 0, ?, ?)`,
+    ).run(String(command), cwd || sandbox.peek().dir, String(by), kind, at, exitCode, String(output).slice(0, MAX_OUTPUT), at, String(shell || 'pc')).lastInsertRowid);
     return view(db.prepare('SELECT * FROM terminal_runs WHERE id = ?').get(id));
   }
 

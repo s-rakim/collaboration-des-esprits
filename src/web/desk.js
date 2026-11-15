@@ -15,11 +15,11 @@
  * desktop at /pc, where they are the whole point.
  */
 
-import { esc, me, api, post, floating, size, openTools, splitter, style as toolStyle } from '/tools.js';
+import { esc, me, api, post, floating, size, openTools, splitter, popOut, SOLO, style as toolStyle } from '/tools.js';
 
 const CSS = `
 .fwin{position:fixed;z-index:60;display:none;flex-direction:column;min-width:340px;min-height:240px;
-  max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);background:var(--bg);border:1px solid var(--line);
+  background:var(--bg);border:1px solid var(--line);
   border-radius:12px;overflow:hidden;resize:both;box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
 .fwin.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
 .fwin.moving{user-select:none;opacity:.96}
@@ -148,6 +148,26 @@ const CSS = `
 #pcwin .rw code{font-family:var(--mono);font-size:13.5px;color:var(--text)}
 #pcwin .rw span{font-size:12.5px;color:var(--faint);white-space:nowrap} #pcwin .rw button{padding:1px 8px;font-size:12.5px} #pcwin .rw a{color:var(--dim);font-size:13px}
 
+#permissions{left:calc(50% - 260px);top:84px;width:520px;height:580px}
+#permissions .scroll{flex:1;min-height:0;overflow:auto;padding:2px 16px 14px}
+#permissions h5{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600}
+#permissions .lead{margin:0 0 8px;font-size:13.5px;color:var(--dim);line-height:1.5}
+#permissions .note{margin:8px 0 0;font-size:12.5px;color:var(--faint);line-height:1.5}
+#permissions .prow{display:flex;align-items:center;gap:12px;padding:8px 2px;border-top:1px solid var(--hair);font-size:14px}
+#permissions .prow .nm{flex:1;min-width:0}
+#permissions .prow .nm b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#permissions .prow .nm small{display:block;color:var(--faint);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#permissions .rw{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--dim);cursor:pointer;white-space:nowrap}
+#permissions .prow button,#permissions .prow .sp{width:28px;flex:none}
+#permissions .prow button{padding:2px 0;background:none;border-color:transparent;color:var(--faint);font-size:16px}
+#permissions .prow button#pmTokenClear{width:auto;padding:3px 10px;font-size:12.5px;border-color:var(--hair);color:var(--dim)}
+#permissions .prow button:hover{color:var(--bad)}
+#permissions .add{display:flex;gap:6px;margin-top:8px}
+#permissions .add input{flex:1;min-width:0;font-size:13.5px;padding:7px 10px}
+#permissions .add.two input:first-child{flex:0 0 32%}
+#permissions .none{font-size:13.5px;color:var(--faint);padding:6px 2px}
+#permissions .foot span:first-child{white-space:nowrap}
+
 /* Saying something to an agent while it works — the same strip in every window. */
 .steer{display:none;gap:6px;align-items:center;padding:7px 10px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--warn) 9%,var(--panel));flex:none}
 .steer.on{display:flex}
@@ -191,6 +211,18 @@ function makeWin({ id, name, cls = '' }) {
 const front = (win) => {
   for (const w of document.querySelectorAll('#tools, #dock, .fwin')) w.classList.toggle('front', w === win);
 };
+
+/**
+ * Empty a folder of the PC, having asked. Gives back what to say about it, or
+ * nothing if the person thought better of it.
+ */
+export async function emptyPc(folder) {
+  if (!confirm(`Empty ${folder}?\n\nEverything in this folder of the Agents' PC is deleted. This cannot be undone — save it as a zip first if you might want it.`)) return null;
+  try {
+    const r = await post('/api/sandbox/empty', { folder, as: me() });
+    return { kind: 'ok', text: `emptied ${r.folder} — ${r.removed} thing${r.removed === 1 ? '' : 's'} removed` };
+  } catch (err) { return { kind: 'err', text: err.message }; }
+}
 
 // ------------------------------------------------------------------ steering
 
@@ -282,7 +314,8 @@ function buildExplorer() {
       </div>
     </div>
     <div class="foot"><span class="live"><i></i>live</span><span id="xCount"></span>
-      <button data-do="zip" style="padding:1px 8px;font-size:12.5px" title="Download this PC folder as a zip">Export zip</button>
+      <button data-do="zip" style="padding:1px 8px;font-size:12.5px" title="Download this folder of the PC as a zip">Save as zip</button>
+      <button data-do="empty" style="padding:1px 8px;font-size:12.5px" title="Delete everything in this folder of the PC">Empty…</button>
       <span class="say" id="xSay"></span></div>`);
   ex.win = win;
   ex.steer = steerStrip(win);
@@ -322,6 +355,7 @@ function buildExplorer() {
       return openApp(isProse(path) ? 'notes' : 'code', { path, folder: ex.folder });
     }
     if (act === 'zip') { location.href = `/api/sandbox/export.zip?folder=${encodeURIComponent(ex.folder)}`; return undefined; }
+    if (act === 'empty') { const r = await emptyPc(ex.folder); if (r) say(r.text, r.kind); return refreshExplorer(true); }
     if (act === 'open') return openApp('code', { path: ex.sel, folder: ex.folder });
     if (act === 'opentext') return openApp('notes', { path: ex.sel, folder: ex.folder });
     if (act === 'download') { location.href = `/api/sandbox/raw?folder=${encodeURIComponent(ex.folder)}&path=${encodeURIComponent(ex.sel)}`; return undefined; }
@@ -739,6 +773,9 @@ function buildActivity() {
     if (stop) return run(() => post(`/api/terminal/${stop.dataset.stop}/stop`, {}), 'stopped');
     const b = e.target.closest('[data-do]')?.dataset.do;
     if (b === 'restart') { say('restarting…'); return run(() => post('/api/sandbox/restart', {}), 'restarted'); }
+    if (b === 'permissions') return openApp('permissions');
+    if (b === 'zip') { api('/api/sandbox').then((sb) => { location.href = `/api/sandbox/export.zip?folder=${encodeURIComponent(sb.folder)}`; }); return undefined; }
+    if (b === 'empty') { api('/api/sandbox').then((sb) => emptyPc(sb.folder)).then((r) => { if (r) say(r.text, r.kind); refreshActivity(true); }); return undefined; }
     if (b === 'terminal') return openTools('terminal');
     if (b === 'browser') return openTools('browser');
     if (b === 'explorer') return openApp('explorer');
@@ -782,6 +819,11 @@ async function refreshActivity(force = false) {
       <label title="Whether agents may run commands"><input type="checkbox" id="aAgents" ${p.agentsAllowed ? 'checked' : ''}> agents may use the terminal</label>
       <button data-do="restart" ${p.isolated ? '' : 'disabled'} title="Start the container afresh; files are kept" style="margin-left:auto">Restart</button>
     </div>
+    <div class="sw">
+      <button data-do="zip" title="Download the project files as a zip">Save project as zip</button>
+      <button data-do="empty" ${p.linked ? 'disabled title="A folder of yours that you linked is not emptied from here"' : 'title="Delete everything in the PC\'s folder"'}>Empty the PC…</button>
+      <button data-do="permissions" style="margin-left:auto">Permissions…</button>
+    </div>
     <h5>Running commands</h5>
     ${p.commands.length ? p.commands.map((c) => `<div class="it"><div class="l1"><code>${esc(c.command)}</code><span class="by">${esc(c.by)}${c.thread ? ` · thread ${c.thread}` : ''}</span>
         <button data-stop="${c.id}">Stop</button></div></div>`).join('') : '<div class="none">Nothing is running.</div>'}
@@ -810,6 +852,7 @@ const PROGRAMS = [
   ['terminal', 'Terminal', 'The command line you share with the agents', '<svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5"/></svg>'],
   ['browser', 'Browser', 'The browser you share with the agents', '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.4 2.2 2.4 12.8 0 15M10 2.5c-2.4 2.2-2.4 12.8 0 15"/></svg>'],
   ['activity', 'Activity', 'What is running, and the switches', '<svg viewBox="0 0 20 20"><path d="M2.5 10h3.5l2-5.5 3.5 11 2.2-5.5h3.8"/></svg>'],
+  ['permissions', 'Permissions', 'What agents may read and write', '<svg viewBox="0 0 20 20"><path d="M10 2.5l6 2.5v5c0 4-2.6 6.6-6 7.5-3.4-.9-6-3.5-6-7.5v-5z"/><path d="M7.5 10l2 2 3.5-4"/></svg>'],
   ['files', 'Export', 'Take the work off the PC', '<svg viewBox="0 0 20 20"><path d="M10 3v9M6.5 8.5L10 12l3.5-3.5M3.5 14v1.5A1.5 1.5 0 0 0 5 17h10a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>'],
 ];
 
@@ -819,6 +862,11 @@ function buildPc() {
   win.insertAdjacentHTML('beforeend', `
     <div class="bar2" style="flex-wrap:nowrap"><span class="st" id="pState">checking</span><code id="pWhere"></code>
       <a href="/pc" title="The same PC, as a whole page" style="margin-left:auto;font-size:13px;color:var(--dim);white-space:nowrap">full screen ↗</a></div>
+    <div class="bar2" style="flex-wrap:nowrap;gap:4px">
+      <button data-pcdo="zip" title="Download the project files as a zip">Save as zip</button>
+      <button data-pcdo="empty" title="Delete everything in the PC's folder">Empty the PC…</button>
+      <button data-pcdo="permissions" title="What agents may read and write: websites, GitHub, programs" style="margin-left:auto">Permissions</button>
+      <span id="pSay" style="font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></div>
     <div class="progs" id="pProgs">${PROGRAMS.map(([id, name, hint, g]) => `<button data-prog="${id}" title="${esc(hint)}"><i>${g}</i>${name}</button>`).join('')}</div>
     <div class="split y" id="pSplitA" title="Drag to resize"></div>
     <div class="sec" id="pFilesSec"><h6>On the PC <span id="pCount"></span></h6><div class="pfiles" id="pFiles"></div></div>
@@ -833,6 +881,14 @@ function buildPc() {
   splitter(win.querySelector('#pSplitB'), { axis: 'y', invert: true, key: 'esprits.split.pc.run', min: 40, max: () => win.clientHeight - 200,
     size: () => run.getBoundingClientRect().height, set: (v) => { run.style.height = `${v ?? 120}px`; } });
   win.addEventListener('click', async (e) => {
+    const todo = e.target.closest('[data-pcdo]')?.dataset.pcdo;
+    if (todo === 'permissions') return openApp('permissions');
+    if (todo === 'zip' && pcw.known) { location.href = `/api/sandbox/export.zip?folder=${encodeURIComponent(pcw.known.folder)}`; return undefined; }
+    if (todo === 'empty' && pcw.known) {
+      const r = await emptyPc(pcw.known.folder);
+      if (r) { const el = win.querySelector('#pSay'); el.style.color = r.kind === 'err' ? 'var(--bad)' : 'var(--good)'; el.textContent = r.text; el.title = r.text; }
+      return refreshPc(true);
+    }
     const prog = e.target.closest('[data-prog]')?.dataset.prog;
     if (prog) return APPS[prog] ? openApp(prog, prog === 'code' || prog === 'notes' ? {} : undefined) : openTools(prog);
     const stop = e.target.closest('[data-stop]');
@@ -878,6 +934,112 @@ async function refreshPc(force = false) {
     : '<div class="none">Nothing is running. Agents reach this PC from the lobby and from every thread; what they run shows here.</div>';
 }
 
+// --------------------------------------------------------------- permissions
+
+/**
+ * What the agents may read and write: websites, GitHub, and programs on this
+ * computer. One window, three lists, and two boxes on every row.
+ */
+const perm = { win: null, data: null };
+
+function buildPermissions() {
+  if (perm.win) return perm.win;
+  const win = makeWin({ id: 'permissions', name: 'Permissions' });
+  win.insertAdjacentHTML('beforeend', `<div class="scroll" id="pmBody"></div><div class="foot"><span>Rules bind the agents — not you.</span><span class="say" id="pmSay"></span></div>`);
+  perm.win = win;
+  const say = (text, kind = '') => { const el = win.querySelector('#pmSay'); el.className = `say ${kind}`; el.textContent = text ?? ''; };
+  const save = async (done = 'saved') => {
+    try {
+      const r = await post('/api/permissions', { sites: perm.data.sites, apps: perm.data.apps, as: me() });
+      perm.data = r;
+      say(r.rejected?.length ? r.rejected.join(' · ') : done, r.rejected?.length ? 'err' : 'ok');
+    } catch (err) { say(err.message, 'err'); await loadPermissions(); }
+    renderPermissions();
+  };
+  win.addEventListener('change', (e) => {
+    const box = e.target.closest('input[type=checkbox][data-of]');
+    if (!box) return;
+    const { of, i, what } = box.dataset;
+    const row = of === 'default' ? perm.data.sites.default : of === 'site' ? perm.data.sites.rules[Number(i)] : perm.data.apps[Number(i)];
+    row[what] = box.checked;
+    // Writing carries reading; not reading rules out writing.
+    if (what === 'write' && box.checked) row.read = true;
+    if (what === 'read' && !box.checked) row.write = false;
+    save();
+  });
+  win.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      if (del.dataset.del === 'site') perm.data.sites.rules.splice(Number(del.dataset.i), 1); else perm.data.apps.splice(Number(del.dataset.i), 1);
+      return save('removed');
+    }
+    if (e.target.closest('#pmTokenClear')) {
+      try { perm.data = { ...perm.data, ...(await post('/api/permissions/github-token', { token: '', as: me() })) }; say('token removed', 'ok'); }
+      catch (err) { say(err.message, 'err'); }
+      renderPermissions();
+    }
+    return undefined;
+  });
+  win.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (f.id === 'pmAddSite') {
+      const host = f.querySelector('input').value.trim();
+      if (!host) return;
+      perm.data.sites.rules.push({ host, read: true, write: false });
+      await save(`added ${host} — read only; tick write to let agents act on it`);
+    } else if (f.id === 'pmAddApp') {
+      const [name, command] = [...f.querySelectorAll('input')].map((x) => x.value.trim());
+      if (!name || !command) return;
+      perm.data.apps.push({ name, command, read: true, write: false });
+      await save(`added ${name} — agents can open files in it`);
+    } else if (f.id === 'pmToken') {
+      const token = f.querySelector('input').value.trim();
+      if (!token) return;
+      try { perm.data = { ...perm.data, ...(await post('/api/permissions/github-token', { token, as: me() })) }; say('token saved', 'ok'); }
+      catch (err) { say(err.message, 'err'); }
+      renderPermissions();
+    }
+  });
+  return win;
+}
+
+async function loadPermissions() {
+  perm.data = await api('/api/permissions').catch(() => perm.data);
+}
+
+function renderPermissions() {
+  const p = perm.data;
+  if (!p || !perm.win) return;
+  const box = (of, i, what, row, title) => `<label class="rw" title="${esc(title)}"><input type="checkbox" data-of="${of}" data-i="${i}" data-what="${what}" ${row[what] ? 'checked' : ''}>${what}</label>`;
+  const gh = p.sites.rules.findIndex((r) => r.host === 'github.com');
+  perm.win.querySelector('#pmBody').innerHTML = `
+    <h5>Websites</h5>
+    <p class="lead"><b>Read</b> is looking: opening a page, fetching, cloning. <b>Write</b> is changing something there: clicking and typing on the site, submitting a form, pushing. Agents are told why when they are refused.</p>
+    <div class="prow"><div class="nm"><b>Every other site</b><small>anything not listed below</small></div>
+      ${box('default', 0, 'read', p.sites.default, 'Agents may open and read sites that are not listed')}${box('default', 0, 'write', p.sites.default, 'Agents may act on sites that are not listed')}<span class="sp"></span></div>
+    ${p.sites.rules.map((r, i) => `<div class="prow"><div class="nm"><b>${esc(r.host)}</b><small>and its subdomains</small></div>
+      ${box('site', i, 'read', r, `Agents may read ${r.host}`)}${box('site', i, 'write', r, `Agents may write to ${r.host}`)}
+      <button data-del="site" data-i="${i}" title="Remove this rule — the site falls back to “every other site”">×</button></div>`).join('')}
+    <form class="add" id="pmAddSite"><input placeholder="add a site — example.com" autocomplete="off" spellcheck="false"><button>Add</button></form>
+
+    <h5>GitHub</h5>
+    <p class="lead">${gh >= 0 ? `Agents may <b>${p.sites.rules[gh].read ? 'read' : 'not read'}</b>${p.sites.rules[gh].read ? ` and <b>${p.sites.rules[gh].write ? 'write to' : 'not write to'}</b>` : ''} github.com — set above.` : 'github.com follows “every other site”. Add it above to give it its own rule.'}
+      Write covers <code>git push</code>, <code>gh pr create</code> and acting on the site in the browser.</p>
+    ${p.github.hasToken
+      ? `<div class="prow"><div class="nm"><b>Token ${esc(p.github.token)}</b><small>given to git and gh on the Agents' PC, so clones and pushes sign in</small></div><span class="sp"></span><button id="pmTokenClear">Remove</button></div>`
+      : `<form class="add" id="pmToken"><input type="password" placeholder="a GitHub token — for private repositories and pushing" autocomplete="off"><button>Save</button></form>`}
+    <p class="note">The token can do whatever GitHub lets it. To be sure agents only read, give a read-only token — the rule above stops pushes by the usual commands, the token decides what is possible at all.</p>
+
+    <h5>Programs on this computer</h5>
+    <p class="lead"><b>Read</b>: an agent may open a file from the PC's folder in the program. <b>Write</b>: it may run the program with its own arguments and read what it prints. They run on this computer, as you — list only what you mean to.</p>
+    ${p.apps.length ? p.apps.map((a, i) => `<div class="prow"><div class="nm"><b>${esc(a.name)}</b><small>${esc(a.command)}</small></div>
+      ${box('app', i, 'read', a, `Agents may open files in ${a.name}`)}${box('app', i, 'write', a, `Agents may run ${a.name} with their own arguments`)}
+      <button data-del="app" data-i="${i}" title="Remove">×</button></div>`).join('') : '<div class="none">None. Agents can use no program outside the PC until you add one.</div>'}
+    <form class="add two" id="pmAddApp"><input placeholder="name — vscode" autocomplete="off" spellcheck="false"><input placeholder="command — code, or the full path to the program" autocomplete="off" spellcheck="false"><button>Add</button></form>
+    <p class="note">From the terminal: <code>pc perms</code>, <code>pc allow write github.com</code>, <code>pc deny read all</code>.</p>`;
+}
+
 // ------------------------------------------------------------------ the apps
 
 /** Every window of the PC that this file makes, by name. */
@@ -896,6 +1058,12 @@ const APPS = {
   },
   code: { name: 'Code', open: (arg) => editors.code.open(arg), close: () => editors.code.close(), win: () => editors.code.win },
   notes: { name: 'Notes', open: (arg) => editors.notes.open(arg), close: () => editors.notes.close(), win: () => editors.notes.win },
+  permissions: {
+    name: 'Permissions',
+    open() { buildPermissions(); loadPermissions().then(renderPermissions); },
+    close() {},
+    win: () => perm.win,
+  },
   activity: {
     name: 'Activity',
     open() { buildActivity(); clearInterval(act.timer); act.timer = setInterval(refreshActivity, 1500); setTimeout(() => refreshActivity(true)); },
@@ -906,9 +1074,13 @@ const APPS = {
 
 export const appNames = () => Object.keys(APPS);
 
+const SOLO_APP = SOLO ? new URLSearchParams(location.search).get('app') : null;
+
 export function openApp(name, arg) {
   const app = APPS[name];
   if (!app) return;
+  // In a window of its own, another program is another window — a file opened from the explorer gets an editor beside it.
+  if (SOLO && name !== SOLO_APP) { popOut(name, null, Object.fromEntries(Object.entries(arg ?? {}).filter(([, v]) => typeof v === 'string'))); return; }
   app.open(arg);
   const win = app.win();
   win.classList.add('open');
@@ -916,6 +1088,7 @@ export function openApp(name, arg) {
 }
 
 export function closeApp(name) {
+  if (SOLO) { window.close(); return; }
   const app = APPS[name];
   const win = app?.win();
   if (!win) return;

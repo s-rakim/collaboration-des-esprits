@@ -35,6 +35,10 @@ const HELP = `The Agents' PC — commands
   pc open [file]            open the folder, or a file, in your editor
   pc export <path>          copy the folder out to this computer
   pc browse <address>       open a page in the shared browser
+  pc empty                  delete everything in the PC's folder (asks nothing — be sure)
+  pc perms                  what the agents may read and write
+  pc allow read|write <site>   let agents read, or write to, a site (github.com, all)
+  pc deny read|write <site>    stop them
 Anything else you type is run on the PC as a shell command.`;
 
 /** Split a line into words, keeping what is in quotes together. */
@@ -48,7 +52,7 @@ export function words(line) {
 
 export const isPcCommand = (line) => /^pc(\s|$)/i.test(String(line ?? '').trim());
 
-export function createPc({ sandbox, terminal, threads = null, browser = null }) {
+export function createPc({ sandbox, terminal, threads = null, browser = null, permissions = null }) {
   const onOff = (word) => {
     if (/^(on|yes|true|1)$/i.test(word ?? '')) return true;
     if (/^(off|no|false|0)$/i.test(word ?? '')) return false;
@@ -213,6 +217,34 @@ export function createPc({ sandbox, terminal, threads = null, browser = null }) 
         const address = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) || /^[^\s]+\.[a-z]{2,}(\/\S*)?$/i.test(typed);
         const page = address ? await browser.open({ url: typed, by }) : await browser.search({ query: typed, by });
         return `opened ${page?.title || page?.url || rest.trim()}`;
+      }
+
+      case 'empty': {
+        const r = sandbox.empty();
+        return `emptied ${r.folder} — ${r.removed} thing${r.removed === 1 ? '' : 's'} removed`;
+      }
+
+      case 'perms': case 'permissions': {
+        if (!permissions) throw new Error('there are no permissions here');
+        const p = permissions.view();
+        const rw = (x) => `${x.read ? 'read' : '-'} ${x.write ? 'write' : '-'}`;
+        return [
+          'websites',
+          `  ${'everything else'.padEnd(28)} ${rw(p.sites.default)}`,
+          ...p.sites.rules.map((r) => `  ${r.host.padEnd(28)} ${rw(r)}`),
+          `  GitHub token: ${p.github.hasToken ? `set (${p.github.token})` : 'not set'}`,
+          'programs on this computer',
+          ...(p.apps.length ? p.apps.map((a) => `  ${a.name.padEnd(28)} ${rw(a)}   ${a.command}`) : ['  none — add them in Agents\' PC → Permissions']),
+        ].join('\n');
+      }
+
+      case 'allow': case 'deny': {
+        if (!permissions) throw new Error('there are no permissions here');
+        const what = String(args[0] ?? '').toLowerCase();
+        if (!['read', 'write'].includes(what) || !args[1]) throw new Error(`pc ${verb} read|write <site> — for example: pc ${verb} write github.com`);
+        permissions.allow(what, args[1], verb === 'allow');
+        const s = /^(all|\*|everything)$/i.test(args[1]) ? permissions.view().sites.default : permissions.site(args[1]);
+        return `${/^(all|\*|everything)$/i.test(args[1]) ? 'every site not listed' : permissions.site(args[1]).host}: agents may ${s.read ? 'read' : 'not read'}${s.read ? (s.write ? ' and write' : ', not write') : ''}`;
       }
 
       default:

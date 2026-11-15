@@ -621,7 +621,8 @@ CREATE TABLE IF NOT EXISTS terminal_runs (
   output       TEXT NOT NULL DEFAULT '',
   timed_out    INTEGER NOT NULL DEFAULT 0,
   started_at   TEXT NOT NULL,
-  finished_at  TEXT
+  finished_at  TEXT,
+  shell        TEXT NOT NULL DEFAULT 'pc'          -- which command line it was typed at
 );
 CREATE INDEX IF NOT EXISTS idx_terminal_thread ON terminal_runs(thread_id, id);
 

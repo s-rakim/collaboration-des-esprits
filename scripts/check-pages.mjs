@@ -446,11 +446,33 @@ try {
       if ((await page.$$('#apps [data-app]')).length < 6) note(path, 'the desktop is missing its programs');
       if ((await page.$$('#tasks [data-task]')).length < 6) note(path, 'the desktop has no taskbar');
     }
-    await page.evaluate(() => localStorage.removeItem('esprits.terminal'));
+    await page.evaluate(() => { localStorage.removeItem('esprits.terminal'); localStorage.removeItem('esprits.term'); });
     await page.click('#edge-tabs [data-tool="terminal"]');
+    // A terminal with no tabs asks which command line you want, and offers the PC's own among the others.
+    const asked = await page.waitForSelector('#tools.open #tPick [data-pick="pc"]', { state: 'visible', timeout: 4000 }).catch(() => null);
+    if (!asked) note(path, 'opening the terminal did not ask which shell');
+    else {
+      const offered = await page.$$eval('#tPick [data-pick]', (b) => b.map((x) => x.dataset.pick));
+      for (const want of ['pc', 'ubuntu', 'kali', 'mac', 'gitbash', 'powershell', 'cmd']) if (!offered.includes(want)) note(path, `the terminal does not offer ${want}`);
+      if (await page.isVisible('#tCmd')) note(path, 'there is a prompt before a shell has been chosen');
+      await page.click('#tPick [data-pick="pc"]');
+    }
     const opened = await page.waitForSelector('#tools.open #tCmd', { state: 'visible', timeout: 4000 }).catch(() => null);
     if (!opened) note(path, 'the terminal did not open from the rail');
     else {
+      // A new tab is a blank page: the prompt, with where it is standing, and nothing else.
+      if ((await page.textContent('#tOut')).trim()) note(path, 'a new terminal tab is not blank');
+      if (!/[$>%]\s*$/.test(await page.textContent('#tPs'))) note(path, `the prompt does not look like one ("${await page.textContent('#tPs')}")`);
+      // More tabs, of any kind, as many as wanted — and each can be closed.
+      await page.click('#wAdd');
+      await page.click('#wAdd');
+      if ((await page.$$('#wTabs .wtab')).length !== 3) note(path, 'adding tabs did not add tabs');
+      await page.click('#wTabs .wtab:last-child [data-shut]');
+      await page.click('#wTabs .wtab:last-child [data-shut]');
+      if ((await page.$$('#wTabs .wtab')).length !== 1) note(path, 'closing tabs did not close them');
+      await page.click('#wTabs .wtab');
+      if (!(await page.isVisible('#tCmd'))) note(path, 'going back to the first tab did not bring its prompt back');
+      if (!(await page.$('#tools .popout'))) note(path, 'the terminal has no way to pop out into its own window');
       // The terminal is a window: it floats over the page rather than taking a column of it, and it moves.
       await page.waitForTimeout(260);       // it arrives with a short animation; measure it once it has landed
       const before = await (await page.$('#tools')).boundingBox();

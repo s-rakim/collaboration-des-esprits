@@ -160,6 +160,7 @@ export function openDb(path) {
   addColumn('participants', 'base_url', 'TEXT');
   addColumn('participants', 'connection', 'TEXT');
   addColumn('ideas', 'project_id', 'INTEGER');
+  addColumn('terminal_runs', 'shell', "TEXT NOT NULL DEFAULT 'pc'");
 
   // The checking role was called something else once. A room that already has
   // a seat, a task or a handoff under the old name keeps it under the new one,

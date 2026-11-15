@@ -36,6 +36,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 
 import { zip } from './skillpack.js';
+import { PROFILES, plan as planShell, survey } from './shells.js';
 
 /** Where the sandbox folder appears inside the container. */
 export const INSIDE = '/sandbox';
@@ -312,36 +313,115 @@ export function createSandbox({
    * Start one command in the sandbox. Returns the process, with its output
    * to read, and how it is running — so the record can say.
    */
-  async function start({ command, id, folder: which }) {
+  /** A folder inside the PC's folder, as a path relative to it — refused if it is anywhere else. */
+  function resolveCwd({ folder: which, cwd = '', to = '' } = {}) {
+    const f = named(which);
+    const typed = String(to ?? '').trim().replace(/\\/g, '/');
+    // An absolute path as the shell shows it — /sandbox/name/… or the folder on disk — is taken as inside the folder.
+    let rel;
+    if (typed.startsWith(`${f.inside}/`) || typed === f.inside) rel = typed.slice(f.inside.length);
+    else if (typed.toLowerCase().startsWith(f.hostDir.replace(/\\/g, '/').toLowerCase())) rel = typed.slice(f.hostDir.length);
+    else if (typed.startsWith('/') || /^[a-z]:/i.test(typed)) throw new Error('that is outside the PC\'s folder — a tab stays inside it');
+    else rel = `${String(cwd ?? '').replace(/\\/g, '/')}/${typed}`;
+    const full = resolve(f.hostDir, rel.replace(/^\/+/, ''));
+    const sep = process.platform === 'win32' ? '\\' : '/';
+    if (full !== f.hostDir && !full.startsWith(f.hostDir + sep)) throw new Error('that is outside the PC\'s folder — a tab stays inside it');
+    if (!existsSync(full) || !statSync(full).isDirectory()) throw new Error(`there is no folder ${typed}`);
+    return { folder: f.name, cwd: full === f.hostDir ? '' : full.slice(f.hostDir.length + 1).split(sep).join('/') };
+  }
+
+  let have = null;
+  /** What this machine can run a shell with — looked at once, and again when asked. */
+  async function surveyed({ force = false } = {}) {
+    if (!have || force) have = await survey({ env, execImpl });
+    return have;
+  }
+
+  /** Every shell a terminal tab can be, and whether this machine can run it. */
+  async function shells({ recheck = false } = {}) {
+    await detect({ force: recheck });
+    const h = await surveyed({ force: recheck });
+    const f = folder();
+    const hostOk = Boolean(f.linked) || unconfined();
+    return PROFILES.map((p) => {
+      const how = planShell({ id: p.id, engine, have: h });
+      let why = how.unavailable ?? '';
+      if (!why && how.where === 'host' && !hostOk) {
+        why = 'It would run directly on this computer. Link a folder of yours to work in, or choose to run without a sandbox — then it opens.';
+      }
+      // The PC's own tab always opens: its pc … commands work whatever else does, and it says what is missing.
+      const waiting = p.id === 'pc' && !engine && !hostOk;
+      return {
+        id: p.id, label: p.label, hint: p.hint, available: !why, why,
+        how: waiting ? 'nothing yet — it will say what to set up' : how.how ?? '', isolated: how.where === 'container' || how.where === 'exec' || (how.where === 'pc' && Boolean(engine)),
+      };
+    });
+  }
+
+  async function start({ command, id, folder: which, cwd = '', env: extra = {}, shell = 'pc' }) {
     const f = named(which);
     if (f.linked) {
       if (!existsSync(f.hostDir)) throw new Error(`the linked folder ${f.hostDir} is no longer there`);
     } else mkdirSync(f.hostDir, { recursive: true });
     await detect();
-    if (engine) {
+    const at = cwd ? resolveCwd({ folder: f.name, cwd, to: '' }).cwd : '';
+    const inside = at ? `${f.inside}/${at}` : f.inside;
+    const onHost = at ? join(f.hostDir, at) : f.hostDir;
+    // Passed by name, with the value in our own environment, so nothing secret is on a command line.
+    const names = Object.keys(extra);
+    const childEnv = { ...process.env, ...extra };
+    const how = shell === 'pc' ? { where: 'pc' } : planShell({ id: shell, engine, have: await surveyed(), command: String(command) });
+    if (how.unavailable) throw new Error(how.unavailable);
+
+    if (engine && (how.where === 'pc' || how.where === 'exec')) {
       const bin = await prepare();
       const child = spawnImpl(bin, [
-        'exec', '-e', `ESPRITS_RUN=${id}`, '-w', f.inside, container, 'sh', '-c', String(command),
-      ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-      return { child, isolated: true, cwd: f.inside };
+        'exec', '-e', `ESPRITS_RUN=${id}`, ...names.flatMap((n) => ['-e', n]), '-w', inside, container,
+        ...(how.where === 'exec' ? how.argv : ['sh', '-c', String(command)]),
+      ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: childEnv });
+      return { child, isolated: true, cwd: inside };
+    }
+    if (engine && how.where === 'container') {
+      // A container of its own, for this one command: it sees the PC's folder and nothing else, and is gone afterwards.
+      const name = `esprits-run-${id}`;
+      const asUser = engine === 'docker' && uid !== null && uid !== 0 && process.platform === 'linux';
+      const child = spawnImpl(engine, [
+        'run', '--rm', '--init', '--name', name, '--pids-limit', '1024',
+        '-e', `ESPRITS_RUN=${id}`, ...names.flatMap((n) => ['-e', n]),
+        '-v', `${f.hostDir}:${f.inside}`, '-w', inside,
+        ...(network() ? [] : ['--network', 'none']),
+        ...(asUser ? ['--user', `${uid}:${gid ?? uid}`, '-e', 'HOME=/tmp'] : []),
+        how.image, ...how.argv,
+      ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: childEnv });
+      return { child, isolated: true, cwd: inside, oneOff: name };
     }
     // A folder the person linked is one they have said the room may work in
     // directly. Anywhere else needs them to have switched isolation off.
     if (!f.linked && !unconfined()) {
       throw new Error(`${engineWhy}. Nothing is run outside a sandbox unless you switch that on yourself — or link a folder of your own to work in`);
     }
-    const child = spawnImpl(String(command), {
-      cwd: f.hostDir, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    const opts = {
+      cwd: onHost, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv,
       // Its own process group, so stopping it stops what it started too.
       detached: process.platform !== 'win32',
-    });
-    return { child, isolated: false, cwd: f.hostDir };
+    };
+    if (how.where === 'host') {
+      // WSL is told where to start in its own words; it is handed a Windows path and turns it into its own.
+      const argv = how.wslCd ? [how.argv[0], how.argv[1], '--cd', onHost, ...how.argv.slice(2)] : how.argv;
+      const child = spawnImpl(how.bin, argv, { ...opts, ...(how.verbatim ? { windowsVerbatimArguments: true } : {}) });
+      return { child, isolated: false, cwd: onHost };
+    }
+    const child = spawnImpl(String(command), { ...opts, shell: true });
+    return { child, isolated: false, cwd: onHost };
   }
 
   /** Stop a command and whatever it started. */
-  function kill({ child, id, isolated }) {
+  function kill({ child, id, isolated, oneOff }) {
     try {
-      if (isolated && engine) {
+      if (oneOff && engine) {
+        execImpl(engine, ['rm', '-f', oneOff], { timeout: 15_000, windowsHide: true }, () => {});
+        try { child.kill('SIGKILL'); } catch { /* gone */ }
+      } else if (isolated && engine) {
         // Ending our end of `exec` does not end the command at the other end.
         // Everything it started carries its number in its environment, which
         // is what is used to find them.
@@ -601,6 +681,23 @@ export function createSandbox({
     return { folder: f.name, path: String(path) };
   }
 
+  /**
+   * Empty a folder of the PC: everything in it goes, the folder stays.
+   *
+   * Only the PC's own folders. One the person linked is their project on
+   * their disk, and deleting that is not something a button in here does.
+   */
+  function empty({ folder: which } = {}) {
+    const f = named(which);
+    if (f.linked) throw new Error(`${f.name} is a folder of yours that you linked (${f.hostDir}). It is not emptied from here — delete what you want gone yourself, or unlink it`);
+    let removed = 0;
+    for (const d of readdirSync(f.hostDir)) {
+      rmSync(join(f.hostDir, d), { recursive: true, force: true });
+      removed += 1;
+    }
+    return { folder: f.name, removed };
+  }
+
   // ---------------------------------------------------------------- export
 
   /**
@@ -668,7 +765,7 @@ export function createSandbox({
     root, container,
     detect, prepare, restart, close, status, peek, configure,
     folder, folders, setFolder, link, unlink, links,
-    start, kill,
+    start, kill, shells, resolveCwd, empty,
     files, tree, read, locate, write, makeDir, move, remove, exportZip, exportTo,
     editors, setEditor, openInEditor,
   };

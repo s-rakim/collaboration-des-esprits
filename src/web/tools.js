@@ -25,10 +25,19 @@ export async function api(path, opts = {}) {
 }
 
 const CSS = `
-#tools{position:fixed;right:52px;bottom:24px;width:600px;height:380px;z-index:60;display:none;flex-direction:column;
-  min-width:380px;min-height:230px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);
+#tools{position:fixed;right:52px;bottom:24px;width:760px;height:460px;z-index:60;display:none;flex-direction:column;
+  min-width:380px;min-height:230px;
   background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;resize:both;
   box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
+.popout{flex:none;background:none!important;border:0!important;color:var(--faint);font-size:13px!important;line-height:1;padding:3px 7px!important;border-radius:6px;cursor:pointer;margin-left:auto}
+.popout:hover{color:var(--text);background:color-mix(in srgb,var(--text) 10%,transparent)!important}
+.popout + .x{margin-left:0!important}
+#tools .tbar.wt .popout{margin:0 0 4px 0}
+/* A window of its own: the tool is the whole page. */
+body.solo{margin:0;overflow:hidden}
+body.solo #tools,body.solo #dock,body.solo .fwin{inset:0!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;
+  min-width:0;min-height:0;border:0!important;border-radius:0!important;resize:none;box-shadow:none!important;animation:none!important}
+body.solo .tbar,body.solo #dock .nav{cursor:default!important}
 #tools.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
 #tools.moving{user-select:none;transition:none;opacity:.96}
 @keyframes tools-in{from{opacity:0;transform:translateY(10px) scale(.985)}}
@@ -38,7 +47,7 @@ const CSS = `
 
 /* The browser: a second small window, moved and sized like the terminal. */
 #dock{position:fixed;right:52px;top:72px;width:520px;height:400px;z-index:60;display:none;flex-direction:column;
-  min-width:340px;min-height:260px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);
+  min-width:340px;min-height:260px;
   background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;resize:both;
   box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
 #dock.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
@@ -85,6 +94,61 @@ const CSS = `
 .split.x::after{width:1px;height:100%} .split.y::after{height:1px;width:100%}
 .split:hover::after,.split.dragging::after{background:var(--accent)}
 .split.x:hover::after,.split.x.dragging::after{width:3px} .split.y:hover::after,.split.y.dragging::after{height:3px}
+/* The terminal: tabs along the top, then a page that is only the prompt. */
+#tools .tbar.wt{gap:2px;padding:6px 6px 0 8px;align-items:flex-end;border-bottom:0;background:color-mix(in srgb,var(--bg) 55%,#000)}
+#tools .wtabs{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none;align-items:flex-end}
+#tools .wtabs::-webkit-scrollbar{display:none}
+#tools .wtab{display:flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 12px;border-radius:8px 8px 0 0;font-size:13px;color:var(--dim);
+  cursor:pointer;white-space:nowrap;max-width:190px;min-width:0;flex:0 1 auto;transition:background .1s ease,color .1s ease}
+#tools .wtab:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+#tools .wtab.on{background:var(--term-bg);color:var(--text)}
+#tools .wtab i{font-style:normal;font-size:12px;width:14px;text-align:center;flex:none;opacity:.85}
+#tools .wtab span{overflow:hidden;text-overflow:ellipsis}
+#tools .wtab u{text-decoration:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;color:var(--faint);font-size:15px;flex:none}
+#tools .wtab u:hover{background:color-mix(in srgb,var(--text) 14%,transparent);color:var(--text)}
+#tools .wadd{flex:none;width:30px;height:28px;margin-bottom:3px;padding:0;background:none;border:0;border-radius:6px;color:var(--dim);font-size:16px;line-height:1;cursor:pointer}
+#tools .wadd:hover{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text)}
+#tools .tbar.wt .ttl{flex:1;align-self:stretch}
+#tools .tbar.wt button.tab{margin-bottom:4px;font-size:12.5px;padding:3px 10px}
+#tools .tbar.wt .x{margin:0 0 4px 2px}
+#tools{--term-bg:color-mix(in srgb,var(--bg) 88%,#000)}
+#tools .wmenu{position:absolute;top:40px;left:8px;z-index:6;width:300px;max-height:calc(100% - 52px);overflow:auto;padding:6px;border-radius:11px;
+  background:var(--glass-strong);backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);border:1px solid var(--line);box-shadow:0 20px 50px rgba(0,0,0,.5)}
+#tools .wmenu[hidden]{display:none}
+#tools .wmenu button{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;background:none;border:0;border-radius:7px;color:var(--dim);font-size:13.5px;text-align:left}
+#tools .wmenu button:hover:not(:disabled){background:color-mix(in srgb,var(--text) 9%,transparent);color:var(--text)}
+#tools .wmenu button i{font-style:normal;width:16px;text-align:center}
+#tools .wmenu button small{margin-left:auto;color:var(--faint);font-size:11.5px}
+#tools .wmenu .sep{height:1px;background:var(--line);margin:5px 2px}
+#tools .wmenu .where{border:0;padding:6px 10px;flex-direction:column;align-items:flex-start}
+#tools .pane[data-pane="terminal"]{background:var(--term-bg)}
+#tools .term{flex:1;min-height:0;overflow:auto;padding:10px 14px 14px;font-family:var(--mono);font-size:13.5px;line-height:1.5;color:var(--text);cursor:text}
+#tools .term .run{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+#tools .term .ps{white-space:pre-wrap;color:var(--text)}
+#tools .term .ps .u{color:var(--good);font-weight:600} #tools .term .ps .d{color:var(--warn);font-weight:500}
+#tools .term .ps .k{color:var(--good)} #tools .term .ps .m{color:var(--human);font-weight:500}
+#tools .term .o{color:var(--dim)}
+#tools .term .who{margin-left:10px;font-size:11.5px;color:var(--warn);font-family:var(--sans)}
+#tools .term .st{color:var(--faint);font-size:12px} #tools .term .st.bad{color:var(--bad)}
+#tools .term .st button{padding:0 8px;font-size:11.5px;font-family:var(--sans);margin-left:6px}
+#tools .term .line{display:flex;align-items:flex-end;gap:0;margin:0}
+#tools .term .line[hidden]{display:none}
+#tools .term .line .ps{flex:none}
+#tools .term .line input{flex:1;min-width:40px;border:0;outline:0;box-shadow:none;background:none;padding:0;border-radius:0;color:var(--text);
+  font-family:var(--mono);font-size:13.5px;line-height:1.5;caret-color:var(--text)}
+#tools .term .err{padding:0;font-family:var(--sans)}
+#tools #tPick{max-width:520px;margin:8px auto;font-family:var(--sans);cursor:default}
+#tools #tPick[hidden]{display:none}
+#tools #tPick h4{margin:10px 0 4px;font-size:18px;font-weight:650;letter-spacing:-.01em}
+#tools #tPick p{margin:0 0 12px;color:var(--dim);font-size:13.5px}
+#tools #tPick button{display:flex;align-items:center;gap:13px;width:100%;margin-bottom:6px;padding:10px 13px;text-align:left;border-radius:10px;
+  background:color-mix(in srgb,var(--text) 4%,transparent);border:1px solid var(--hair)}
+#tools #tPick button:hover:not(:disabled){background:color-mix(in srgb,var(--text) 9%,transparent);border-color:var(--line)}
+#tools #tPick button i{font-style:normal;font-size:17px;width:22px;text-align:center;flex:none}
+#tools #tPick button b{display:block;font-size:14.5px;font-weight:600}
+#tools #tPick button small{display:block;color:var(--faint);font-size:12.5px;line-height:1.4;margin-top:1px}
+#tools #tPick button:disabled{opacity:.6}
+#tools #tPick .re{margin-top:10px;font-size:12.5px;color:var(--faint)} #tools #tPick .re a{cursor:pointer;text-decoration:underline;color:var(--dim)}
 #tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:14.5px;cursor:pointer}
 #tools .tbar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
 #tools .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
@@ -138,10 +202,7 @@ const CSS = `
 
 let root = null;
 let timer = null;
-let lastRun = 0;
 let shown = 'terminal';
-const typed = [];
-let typedAt = 0;
 const steer = { terminal: null, browser: null };
 
 let styled = false;
@@ -153,18 +214,29 @@ function build() {
   root = document.createElement('div');
   root.id = 'tools';
   root.innerHTML = `
-    <div class="tbar">
-      <button class="tab" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="files">Export</button>
+    <div class="tbar wt">
+      <div class="wtabs" id="wTabs" data-tab="terminal"></div>
+      <button class="wadd" id="wAdd" title="New tab">+</button>
+      <button class="wadd" id="wMore" title="Open a shell, and the PC's settings">⌄</button>
       <span class="ttl" id="tTitle"></span>
+      <button class="tab" data-tab="files" title="Take the work off the PC">Export</button>
       <button class="x" title="Close (Ctrl \`)">×</button>
+    </div>
+    <div class="wmenu" id="wMenu" hidden>
+      <div id="wShells"></div>
+      <div class="sep"></div>
+      <div class="where" id="tWhere"></div>
+      <div class="sep"></div>
+      <button data-menu="permissions">Permissions — websites, GitHub, programs…</button>
+      <button data-menu="clear">Clear this tab</button>
     </div>
     <div class="pane" data-pane="files">
       <div class="where" id="fWhere"></div>
       <div class="scroll" id="fList"></div>
       <div class="out">
-        <a class="primary" id="fZip" style="text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--line);font-size:14.5px" download>Download as a zip</a>
+        <a class="primary" id="fZip" style="text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--line);font-size:14.5px" download>Save the project as a zip</a>
         <button id="fCopy">Copy to a folder on this computer…</button>
+        <button id="fEmpty" title="Delete everything in this folder of the PC">Empty the PC…</button>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           <button id="fOpen" title="Open this folder in your code editor">Open in editor</button>
           <select id="fEditor" style="width:auto;font-size:13.5px;padding:5px 6px" title="Which editor"></select>
@@ -173,60 +245,115 @@ function build() {
       </div>
     </div>
     <div class="pane" data-pane="terminal">
-      <div class="where" id="tWhere"></div>
       <div class="warn" id="tWarn" hidden></div>
-      <div class="scroll" id="tRuns"></div>
-      <div class="err" id="tErr"></div>
-      <form class="in" id="tForm">
-        <input id="tCmd" placeholder="a command, run in the project folder" autocomplete="off" spellcheck="false">
-        <button class="primary">Run</button>
-      </form>
+      <div class="term" id="tTerm">
+        <div id="tPick" hidden></div>
+        <div id="tOut"></div>
+        <form class="line" id="tForm"><span class="ps" id="tPs"></span><input id="tCmd" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="command"></form>
+        <div class="err" id="tErr"></div>
+      </div>
       <div id="tSteer"></div>
     </div>`;
   document.body.append(root);
 
   root.querySelector('.x').addEventListener('click', close);
-  for (const b of root.querySelectorAll('[data-tab]')) b.addEventListener('click', () => show(b.dataset.tab));
+  for (const b of root.querySelectorAll('button[data-tab]')) b.addEventListener('click', () => show(shown === b.dataset.tab ? 'terminal' : b.dataset.tab));
   floating(root);
 
   // ---------------------------------------------------------------- terminal
-  root.querySelector('#tForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const box = root.querySelector('#tCmd');
-    const command = box.value.trim();
-    if (!command) return;
-    const err = root.querySelector('#tErr');
-    err.textContent = '';
-    box.disabled = true;
-    try {
-      typed.push(command); typedAt = typed.length;
-      box.value = '';
-      // Not waited for: a long command is watched as it runs, and can be stopped.
-      api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command, as: me() }) })
-        .catch((ex) => { err.textContent = ex.message; }).finally(() => refreshTerminal(true));
-      await new Promise((r) => setTimeout(r, 150));
-    } catch (ex) {
-      err.textContent = ex.message;
-    } finally {
-      box.disabled = false;
-      box.focus();
-      refreshTerminal();
-    }
+  const term = root.querySelector('#tTerm');
+  // Anywhere in the pane is the prompt: clicking the blank page puts the cursor on the line.
+  term.addEventListener('click', (e) => {
+    if (getSelection().toString() || e.target.closest('button, a, input, select')) return;
+    root.querySelector('#tCmd').focus();
   });
 
-  // Up and down bring back what was typed before, as a terminal does.
-  root.querySelector('#tCmd').addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    if (!typed.length) return;
+  root.querySelector('#tForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    typedAt = Math.max(0, Math.min(typed.length, typedAt + (e.key === 'ArrowUp' ? -1 : 1)));
-    e.target.value = typed[typedAt] ?? '';
+    const tab = active();
+    const box = root.querySelector('#tCmd');
+    const command = box.value.trim();
+    if (!tab?.shell) return;
+    box.value = '';
+    root.querySelector('#tErr').textContent = '';
+    if (!command) return;
+    tab.typed = [...(tab.typed ?? []).filter((c) => c !== command), command].slice(-100);
+    tab.at = tab.typed.length;
+    if (/^(clear|cls|Clear-Host)$/i.test(command)) return clearTab(tab);
+    // Shown at once, before the server has anything to say about it.
+    tab.pending = [...(tab.pending ?? []), { command, cwd: tab.cwd ?? '', at: Date.now() }];
+    saveTabs();
+    paintTab(true);
+    // Not waited for: a long command is watched as it runs, and can be stopped.
+    api('/api/terminal/run', { method: 'POST', body: JSON.stringify({ command, as: me(), shell: tab.shell, cwd: tab.cwd ?? '' }) })
+      .then((r) => {
+        if (r?.id) claim(tab, r.id, command);
+        if (r?.movedTo !== undefined) tab.cwd = r.movedTo;
+      })
+      .catch((ex) => {
+        tab.pending = (tab.pending ?? []).filter((x) => x.command !== command);
+        tab.failed = [...(tab.failed ?? []), { command, cwd: tab.cwd ?? '', why: ex.message }].slice(-20);
+      })
+      .finally(() => { saveTabs(); refreshTerminal(true); });
+    setTimeout(() => refreshTerminal(true), 250);
   });
-  root.querySelector('#tRuns').addEventListener('click', async (e) => {
+
+  // Up and down bring back what was typed in this tab, as a terminal does.
+  root.querySelector('#tCmd').addEventListener('keydown', (e) => {
+    const tab = active();
+    if (!tab) return;
+    if (e.key === 'l' && e.ctrlKey) { e.preventDefault(); clearTab(tab); return; }
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const list = tab.typed ?? [];
+    if (!list.length) return;
+    e.preventDefault();
+    tab.at = Math.max(0, Math.min(list.length, (tab.at ?? list.length) + (e.key === 'ArrowUp' ? -1 : 1)));
+    e.target.value = list[tab.at] ?? '';
+  });
+
+  root.querySelector('#tOut').addEventListener('click', async (e) => {
     const stop = e.target.closest('[data-stop]');
     if (!stop) return;
     await post(`/api/terminal/${stop.dataset.stop}/stop`, {}).catch(() => {});
     refreshTerminal(true);
+  });
+
+  // The tabs: choose one, close one, add one.
+  root.querySelector('#wTabs').addEventListener('click', (e) => {
+    const shut = e.target.closest('[data-shut]');
+    if (shut) { e.stopPropagation(); return closeTab(shut.dataset.shut); }
+    const t = e.target.closest('[data-wtab]');
+    if (t) { term$.active = t.dataset.wtab; saveTabs(); show('terminal'); }
+    return undefined;
+  });
+  root.querySelector('#wAdd').addEventListener('click', () => { addTab(null); show('terminal'); });
+  root.querySelector('#wMore').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = root.querySelector('#wMenu');
+    menu.hidden = !menu.hidden;
+    if (!menu.hidden) refreshTerminal(true);
+  });
+  document.addEventListener('click', (e) => {
+    const menu = root.querySelector('#wMenu');
+    if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true;
+  });
+  root.querySelector('#wMenu').addEventListener('click', (e) => {
+    const shell = e.target.closest('[data-open-shell]');
+    if (shell && !shell.disabled) { addTab(shell.dataset.openShell); root.querySelector('#wMenu').hidden = true; return show('terminal'); }
+    const m = e.target.closest('[data-menu]')?.dataset.menu;
+    if (m === 'permissions') { root.querySelector('#wMenu').hidden = true; return openTools('permissions'); }
+    if (m === 'clear') { root.querySelector('#wMenu').hidden = true; const t = active(); if (t) clearTab(t); }
+    return undefined;
+  });
+  // Choosing a shell for a new tab.
+  root.querySelector('#tPick').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-recheck]')) { term$.shells = null; await loadShells(true); return paintTab(true); }
+    const b = e.target.closest('[data-pick]');
+    if (!b || b.disabled) return undefined;
+    const tab = active();
+    if (!tab) return undefined;
+    await setShell(tab, b.dataset.pick);
+    return show('terminal');
   });
   import('/desk.js').then((desk) => { steer.terminal = desk.steerStrip(root.querySelector('#tSteer')); }).catch(() => {});
 
@@ -319,6 +446,18 @@ function build() {
     } catch (ex) { say.className = 'say err'; say.textContent = ex.message; }
   });
 
+  root.querySelector('#fEmpty').addEventListener('click', async () => {
+    const say = root.querySelector('#fSay');
+    const sb = await api('/api/sandbox').catch(() => null);
+    if (!sb) return;
+    if (!confirm(`Empty ${sb.folder}?\n\nEverything in this folder of the Agents' PC is deleted. This cannot be undone — save it as a zip first if you might want it.`)) return;
+    try {
+      const r = await post('/api/sandbox/empty', { folder: sb.folder, as: me() });
+      say.className = 'say ok'; say.textContent = `Emptied ${r.folder} — ${r.removed} thing${r.removed === 1 ? '' : 's'} removed`;
+    } catch (ex) { say.className = 'say err'; say.textContent = ex.message; }
+    refreshFiles();
+  });
+
   root.querySelector('#fCopy').addEventListener('click', async () => {
     const say = root.querySelector('#fSay');
     const to = prompt('Copy this folder to where? The full path of a folder on this computer.\n'
@@ -357,18 +496,208 @@ function refresh(all = false) {
   return shown === 'files' ? refreshFiles() : refreshTerminal(all);
 }
 
+// ------------------------------------------------------------ terminal tabs
+
+/**
+ * The terminal's tabs. Each is its own command line: a shell, the folder it
+ * is standing in, and the commands typed into it. Any number, of any kind.
+ * They are remembered, so the window reopens the way it was left.
+ */
+const term$ = { tabs: [], active: null, shells: null, sb: null, runs: new Map(), sig: '' };
+
+const GLYPH = { pc: '▣', ubuntu: '◉', kali: '◈', mac: '⌘', gitbash: '◆', powershell: '≥', cmd: '▸' };
+const SHELL_NAME = { pc: "Agents' PC", ubuntu: 'Ubuntu', kali: 'Kali Linux', mac: 'zsh', gitbash: 'Git Bash', powershell: 'PowerShell', cmd: 'Command Prompt' };
+
+function saveTabs() {
+  keep('esprits.term', {
+    active: term$.active,
+    tabs: term$.tabs.map((t) => ({ id: t.id, shell: t.shell, cwd: t.cwd ?? '', since: t.since ?? 0, ids: (t.ids ?? []).slice(-300), typed: (t.typed ?? []).slice(-50) })),
+  });
+}
+
+function loadTabs() {
+  if (term$.tabs.length) return;
+  const was = kept('esprits.term');
+  if (was?.tabs?.length) { term$.tabs = was.tabs; term$.active = was.active; }
+  // Opening the terminal with nothing in it asks which shell you want.
+  if (!term$.tabs.length) addTab(null);
+  if (!term$.tabs.some((t) => t.id === term$.active)) term$.active = term$.tabs[0].id;
+}
+
+const active = () => term$.tabs.find((t) => t.id === term$.active) ?? null;
+
+function addTab(shell) {
+  const tab = { id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, shell: null, cwd: '', since: 0, ids: [], typed: [] };
+  term$.tabs.push(tab);
+  term$.active = tab.id;
+  if (shell) setShell(tab, shell);
+  saveTabs();
+  return tab;
+}
+
+/** Give a tab its shell. It starts as a blank page: nothing that ran before it opened is on it. */
+async function setShell(tab, shell) {
+  tab.shell = shell;
+  tab.cwd = '';
+  tab.ids = [];
+  const t = await api('/api/terminal?limit=1').catch(() => null);
+  tab.since = t?.runs?.at(-1)?.id ?? 0;
+  saveTabs();
+  refreshTerminal(true);
+}
+
+function closeTab(id) {
+  const i = term$.tabs.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  term$.tabs.splice(i, 1);
+  if (!term$.tabs.length) addTab(null);
+  if (term$.active === id) term$.active = term$.tabs[Math.min(i, term$.tabs.length - 1)].id;
+  saveTabs();
+  show('terminal');
+}
+
+async function clearTab(tab) {
+  const t = await api('/api/terminal?limit=1').catch(() => null);
+  tab.since = t?.runs?.at(-1)?.id ?? tab.since;
+  tab.ids = []; tab.pending = []; tab.failed = [];
+  saveTabs();
+  refreshTerminal(true);
+}
+
+/** This run was typed in that tab. */
+function claim(tab, id, command) {
+  if (!tab.ids.includes(id)) tab.ids.push(id);
+  const i = (tab.pending ?? []).findIndex((x) => x.command === command);
+  if (i >= 0) tab.pending.splice(i, 1);
+}
+
+async function loadShells(recheck = false) {
+  if (term$.shells && !recheck) return term$.shells;
+  const r = await api(`/api/terminal/shells${recheck ? '?recheck' : ''}`).catch(() => null);
+  if (r) term$.shells = r.shells;
+  return term$.shells ?? [];
+}
+
+const winPath = (p) => /^[a-z]:[\\/]/i.test(p) || p.includes('\\');
+const last = (p) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '/';
+
+/**
+ * The line a shell shows before the cursor — each in its own manner, since
+ * that is how you know at a glance which one you are typing into.
+ */
+function prompt(shell, path) {
+  const who = (me() || 'you').toLowerCase();
+  const u = (t) => `<b class="u">${esc(t)}</b>`;
+  const d = (t) => `<b class="d">${esc(t)}</b>`;
+  switch (shell) {
+    case 'ubuntu': return `${u(`${who}@ubuntu`)}:${d(path)}$ `;
+    case 'kali': return `<span class="k">┌──(</span>${u(`${who}㉿kali`)}<span class="k">)-[</span>${d(path)}<span class="k">]</span>\n<span class="k">└─</span>${u('$')} `;
+    case 'mac': return `${u(`${who}@Mac`)} ${d(last(path))} % `;
+    case 'gitbash': return `${u(`${who}@PC`)} <b class="m">MINGW64</b> ${d(winPath(path) ? `/${path[0].toLowerCase()}${path.slice(2).replace(/\\/g, '/')}` : path)}\n$ `;
+    case 'powershell': return `PS ${esc(winPath(path) ? path.replace(/\//g, '\\') : path)}&gt; `;
+    case 'cmd': return `${esc(path.replace(/\//g, '\\'))}&gt;`;
+    default: return `${u(`${who}@agents-pc`)}:${d(path)}$ `;
+  }
+}
+
+/** Where a tab is standing, as its shell would name it. */
+function standing(tab) {
+  const sb = term$.sb;
+  if (!sb) return '';
+  const info = (term$.shells ?? []).find((x) => x.id === tab.shell);
+  const base = info?.isolated ? `/sandbox/${sb.folder}` : sb.hostDir;
+  if (!tab.cwd) return base;
+  return winPath(base) ? `${base}\\${tab.cwd.replace(/\//g, '\\')}` : `${base}/${tab.cwd}`;
+}
+
+function paintTabs() {
+  const strip = root.querySelector('#wTabs');
+  strip.innerHTML = term$.tabs.map((t) => `<div class="wtab ${t.id === term$.active && shown === 'terminal' ? 'on' : ''}" data-wtab="${t.id}" title="${esc(t.shell ? SHELL_NAME[t.shell] ?? t.shell : 'Choose a shell')}">
+      <i>${t.shell ? GLYPH[t.shell] ?? '▣' : '＋'}</i><span>${esc(t.shell ? SHELL_NAME[t.shell] ?? t.shell : 'New tab')}</span><u data-shut="${t.id}" title="Close tab">×</u></div>`).join('');
+}
+
+/** Draw the tab that is showing: the picker if it has no shell yet, otherwise its page. */
+function paintTab(jump = false) {
+  if (!root) return;
+  paintTabs();
+  const tab = active();
+  const pick = root.querySelector('#tPick');
+  const out = root.querySelector('#tOut');
+  const form = root.querySelector('#tForm');
+  if (!tab) return;
+
+  if (!tab.shell) {
+    out.innerHTML = ''; form.hidden = true; pick.hidden = false;
+    root.querySelector('#tTitle').textContent = '';
+    const shells = term$.shells;
+    pick.innerHTML = `<h4>Which command line?</h4>
+      <p>Each opens in its own tab, in the Agents' PC's folder. Open as many as you like — <b>+</b> adds another.</p>
+      ${shells ? shells.map((sh) => `<button data-pick="${sh.id}" ${sh.available ? '' : 'disabled'}>
+          <i>${GLYPH[sh.id] ?? '▣'}</i><span><b>${esc(sh.label)}</b><small>${esc(sh.available ? `${sh.hint} — runs in ${sh.how}${sh.isolated ? '' : ' (not sandboxed)'}` : sh.why)}</small></span></button>`).join('')
+        : '<p>Looking at what this computer can run…</p>'}
+      <p class="re"><a data-recheck>Check again</a> after installing something.</p>`;
+    return;
+  }
+  pick.hidden = true; form.hidden = false;
+
+  const mine = new Set(tab.ids ?? []);
+  // The PC's own tab also shows what the agents run, since it is their machine; the others show only what was typed in them.
+  const runs = [...term$.runs.values()].filter((r) => r.id > (tab.since ?? 0) && r.shell === tab.shell && (mine.has(r.id) || (tab.shell === 'pc' && r.kind !== 'human')))
+    .sort((a, b) => a.id - b.id);
+  const here = standing(tab);
+  const sig = JSON.stringify([tab.id, here, runs.map((r) => [r.id, r.running, r.output?.length]), tab.pending, tab.failed]);
+  const term = root.querySelector('#tTerm');
+  const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 80;
+  if (sig !== term$.sig) {
+    term$.sig = sig;
+    out.innerHTML = runs.map((r) => `<div class="run"><span class="ps">${prompt(tab.shell, r.cwd)}</span><span class="cmd">${esc(r.command)}</span>${r.kind !== 'human' ? `<span class="who">${esc(r.by)}${r.thread ? ` · thread ${r.thread}` : ''}</span>` : ''}${r.output ? `\n<span class="o">${esc(r.output.replace(/\s+$/, ''))}</span>` : ''}${r.running ? `\n<span class="st">running… <button data-stop="${r.id}">Stop</button></span>` : (r.exitCode ? `\n<span class="st bad">exit ${r.exitCode}${r.timedOut ? ' — stopped, it ran too long' : ''}</span>` : '')}</div>`).join('')
+      + (tab.failed ?? []).map((f) => `<div class="run"><span class="ps">${prompt(tab.shell, here)}</span><span class="cmd">${esc(f.command)}</span>\n<span class="st bad">${esc(f.why)}</span></div>`).join('')
+      + (tab.pending ?? []).map((x) => `<div class="run"><span class="ps">${prompt(tab.shell, here)}</span><span class="cmd">${esc(x.command)}</span></div>`).join('');
+  }
+  root.querySelector('#tPs').innerHTML = prompt(tab.shell, here);
+  root.querySelector('#tTitle').textContent = '';
+  if (jump || atBottom) term.scrollTop = term.scrollHeight;
+}
+
 async function refreshTerminal(all = false) {
   if (!root) return;
+  loadTabs();
+  const tab = active();
+  const sinces = term$.tabs.filter((t) => t.shell).map((t) => t.since ?? 0);
+  const since = sinces.length ? Math.min(...sinces) : 0;
   let t; let sb;
-  try { [t, sb] = await Promise.all([api('/api/terminal?limit=60'), api('/api/sandbox')]); } catch { return; }
+  try {
+    [t, sb] = await Promise.all([
+      api(`/api/terminal?limit=200&since=${since}`),
+      api('/api/sandbox'), loadShells(),
+    ]);
+  } catch { return; }
+  term$.sb = sb;
+  term$.runs = new Map(t.runs.map((r) => [r.id, r]));
+  // A command this tab sent that the server has started, but has not yet answered for: it is this tab's.
+  for (const tb of term$.tabs) {
+    for (const p of [...(tb.pending ?? [])]) {
+      const hit = t.runs.find((r) => r.shell === tb.shell && r.command === p.command && r.kind === 'human' && r.id > (tb.since ?? 0)
+        && !term$.tabs.some((x) => (x.ids ?? []).includes(r.id)));
+      if (hit) claim(tb, hit.id, p.command);
+      else if (Date.now() - p.at > 15_000) tb.pending = tb.pending.filter((x) => x !== p);
+    }
+  }
+
   const where = root.querySelector('#tWhere');
   // Rebuilding the line under somebody choosing from its menu closes the menu.
-  if (!(where.contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) {
-    where.innerHTML = `${badge(sb)} <code>${esc(sb.dir)}</code> ${folderPick(sb)}
-      <label style="margin-left:auto"><input type="checkbox" id="tAgents" ${sb.agentsAllowed ? 'checked' : ''}> agents may use it</label>`;
+  if (!root.querySelector('#wMenu').hidden && !(where.contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) {
+    where.innerHTML = `${badge(sb)} ${folderPick(sb)}
+      <label><input type="checkbox" id="tAgents" ${sb.agentsAllowed ? 'checked' : ''}> agents may use the terminal</label>`;
+    root.querySelector('#wShells').innerHTML = (term$.shells ?? []).map((sh) => `<button data-open-shell="${sh.id}" ${sh.available ? '' : 'disabled'} title="${esc(sh.available ? `Runs in ${sh.how}` : sh.why)}">
+      <i>${GLYPH[sh.id] ?? '▣'}</i>${esc(sh.label)}${sh.available ? '' : '<small>not available</small>'}</button>`).join('');
   }
+
   const warn = root.querySelector('#tWarn');
-  warn.hidden = sb.isolated && !sb.preparing && !sb.error;
+  const onPc = tab?.shell === 'pc';
+  // The page is the prompt and nothing else. A banner is only for when a command cannot run at all;
+  // how it runs is under the ⌄ menu.
+  warn.hidden = !onPc || (sb.ready && !sb.preparing && !sb.error);
   warn.innerHTML = sb.preparing
     ? 'Getting the Agents\' PC ready. The first time, this downloads its image, which can take a few minutes; commands wait for it.'
     : sb.error ? `<b>The Agents' PC would not start.</b> ${esc(sb.error)}<div class="row"><button id="sCheck">Check again</button></div>`
@@ -380,29 +709,10 @@ async function refreshTerminal(all = false) {
          <div class="row"><button id="sTight" class="primary">Stop running without a sandbox</button><button id="sCheck">Check for a sandbox again</button></div>`
       : `<b>Nothing can be run yet.</b> ${esc(sb.why)}. Work here runs in a sandbox — a container that sees one folder and nothing else on this computer — and there is no engine to make one.
          <div class="row"><button id="sLink" class="primary">Link a folder on this computer</button><button id="sCheck">Check again</button><a id="sLoose">run anywhere without a sandbox</a></div>
-         <div style="margin-top:8px;color:var(--faint);font-size:13px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
-  root.querySelector('#tTitle').textContent = sb.dir;
-  root.querySelector('#tCmd').placeholder = sb.isolated ? "a command, run on the Agents' PC — or pc help"
-    : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer — or pc help`
-    : sb.ready ? 'a command — NOT sandboxed — or pc help' : 'nowhere to run it yet — see above (pc help still works)';
+         <div style="margin-top:8px;color:var(--faint);font-size:13px">No Docker? Link the project folder you have open in your editor and the room works in it directly. <code>pc help</code> still works.</div>`;
   steer.terminal?.update();
-
-  const newest = t.runs.at(-1)?.id ?? 0;
-  const stillRunning = t.runs.some((r) => r.running);
-  if (!all && newest === lastRun && !stillRunning) return;
-  lastRun = newest;
-  const box = root.querySelector('#tRuns');
-  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = t.runs.length
-    ? t.runs.map((r) => `
-      <div class="trun">
-        <div class="cmd"><b>$</b> ${esc(r.command)}<span class="who ${esc(r.kind)}">${esc(r.by)}${r.thread ? ` · thread ${r.thread}` : ''}</span></div>
-        ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}
-        <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? `running… <button data-stop="${r.id}" style="padding:0 8px;font-size:12.5px;margin-left:6px">Stop</button>` : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
-      </div>`).join('')
-    : `<p class="empty">Nothing has been run yet.<br>This is the same terminal the agents use: what you run here they can see,
-       and what they run appears here with their name on it. What gets made stays on the Agents' PC until you export it — watch it appear in the Explorer.</p>`;
-  if (atBottom || all) box.scrollTop = box.scrollHeight;
+  saveTabs();
+  paintTab(all);
 }
 
 async function refreshFiles() {
@@ -440,14 +750,18 @@ async function refreshFiles() {
   root.querySelector('#fZip').style.pointerEvents = list.files.length ? '' : 'none';
   root.querySelector('#fZip').style.opacity = list.files.length ? '' : '.5';
   root.querySelector('#fCopy').disabled = !list.files.length;
+  root.querySelector('#fEmpty').disabled = !list.files.length || Boolean(sb.linked);
+  root.querySelector('#fEmpty').title = sb.linked ? 'This is a folder of yours that you linked — it is not emptied from here' : 'Delete everything in this folder of the PC';
 }
 
 function show(tab) {
   shown = tab === 'files' ? 'files' : 'terminal';
+  loadTabs();
   for (const b of root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === shown);
   for (const p of root.querySelectorAll('[data-pane]')) p.classList.toggle('on', p.dataset.pane === shown);
-  if (shown === 'terminal') { refreshTerminal(true); root.querySelector('#tCmd').focus(); }
-  else refreshFiles();
+  term$.sig = '';
+  if (shown === 'terminal') { paintTab(true); refreshTerminal(true); if (active()?.shell) root.querySelector('#tCmd').focus(); }
+  else { paintTabs(); refreshFiles(); }
 }
 
 // ------------------------------------------------------- the floating window
@@ -465,23 +779,37 @@ const kept = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? 'nu
  */
 export function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {}) {
   const place = (g) => {
-    const w = Math.min(g.w, innerWidth - 16);
-    const h = Math.min(g.h, innerHeight - 16);
-    const x = Math.max(8, Math.min(g.x, innerWidth - w - 8));
-    const y = Math.max(8, Math.min(g.y, innerHeight - 60));
+    const w = g.w;
+    const h = g.h;
+    // Free to hang over any edge. Only enough of the bar is kept in reach to
+    // get hold of it again; past that, it becomes a window of its own.
+    const x = Math.max(120 - w, Math.min(g.x, innerWidth - 120));
+    const y = Math.max(0, Math.min(g.y, innerHeight - 36));
     Object.assign(win.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto', width: `${w}px`, height: `${h}px` });
   };
   const was = kept(key);
   if (was && Number.isFinite(was.x)) place(was);
 
   const bar = win.querySelector(handle);
+  if (SOLO) return;
+  // The way out of the page: a real window, to put anywhere on the screen.
+  if (!SOLO && !bar.querySelector('.popout')) {
+    const pop = document.createElement('button');
+    pop.className = 'popout';
+    pop.type = 'button';
+    pop.title = 'Pop out into its own window — to put anywhere on your screen, or another monitor';
+    pop.textContent = '↗';
+    const shut = bar.querySelector('.x, #bClose');
+    if (shut) shut.before(pop); else bar.append(pop);
+    pop.addEventListener('click', () => popOut(win));
+  }
   // Whichever window was touched last is the one on top.
   win.addEventListener('pointerdown', () => {
     for (const w of document.querySelectorAll('#tools, #dock, .fwin')) w.classList.toggle('front', w === win);
   }, true);
   let from = null;
   bar.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button, input, select, a, label') || e.button !== 0) return;
+    if (e.target.closest('button, input, select, a, label, [data-wtab]') || e.button !== 0) return;
     const box = win.getBoundingClientRect();
     from = { dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, h: box.height };
     bar.setPointerCapture(e.pointerId);
@@ -491,10 +819,18 @@ export function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {
     if (!from) return;
     place({ x: e.clientX - from.dx, y: e.clientY - from.dy, w: from.w, h: from.h });
   });
-  const drop = () => {
+  const drop = (e) => {
     if (!from) return;
     from = null;
     win.classList.remove('moving');
+    // Let go of outside the page, it leaves the page: it opens as a window of its own, where it was dropped.
+    if (!SOLO && e?.type === 'pointerup' && (e.clientX < 0 || e.clientY < 0 || e.clientX > innerWidth || e.clientY > innerHeight)) {
+      const box = win.getBoundingClientRect();
+      try { localStorage.removeItem(key); } catch { /* nothing kept */ }
+      Object.assign(win.style, { left: '', top: '', right: '', bottom: '', width: '', height: '' });
+      popOut(win, { x: e.screenX - 80, y: e.screenY - 14, w: box.width, h: box.height });
+      return;
+    }
     const box = win.getBoundingClientRect();
     keep(key, { x: box.left, y: box.top, w: box.width, h: box.height });
   };
@@ -502,7 +838,7 @@ export function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {
   bar.addEventListener('pointercancel', drop);
   // Double-click the bar to send it back to its corner.
   bar.addEventListener('dblclick', (e) => {
-    if (e.target.closest('button, input, select, a, label')) return;
+    if (e.target.closest('button, input, select, a, label, [data-wtab]')) return;
     Object.assign(win.style, { left: '', top: '', right: '', bottom: '', width: '', height: '' });
     try { localStorage.removeItem(key); } catch { /* nothing kept */ }
   });
@@ -527,6 +863,42 @@ export function floating(win, { key = 'esprits.terminal', handle = '.tbar' } = {
  * bigger depends on which side of the bar the section is, hence `invert`.
  * Where it was left is remembered, and a double-click puts it back.
  */
+/** A page that is one window and nothing else — what a popped-out window is. */
+export const SOLO = new URLSearchParams(location.search).has('app') && /\/win(\.html)?$/.test(location.pathname);
+
+/** Which of the PC's windows an element is. */
+function appOf(win) {
+  if (win.id === 'tools') return shown;
+  if (win.id === 'dock') return 'browser';
+  return win.id === 'pcwin' ? 'pc' : win.id;
+}
+
+/**
+ * Open a window of the PC as a real window of its own.
+ *
+ * A page cannot draw outside the browser window it is in, so anything meant
+ * to sit beside the browser, or on another screen, has to be a window of the
+ * operating system's. This opens one showing just that tool, and puts the
+ * in-page copy away.
+ */
+export function popOut(win, at = null, extra = {}) {
+  const app = typeof win === 'string' ? win : appOf(win);
+  const box = typeof win === 'string' ? null : win.getBoundingClientRect();
+  const w = Math.round(at?.w ?? box?.width ?? 820);
+  const h = Math.round(at?.h ?? box?.height ?? 540);
+  const x = Math.round(at?.x ?? (window.screenX + (box?.left ?? 80) + 40));
+  const y = Math.round(at?.y ?? (window.screenY + (box?.top ?? 80) + 60));
+  const q = new URLSearchParams({ app, ...extra });
+  const made = window.open(`/win?${q}`, `esprits-${app}-${Date.now()}`, `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
+  if (!made) { alert('The browser blocked the new window. Allow pop-ups for this page, then try again.'); return null; }
+  if (typeof win !== 'string') {
+    if (win.id === 'tools') close();
+    else if (win.id === 'dock') closeBrowser();
+    else win.querySelector('.x')?.click();
+  }
+  return made;
+}
+
 export function splitter(handle, { axis = 'x', size, set, min = 60, max = 1200, key = null, invert = false }) {
   const was = key ? kept(key) : null;
   if (Number.isFinite(was)) set(Math.max(min, Math.min(max, was)));
@@ -556,10 +928,14 @@ export function splitter(handle, { axis = 'x', size, set, min = 60, max = 1200, 
   handle.addEventListener('dblclick', () => { set(null); if (key) { try { localStorage.removeItem(key); } catch { /* nothing kept */ } } });
 }
 
+const SOLO_APP = SOLO ? new URLSearchParams(location.search).get('app') : null;
+
 /** The windows that live in desk.js: the PC itself, the explorer, the editors, the activity monitor. */
-const DESK = ['pc', 'explorer', 'code', 'notes', 'activity'];
+const DESK = ['pc', 'explorer', 'code', 'notes', 'activity', 'permissions'];
 
 export function openTools(tab = 'terminal') {
+  // In a window of its own, another tool is another window.
+  if (SOLO && tab !== SOLO_APP && !(SOLO_APP === 'terminal' && tab === 'files') && !(SOLO_APP === 'files' && tab === 'terminal')) return popOut(tab);
   if (DESK.includes(tab)) return import('/desk.js').then((desk) => desk.openApp(tab));
   if (tab === 'browser') return openBrowser();
   build().classList.add('open');
@@ -571,6 +947,7 @@ export function openTools(tab = 'terminal') {
 }
 
 export function close() {
+  if (SOLO) { window.close(); return; }
   root?.classList.remove('open');
   clearInterval(timer);
 }
@@ -740,6 +1117,7 @@ export function openBrowser() {
 }
 
 export function closeBrowser() {
+  if (SOLO) { window.close(); return; }
   dock?.classList.remove('open');
   clearInterval(looking);
 }

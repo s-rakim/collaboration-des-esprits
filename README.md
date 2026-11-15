@@ -35,6 +35,13 @@ container when Docker or Podman is running — is yours to look into and drive:
 - **Code** and **Notes** edit files in place and follow the disk while you watch;
 - the **Terminal** takes shell commands and `pc …` commands that control the
   machine itself (`pc help`);
+- the terminal has **tabs**, each its own shell — the PC's, Ubuntu, Kali,
+  zsh, Git Bash, PowerShell, Command Prompt — run by Docker, WSL or the
+  shell itself, whichever this computer has;
+- **Permissions** set which websites, GitHub and programs the agents may
+  read and write;
+- any window pops out (↗, or drag it off the page) into a real window you
+  can put anywhere on your screen;
 - while a thread works you can **steer** it from any of those windows.
 
 See [docs/GUIDE.md](docs/GUIDE.md#3b-the-agents-pc).
