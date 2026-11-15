@@ -17,7 +17,7 @@
  */
 export const TOKENS = [
   { key: 'bg', label: 'Page', hint: 'Behind everything you read.' },
-  { key: 'panel', label: 'Rail and cards', hint: 'The raised surfaces: the left rail, a card, a dialog.' },
+  { key: 'panel', label: 'Bar and cards', hint: 'The raised surfaces: a card, a menu, a dialog.' },
   { key: 'panel2', label: 'Controls', hint: 'Buttons and inputs at rest.' },
   { key: 'line', label: 'Borders', hint: 'Every hairline and divider.' },
   { key: 'text', label: 'Text', hint: 'What you are reading.' },
@@ -62,8 +62,43 @@ export const FONTS = {
 
 /** The palettes that ship. The first is the default. */
 export const PRESETS = {
+  glass: {
+    label: 'Glass — neutral dark, blue light; the default',
+    // An editor's dark with no tint in it: plain near-black, grey hairlines,
+    // and white as the one accent. The surfaces are drawn translucent over a
+    // faint glow, so panels and windows read as panes of glass, not boxes.
+    // The only colours are the ones that mean something: done, waiting, failed.
+    dark: {
+      bg: '#0c0c0d', panel: '#171718', panel2: '#202022', line: '#303033',
+      text: '#eeeeee', dim: '#ababaf', faint: '#77777c',
+      accent: '#f4f4f4', good: '#6fcf97', warn: '#e5b45f', bad: '#f0706a', human: '#c8c8cc',
+    },
+    // Light is the other room entirely: white panes on a cool grey, with one
+    // clear blue — the bar across the top wears it, and so does anything to
+    // press.
+    light: {
+      bg: '#f2f5f9', panel: '#ffffff', panel2: '#e8eef5', line: '#d2dbe6',
+      text: '#16212e', dim: '#4a5a6d', faint: '#8191a3',
+      accent: '#0082c9', good: '#23855a', warn: '#8f6410', bad: '#c9302c', human: '#005f96',
+    },
+  },
+  blue: {
+    label: 'Blue glass — blue on near-black, blue light',
+    // The same glass with colour in it: a near-black that leans blue, and a
+    // clear blue accent in both appearances.
+    dark: {
+      bg: '#0b0d12', panel: '#141821', panel2: '#1c212d', line: '#2a3040',
+      text: '#eceef4', dim: '#a9b1c3', faint: '#727b90',
+      accent: '#7c9cff', good: '#5fd39a', warn: '#f0b45b', bad: '#ff6f7d', human: '#c39bff',
+    },
+    light: {
+      bg: '#f2f5f9', panel: '#ffffff', panel2: '#e8eef5', line: '#d2dbe6',
+      text: '#16212e', dim: '#4a5a6d', faint: '#8191a3',
+      accent: '#0082c9', good: '#23855a', warn: '#8f6410', bad: '#c9302c', human: '#005f96',
+    },
+  },
   mono: {
-    label: 'Mono — black and white, the default',
+    label: 'Mono — black and white',
     // Nearly colourless on purpose. Everything on screen here was written by
     // somebody — you or a model — and the colour that survives is the one doing
     // a job: a thing failed, a thing needs you, a thing is the one to press.
@@ -138,7 +173,7 @@ export const PRESETS = {
   },
 };
 
-export const DEFAULT_PRESET = 'mono';
+export const DEFAULT_PRESET = 'glass';
 export const DEFAULTS = PRESETS[DEFAULT_PRESET];
 
 /**
@@ -246,10 +281,34 @@ export function resolveTheme(saved) {
  * So the stylesheet keeps the layout and this keeps the colours, and there is
  * one place to change them.
  */
+/**
+ * What each appearance makes *from* its colours. Not colours of their own —
+ * every one is written in terms of the tokens, so a changed accent carries
+ * through — but they differ by mode, which only this file knows.
+ *
+ * Dark: the bar is glass and the accent is written on in the page colour.
+ * Light: the bar is the accent itself, with white on it.
+ */
+export const DERIVED = {
+  dark: [
+    '--bar-bg:color-mix(in srgb, var(--panel) 62%, transparent);',
+    '--bar-fg:var(--dim);', '--bar-on:var(--text);', '--bar-line:color-mix(in srgb, var(--line) 70%, transparent);',
+    '--bar-go-bg:var(--accent);', '--bar-go-fg:var(--bg);',
+    '--on-accent:var(--bg);', '--glow:var(--accent);', '--glow-strength:13%;',
+  ],
+  light: [
+    '--bar-bg:linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #00b4f0));',
+    '--bar-fg:rgba(255,255,255,.84);', '--bar-on:#ffffff;', '--bar-line:transparent;',
+    '--bar-go-bg:#ffffff;', '--bar-go-fg:var(--accent);',
+    '--on-accent:#ffffff;', '--glow:var(--accent);', '--glow-strength:16%;',
+  ],
+};
+
 export function defaultsCss(saved) {
-  const block = (mode, pad = '  ') => TOKENS
-    .map(({ key }) => `${pad}--${key}:${DEFAULTS[mode][key]};`)
-    .join('\n');
+  const block = (mode, pad = '  ') => [
+    ...TOKENS.map(({ key }) => `${pad}--${key}:${DEFAULTS[mode][key]};`),
+    ...DERIVED[mode].map((line) => `${pad}${line}`),
+  ].join('\n');
 
   const look = APPEARANCES[saved?.appearance] ? saved.appearance : DEFAULT_APPEARANCE;
 

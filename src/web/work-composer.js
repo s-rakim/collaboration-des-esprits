@@ -18,15 +18,15 @@
 // needs. Kept here rather than in the theme because nothing else has a worker
 // count or a model picker sitting inside the thing you type in.
 const CSS = `
-.jobbox label{font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px;margin:0}
-.jobbox input[type=number]{width:54px;padding:5px 7px;border-radius:7px;font-size:12.5px}
-.jobbox select.quiet{background:none;border-color:transparent;color:var(--dim);font-size:12.5px;
+.jobbox label{font-size:13.5px;color:var(--faint);display:flex;align-items:center;gap:6px;margin:0}
+.jobbox input[type=number]{width:54px;padding:5px 7px;border-radius:7px;font-size:14px}
+.jobbox select.quiet{background:none;border-color:transparent;color:var(--dim);font-size:14px;
   padding:5px 6px;max-width:220px;width:auto}
 .jobbox select.quiet:hover{border-color:var(--line)}
 .jobbox button.go{background:var(--accent);border-color:var(--accent);color:#fff;
   margin-left:auto;font-weight:550;padding:6px 15px}
 .jobbox button.go:hover:not(:disabled){filter:brightness(1.07)}
-.jobbox .note{font-size:12px;color:var(--faint);min-height:16px}
+.jobbox .note{font-size:13.5px;color:var(--faint);min-height:16px}
 .jobbox .note.err{color:var(--bad)} .jobbox .note.ok{color:var(--good)}
 `;
 

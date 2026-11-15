@@ -157,7 +157,7 @@ try {
     await page.keyboard.press('Escape');
 
     // Enter inside a textarea is a new line, not a submit.
-    await page.click('#newIdea');
+    await page.click('#topbar [data-action]');
     await page.click('#ideaRaw');
     await page.keyboard.type('one');
     await page.keyboard.press('Enter');
@@ -411,16 +411,29 @@ try {
     watch(page, path);
     await page.goto(BASE + path, { waitUntil: 'networkidle' });
 
-    const box = await (await page.$('#shell-rail'))?.boundingBox();
-    if (!box) note(path, 'no rail');
-    else if (box.x !== 0) note(path, `the rail is not against the left edge (x=${box.x})`);
+    // One bar across the top, on every page: the six tabs, and nothing down the side.
+    const box = await (await page.$('#topbar'))?.boundingBox();
+    if (!box) note(path, 'no top bar');
+    else {
+      if (box.y !== 0 || box.x !== 0) note(path, `the bar is not at the top of the page (${box.x}, ${box.y})`);
+      if (box.height > 64) note(path, `the bar is ${box.height}px tall — the tabs have wrapped`);
+    }
+    if (await page.$('#shell-rail')) note(path, 'there is still a rail down the side');
+    const tabs = await page.$$eval('#topbar .tabs a.tab', (a) => a.map((x) => ({ label: x.textContent.trim(), top: Math.round(x.getBoundingClientRect().top), on: x.classList.contains('on') })));
+    if (tabs.map((t) => t.label).join() !== "Chat,Threads,Agents' PC,Work,Artifacts,Setup") note(path, `the tabs are ${tabs.map((t) => t.label).join() || 'missing'}`);
+    if (new Set(tabs.map((t) => t.top)).size > 1) note(path, 'the tabs are not on one row');
+    const lit = tabs.filter((t) => t.on).length + (await page.$$eval('#topbar [data-menu="more"].on', (b) => b.length));
+    if (lit !== 1) note(path, `${lit} tabs are marked as the page you are on`);
+    // Everything that is not a tab is one click away, under More.
+    await page.click('#topbar [data-menu="more"]');
+    const more = await page.$$eval('#menu-more a', (a) => a.filter((x) => x.offsetParent).length);
+    if (more < 6) note(path, `More lists only ${more} places`);
+    await page.keyboard.press('Escape');
+    if (await page.isVisible('#menu-more')) note(path, 'Escape did not put the More menu away');
+    // The page is not wider than the window: nothing scrolls sideways.
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    if (wide > 1) note(path, `the page is ${wide}px wider than the window`);
 
-    const modes = await page.$$eval('#shell-rail [data-mode]', (b) => b.map((x) => x.dataset.mode));
-    if (modes.join() !== 'work,chat') note(path, `the rail offers ${modes.join() || 'no modes'}`);
-
-    const tops = await page.$$eval('#shell-rail a.item', (a) => a.map((x) => Math.round(x.getBoundingClientRect().top)));
-    if (tops.length < 6) note(path, `only ${tops.length} links in the rail`);
-    if (new Set(tops).size !== tops.length) note(path, 'rail links share a row — they should stack');
 
     // The terminal and the browser belong to the project, not to one tab: both
     // have to open from the rail wherever you are, the chat included.
@@ -434,7 +447,7 @@ try {
       if ((await page.$$('#tasks [data-task]')).length < 6) note(path, 'the desktop has no taskbar');
     }
     await page.evaluate(() => localStorage.removeItem('esprits.terminal'));
-    await page.click('#shell-rail [data-tool="terminal"]');
+    await page.click('#edge-tabs [data-tool="terminal"]');
     const opened = await page.waitForSelector('#tools.open #tCmd', { state: 'visible', timeout: 4000 }).catch(() => null);
     if (!opened) note(path, 'the terminal did not open from the rail');
     else {
@@ -455,7 +468,7 @@ try {
       if (!kept || Math.abs(kept.x - after.x) > 2) note(path, 'the terminal window does not remember where it was put');
     }
     // What was made, and the way out of the sandbox, are a tab of the same window.
-    await page.click('#shell-rail [data-tool="files"]');
+    await page.click('#tools [data-tab="files"]');
     await page.waitForTimeout(400);
     if (!(await page.isVisible('#tools #fCopy'))) note(path, 'the files and export tab did not open from the rail');
     const state = (await page.textContent('#tools #fWhere .state').catch(() => '')) ?? '';
@@ -513,7 +526,7 @@ try {
       await page.click(`${win} .tbar .x`);
       if (await page.isVisible(win)) note(path, `the ${tool} window did not close`);
     }
-    if ((await page.textContent('#shell-rail .brand')).trim() !== 'Esprits') note(path, 'the rail does not carry the name Esprits');
+    if ((await page.textContent('#topbar .brand')).trim() !== 'Esprits') note(path, 'the bar does not carry the name Esprits');
     await page.close();
   }
 
@@ -539,7 +552,7 @@ try {
     // covering it with a dialog that asks the same question is a step for
     // nothing.
     if (path === '/work') {
-      await page.click('#shell-rail [data-action]');
+      await page.click('#topbar [data-action]');
       await page.waitForTimeout(300);
       const focused = await page.evaluate(() => document.activeElement?.id);
       if (focused !== 'jobGoal') note(path, `New task left the focus on ${focused || 'nothing'}`);
@@ -585,13 +598,18 @@ try {
     const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
     watch(page, 'phone');
     await page.goto(BASE, { waitUntil: 'networkidle' });
-    if ((await (await page.$('#shell-rail')).boundingBox()).x >= 0) note('phone', 'the rail is taking the screen instead of hiding');
-    await page.click('#rail-open');
-    await page.waitForTimeout(350);
-    if (Math.round((await (await page.$('#shell-rail')).boundingBox()).x) !== 0) note('phone', 'the menu button did not open the rail');
-    await page.mouse.click(390, 500);
-    await page.waitForTimeout(350);
-    if ((await (await page.$('#shell-rail')).boundingBox()).x >= 0) note('phone', 'tapping away did not close the rail');
+    // On a phone the bar keeps its tabs as icons, on one row, and the page still fits.
+    const bar = await (await page.$('#topbar')).boundingBox();
+    if (bar.height > 64) note('phone', `the bar is ${bar.height}px tall on a phone`);
+    if ((await page.$$eval('#topbar .tabs a.tab', (a) => a.length)) !== 6) note('phone', 'the tabs are not all there on a phone');
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    if (over > 1) note('phone', `the page is ${over}px wider than the phone`);
+    await page.click('#topbar [data-menu="ideas"]');
+    if (!(await page.isVisible('#menu-ideas'))) note('phone', 'the ideas menu did not open');
+    const menu = await (await page.$('#menu-ideas')).boundingBox();
+    if (menu.x < 0 || menu.x + menu.width > 421) note('phone', 'the ideas menu runs off the screen');
+    await page.mouse.click(60, 600);
+    if (await page.isVisible('#menu-ideas')) note('phone', 'tapping away did not close the menu');
     await page.close();
   }
 } catch (err) {

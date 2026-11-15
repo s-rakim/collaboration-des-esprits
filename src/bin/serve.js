@@ -1698,7 +1698,7 @@ app.get('/api/theme', (_req, res) =>
 app.post('/api/theme', (req, res) =>
   send(res, () => {
     const { theme, rejected } = cleanTheme(req.body ?? {});
-    const empty = !Object.keys(theme.dark).length && !Object.keys(theme.light).length && !Object.keys(theme.fonts).length;
+    const empty = !Object.keys(theme.dark).length && !Object.keys(theme.light).length && !Object.keys(theme.fonts).length && !theme.appearance;
     if (empty) hub.db.prepare("DELETE FROM settings WHERE k = 'theme'").run();
     else {
       hub.db.prepare(

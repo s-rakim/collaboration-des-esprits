@@ -601,34 +601,35 @@ runs on a machine that may have no internet, which is rather the point of it, so
 a web font would be a blank page waiting on a request that never returns. Both
 are whichever good one the system already has.
 
-## The rail
+## The bar across the top
 
-Everything the room can do runs down the left-hand side, in one column you read
-top to bottom. A horizontal bar has a budget of about six words before it wraps;
-a rail does not, which is why every app that grows past six features ends up
-with one.
+One bar, on every page, with six tabs: **Chat**, **Threads**, **Agents' PC**,
+**Work**, **Artifacts** and **Setup**. Everything else — Dashboard, Design,
+Plugins, Skills, Swarm, Scheduled, Coordinator, Customize — is under **More**,
+so the bar never holds more than can be read at a glance. There is no sidebar:
+the page gets the whole width.
 
-At the top is the toggle. **Chat** is where you and the models talk, with what
-that produces beside it — the thread, the artifacts, the design library.
-**Work** is where jobs get handed over and run without you watching — the
-dashboard, the task board and the swarm, the plugins and skills. Keeping both
-sets visible at once made the list long and the distinction invisible, which is
-what the toggle is for. Under it sits the one thing that *does* something rather
-than going somewhere — New idea, or New task — on `Ctrl`/`Cmd` `K`.
+On the right of the bar:
 
-The right-hand column folds away with the button on its inner edge, and stays
-folded until you say otherwise. Closed it becomes a strip holding its own way
-back, because a panel with no way back is one people close once and never find
-again.
+- the **ideas menu** — the lobby, then each project with its ideas, then
+  anything unfiled; a dot means that one is waiting on you. On the chat page,
+  picking one switches the conversation without a page load;
+- the **light / dark switch**, saved in the room so every device opens the
+  same way;
+- the one button that *does* something rather than going somewhere — **New
+  idea**, or **New task** on the work pages — on `Ctrl`/`Cmd` `K`.
 
-Below the links are the threads, filed the way the room files them: the lobby,
-then each project with its ideas under it, then anything unfiled. A dot means
-that one is waiting on you. Picking one on the chat page switches the thread
-without a page load, so the feed and the floor stay live.
+Side panels on a page fold away with the arrow on their inner edge, and stay
+folded until you say otherwise. The chat's left panel (search, who is
+speaking, who is in the room) starts folded, so the conversation has the
+screen.
 
-The rail narrows to icons with the button at the top, and remembers that. On a
-phone it is not there at all until you ask for it, and slides back out of the
-way once you have.
+The look is dark glass by default: neutral near-black, hairline borders,
+translucent panels and windows, white as the accent. Light mode is white
+panes with a blue bar. *Setup → Colours* has the other palettes, including
+**Blue glass** (blue on near-black), and every colour can be changed.
+
+On a phone the tabs become icons on the same single row.
 
 ## The / menu
 
@@ -888,7 +889,7 @@ of the disk, and not the room's own database with your keys in it. Agents and
 you work in there; what gets made stays in there until **you** export it.
 
 Its tools are on every page — the chat included — as **tabs on the right-hand
-edge** (and in the rail). Each tab opens a small window you can move; pressing
+edge**. Each tab opens a small window you can move; pressing
 it again puts the window away:
 
 - **Terminal**, a **floating window** (`Ctrl` + `` ` ``). Drag it by its bar,

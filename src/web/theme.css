@@ -1,107 +1,165 @@
 /*
  * The room's look, in one place.
  *
- * Every page used to carry its own copy of these values, which meant changing
- * the colour of anything meant changing it seven times and finding out later
- * which page you missed. Now the pages hold only what is theirs.
+ * A dark editor's look, drawn on glass. The page is near-black with a soft
+ * glow behind it; bars, cards, menus and windows are translucent panes over
+ * that glow, edged with a hairline. One accent colour, worn only by the thing
+ * to press and the thing that is selected. Type is a plain sans at a size that
+ * can be read all day.
  *
- * The palette is warm rather than blue. A room you leave open all day is a room
- * you are staring into, and a warm near-black is easier to sit in front of than
- * a cold one; the clay accent is the only saturated colour, so the one thing
- * wearing it is always the thing to press.
+ * Nothing is fetched. The room runs on a machine that may have no internet,
+ * so the fonts are whichever good ones the system already has.
  *
- * Nothing is fetched. The room runs on a machine that may have no internet —
- * that is rather the point of it — so a web font would be a blank page waiting
- * on a request that never returns. The serif is whichever good one the system
- * already has.
+ * The colours are not here. They are in src/theme.js and served in front of
+ * this file, so there is one place to change them; what is here is what is
+ * made *from* them — the glass, the hairlines, the glow.
  */
 
 :root {
-  --radius:10px;
+  --radius:12px;
+  --top:52px;
 
-  /* A serif for the things you read as titles, a sans for the rest. Both are
-     whatever the machine already has, so neither costs a request. */
   --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-}
+  --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:"JetBrains Mono","Cascadia Code",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 
-/* The colours are not here. They are in src/theme.js and served in front of
-   this file, because a palette written out in two places is a palette where
-   changing one of them does nothing and nobody can see why. */
+  /* Glass: a surface you can see the glow through. */
+  --glass:color-mix(in srgb, var(--panel) 62%, transparent);
+  --glass-strong:color-mix(in srgb, var(--panel) 86%, transparent);
+  --glass-soft:color-mix(in srgb, var(--panel) 38%, transparent);
+  /* A hairline: the border colour, thinned, so edges are felt more than seen. */
+  --hair:color-mix(in srgb, var(--line) 70%, transparent);
+  --shadow:0 18px 50px rgba(0,0,0,.42);
+}
 
 /* ------------------------------------------------------------------ the page */
 
 * { box-sizing:border-box }
 
+html { background:var(--bg) }
+
 body {
   margin:0;
-  background:var(--bg);
   color:var(--text);
-  font:14px/1.6 var(--sans);
+  font:15px/1.6 var(--sans);
   -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  /* The glow the glass sits on. Fixed, so panes scroll over it. In the dark
+     it is plain light; in the light it is the accent, faintly. */
+  background:
+    radial-gradient(1100px 620px at 84% -10%, color-mix(in srgb, var(--glow) var(--glow-strength), transparent), transparent 62%),
+    radial-gradient(900px 620px at -8% 110%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .65), transparent), transparent 60%),
+    var(--bg);
+  background-attachment:fixed;
 }
 
-/*
- * A page title is a name, so it is set in the serif. The small uppercase labels
- * further down are not titles — they are signposts — and they stay sans, where
- * the letterforms hold up at that size.
- */
-header h1,
-#shell-rail .brand {
-  font-family:var(--serif);
-  font-weight:500;
-  letter-spacing:-.01em;
+/* A page's own bar, under the tabs: what this page is, and what you can do on it. */
+body header {
+  position:relative;
+  z-index:5;
+  min-height:54px;
+  background:var(--glass-soft);
+  backdrop-filter:blur(16px) saturate(1.3);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);
+  border-bottom:1px solid var(--hair);
 }
-header h1 { font-size:17px }
-header h1 small { font-family:var(--sans); font-size:12.5px }
+body header h1 { font-family:var(--sans); font-size:16.5px; font-weight:650; letter-spacing:-.015em; margin:0 }
+header h1 small { font-family:var(--sans); font-size:15px; font-weight:400; color:var(--faint); margin-left:8px }
+
+h2 { font-family:var(--sans) }
 
 /* --------------------------------------------------------------- the controls */
 
 button {
   font:inherit;
   cursor:pointer;
-  background:var(--panel2);
+  background:color-mix(in srgb, var(--panel2) 80%, transparent);
   color:var(--text);
-  border:1px solid var(--line);
-  border-radius:8px;
-  padding:6px 11px;
-  transition:border-color .12s ease, background .12s ease;
+  border:1px solid var(--hair);
+  border-radius:9px;
+  padding:7px 13px;
+  transition:border-color .12s ease, background .12s ease, transform .08s ease, filter .12s ease, box-shadow .12s ease;
 }
-button:hover:not(:disabled) { border-color:var(--accent) }
-button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); font-weight:550 }
-button.primary:hover:not(:disabled) { filter:brightness(1.07) }
-button:disabled { opacity:.5; cursor:not-allowed }
+button:hover:not(:disabled) { border-color:color-mix(in srgb, var(--accent) 60%, var(--line)); background:var(--panel2) }
+button:active:not(:disabled) { transform:scale(.97) }
+button.primary {
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600;
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset, 0 6px 18px rgba(0,0,0,.35);
+}
+button.primary:hover:not(:disabled) { background:var(--accent); filter:brightness(1.08) }
+button:disabled { opacity:.45; cursor:not-allowed }
 
 input, textarea, select {
   font:inherit;
-  background:var(--bg);
+  background:color-mix(in srgb, var(--bg) 70%, transparent);
   color:var(--text);
-  border:1px solid var(--line);
-  border-radius:8px;
-  padding:8px 10px;
+  border:1px solid var(--hair);
+  border-radius:9px;
+  padding:9px 12px;
   width:100%;
+  transition:border-color .12s ease, box-shadow .12s ease;
 }
+select option { background:var(--panel); color:var(--text) }
 textarea { resize:vertical; font-family:inherit }
+input::placeholder, textarea::placeholder { color:var(--faint) }
 input:focus, textarea:focus, select:focus {
-  outline:2px solid var(--accent);
-  outline-offset:-1px;
+  outline:0;
   border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+input[type=checkbox], input[type=radio] { accent-color:var(--accent); width:auto; padding:0; flex:none }
+
+a { color:var(--accent); text-underline-offset:2px }
+code { font-family:var(--mono); font-size:.92em }
+
+/* A card: a pane of glass with a hairline round it. */
+.card {
+  background:var(--glass) !important;
+  border:1px solid var(--hair) !important;
+  border-radius:var(--radius) !important;
+  backdrop-filter:blur(14px) saturate(1.3);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);
+  transition:border-color .14s ease, transform .14s ease;
 }
 
-a { color:var(--accent) }
+/* The side columns of a page are glass too, so the glow carries across. */
+body main > aside, body main > .ctx, body main > #rail {
+  background:var(--glass-soft);
+  border-color:var(--hair) !important;
+}
 
 dialog {
-  background:var(--panel);
+  background:var(--glass-strong);
+  backdrop-filter:blur(28px) saturate(1.5);
+  -webkit-backdrop-filter:blur(28px) saturate(1.5);
   color:var(--text);
   border:1px solid var(--line);
-  border-radius:14px;
-  padding:20px;
+  border-radius:16px;
+  padding:22px;
   max-width:560px;
   width:calc(100% - 32px);
+  box-shadow:var(--shadow);
 }
-dialog::backdrop { background:rgba(0,0,0,.55) }
-dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-size:16px }
+dialog::backdrop { background:rgba(4,6,10,.6); backdrop-filter:blur(4px) }
+dialog h3 { margin:0 0 14px; font-family:var(--sans); font-weight:650; font-size:17px; letter-spacing:-.01em }
+dialog[open] { animation:dialog-in .18s cubic-bezier(.2,.7,.3,1) }
+@keyframes dialog-in { from { opacity:0; transform:translateY(10px) scale(.985) } }
+
+/* The windows that float over a page — terminal, browser, the PC's programs. */
+body #tools, body #dock, body .fwin {
+  background:color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter:blur(26px) saturate(1.5);
+  -webkit-backdrop-filter:blur(26px) saturate(1.5);
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04) inset;
+}
+body #tools .tbar, body #dock .nav, body .fwin .tbar, body .fwin .foot, body .fwin .bar2 { background:var(--glass-soft) }
+body #edge-tabs button {
+  background:var(--glass); backdrop-filter:blur(16px) saturate(1.4); -webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border-color:var(--hair); font-size:14.5px;
+}
+body #edge-tabs button.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent) }
 
 /* ----------------------------------------------------------------- the composer
 
@@ -224,7 +282,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   align-items:center;
   gap:2px;
   padding:7px 2px 0;
-  font-size:12.5px;
+  font-size:14px;
 }
 .composer .bar .grow, .jobbox .bar .grow { flex:1 }
 
@@ -263,7 +321,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   border-radius:7px;
   padding:5px 9px;
   color:var(--dim);
-  font-size:12.5px;
+  font-size:14px;
 }
 .composer .bar .t:hover:not(:disabled) { background:var(--panel2); border-color:var(--line); color:var(--text) }
 .composer .bar .t.quiet, .jobbox .bar .t.quiet { color:var(--faint); pointer-events:none }
@@ -310,12 +368,12 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   border-radius:8px;
   padding:7px 9px;
   color:var(--dim);
-  font-size:13px;
+  font-size:14.5px;
 }
 .composer .menu button:hover { background:var(--panel2); color:var(--text) }
 .composer .menu button.on { color:var(--accent) }
 .composer .menu .sep { height:1px; background:var(--line); margin:5px 2px }
-.composer .menu select { margin:4px 2px 2px; font-size:12.5px; padding:6px 8px }
+.composer .menu select { margin:4px 2px 2px; font-size:14px; padding:6px 8px }
 
 /* The chips above the box: what this message will land on. */
 .composer .chips, .jobbox .chips {
@@ -324,7 +382,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   align-items:center;
   flex-wrap:wrap;
   margin:0 2px 7px;
-  font-size:12px;
+  font-size:13.5px;
   color:var(--faint);
 }
 .composer .chips:empty, .jobbox .chips:empty { display:none }
@@ -338,7 +396,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   padding:4px 9px;
   color:var(--dim);
 }
-.composer .chips .chip button { background:none; border:0; color:var(--faint); padding:0 2px; font-size:14px; line-height:1 }
+.composer .chips .chip button { background:none; border:0; color:var(--faint); padding:0 2px; font-size:15px; line-height:1 }
 
 /* ------------------------------------------------------- the routers panel */
 /* Three cards in a row on a wide screen, stacked on a narrow one. Each says
@@ -350,7 +408,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 }
 .router.up { border-color:var(--accent) }
 .router .rname { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
-.router .rname .hint { font-size:11.5px }
+.router .rname .hint { font-size:13px }
 .router .dot {
   width:8px; height:8px; border-radius:50%; flex:none;
   border:1.4px solid var(--faint); background:none;
@@ -358,7 +416,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 .router .dot.live { background:var(--good); border-color:var(--good) }
 .router .row { gap:8px; flex-wrap:wrap; align-items:center }
 .router a.btn {
-  font-size:12.5px; padding:5px 10px; border:1px solid var(--line);
+  font-size:14px; padding:5px 10px; border:1px solid var(--line);
   border-radius:7px; color:var(--dim); text-decoration:none;
 }
 .router a.btn:hover { color:var(--text); border-color:var(--dim) }
@@ -368,7 +426,7 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
    subtly wrong, and none of them announce themselves — so the provider's own
    example goes here and the fields below show what was read. */
 .paste textarea {
-  width:100%; font-family:var(--mono); font-size:12px; line-height:1.5;
+  width:100%; font-family:var(--mono); font-size:13.5px; line-height:1.5;
   background:var(--bg); color:var(--text);
   border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px;
   resize:vertical;
@@ -378,61 +436,54 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
 
 /* A router that is not there should say how to get it, rather than only that
    it is not answering — which is the point at which somebody opens a search. */
-.router .install { font-size:12px; color:var(--dim); width:100% }
+.router .install { font-size:13.5px; color:var(--dim); width:100% }
 .router .install summary { cursor:pointer; color:var(--faint); padding:2px 0 }
 .router .install summary:hover { color:var(--text) }
 .router .install code {
   display:block; margin:6px 0 4px; padding:7px 9px; white-space:pre-wrap;
   overflow-wrap:anywhere; background:var(--bg); border:1px solid var(--line);
-  border-radius:7px; font-size:11.5px; user-select:all;
+  border-radius:7px; font-size:13px; user-select:all;
 }
-.router .install a { color:var(--dim); font-size:11.5px }
+.router .install a { color:var(--dim); font-size:13px }
 
-/* ------------------------------------------------------------------ the feel
- *
- * None of this changes what anything is; it changes how it answers when you
- * touch it. A control that does not move when pressed, a field that does not
- * light when it has the cursor, a list that snaps instead of settling — each
- * is nothing on its own, and together they are the difference between a page
- * and a form.
- */
+/* ------------------------------------------------------------------ the feel */
 
-::selection { background:var(--text); color:var(--bg) }
+::selection { background:color-mix(in srgb, var(--accent) 45%, transparent); color:var(--text) }
 
-* { scrollbar-width:thin; scrollbar-color:var(--line) transparent }
+* { scrollbar-width:thin; scrollbar-color:color-mix(in srgb, var(--line) 90%, transparent) transparent }
 ::-webkit-scrollbar { width:10px; height:10px }
 ::-webkit-scrollbar-track { background:transparent }
-::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; border:2px solid var(--bg) }
-::-webkit-scrollbar-thumb:hover { background:var(--faint) }
+::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; border:3px solid transparent; background-clip:padding-box }
+::-webkit-scrollbar-thumb:hover { background:var(--faint); background-clip:padding-box }
 
-:focus-visible { outline:2px solid var(--text); outline-offset:2px; border-radius:6px }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px }
 
-button { transition:border-color .12s ease, background .12s ease, transform .08s ease, filter .12s ease, box-shadow .12s ease }
-button:active:not(:disabled) { transform:scale(.97) }
-button.primary { box-shadow:0 1px 0 rgba(255,255,255,.08) inset }
-button.primary:hover:not(:disabled) { box-shadow:0 4px 14px rgba(0,0,0,.28) }
-
-input, textarea, select { transition:border-color .12s ease, box-shadow .12s ease }
-input:focus, textarea:focus, select:focus {
-  outline:0;
-  border-color:var(--accent);
-  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
 /* The message box draws its own edge, so the field inside it stays bare. */
+.composer .box textarea, .jobbox .box textarea { background:none }
 .composer .box textarea:focus, .jobbox .box textarea:focus { box-shadow:none }
-.composer .box, .jobbox .box { transition:border-color .15s ease, box-shadow .15s ease }
-.composer .box:focus-within, .jobbox .box:focus-within {
-  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), 0 10px 30px rgba(0,0,0,.18);
+.composer, .jobbox { background:none }
+.composer .box, .jobbox .box {
+  background:var(--glass);
+  backdrop-filter:blur(18px) saturate(1.4);
+  -webkit-backdrop-filter:blur(18px) saturate(1.4);
+  border-color:var(--hair);
+  border-radius:16px;
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
-
-dialog[open] { animation:dialog-in .18s cubic-bezier(.2,.7,.3,1) }
-dialog::backdrop { backdrop-filter:blur(3px) }
-@keyframes dialog-in { from { opacity:0; transform:translateY(10px) scale(.985) } }
-
-.card { transition:border-color .14s ease, transform .14s ease }
-
-header { backdrop-filter:saturate(1.2) blur(6px) }
+.composer .box:focus-within, .jobbox .box:focus-within {
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 40px rgba(0,0,0,.3);
+}
+.composer .box .go.ready, .jobbox .box .go.ready { color:var(--on-accent) }
+.composer .menu, .jobbox .menu { background:var(--glass-strong); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5) }
 
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
 }
+
+/* The terminal and the browser open from the tabs on the right edge of every
+   page; a second pair of buttons in each page's own bar was the same thing twice. */
+header #toolTerminal, header #toolBrowser { display:none }
+
+/* On the chat page the bar's own "New idea" is the way to drop one. */
+header #newIdea { display:none }

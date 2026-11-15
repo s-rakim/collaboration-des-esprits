@@ -11,13 +11,13 @@
   header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
   header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
   nav{display:flex;gap:6px;margin-left:8px}
-  nav a{color:var(--dim);text-decoration:none;font-size:12.5px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
+  nav a{color:var(--dim);text-decoration:none;font-size:14px;border:1px solid transparent;padding:4px 10px;border-radius:7px}
   nav a:hover{border-color:var(--line);color:var(--text)}
   nav a.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
   .spacer{margin-left:auto}
   button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px 10px}
   input,select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%}
-  main{display:grid;grid-template-columns:300px minmax(0,1fr);height:calc(100vh - 53px)}
+  main{display:grid;grid-template-columns:300px minmax(0,1fr);height:calc(100vh - var(--top) - 54px)}
   @media (max-width:1100px){main{grid-template-columns:250px minmax(0,1fr)}}
   @media (max-width:860px){main{grid-template-columns:1fr;height:auto}}
   aside{border-right:1px solid var(--line);overflow-y:auto;padding:12px}
@@ -25,29 +25,29 @@
   .item{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:3px}
   .item:hover{background:var(--panel2)}
   .item.on{background:var(--panel2);border-color:var(--accent)}
-  .item .t{font-weight:600;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .item .m{color:var(--faint);font-size:11px;margin-top:2px;font-family:var(--mono)}
+  .item .t{font-weight:600;font-size:14.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .m{color:var(--faint);font-size:12.5px;margin-top:2px;font-family:var(--mono)}
   .docbar{display:flex;gap:9px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;flex-wrap:wrap}
   .docbar h2{font-size:15px;margin:0;font-weight:650}
   .body{padding:18px 20px;max-width:900px}
-  .body pre{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:13px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  .body pre{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:13px;overflow-x:auto;font-family:var(--mono);font-size:14px;line-height:1.5}
   .body :is(h1,h2,h3){letter-spacing:-.01em;margin:22px 0 9px}
   .body h1{font-size:22px} .body h2{font-size:17px} .body h3{font-size:15px}
   .body p,.body li{color:var(--text)}
-  .body code{font-family:var(--mono);font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  .body code{font-family:var(--mono);font-size:14px;background:var(--panel2);padding:1px 5px;border-radius:4px}
   .body blockquote{border-left:3px solid var(--line);margin:0;padding-left:13px;color:var(--dim)}
   .body table{border-collapse:collapse;width:100%}
-  .body th,.body td{border:1px solid var(--line);padding:6px 9px;text-align:left;font-size:13px}
-  iframe{width:100%;height:calc(100vh - 160px);border:0;background:#fff}
-  .chip{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .body th,.body td{border:1px solid var(--line);padding:6px 9px;text-align:left;font-size:14.5px}
+  iframe{width:100%;height:calc(100vh - var(--top) - 160px);border:0;background:#fff}
+  .chip{font-size:12.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
   .empty{color:var(--faint);padding:50px 20px;text-align:center}
-  .msg{font-size:13px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  .msg{font-size:14.5px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
   .vers{display:flex;flex-direction:column;gap:4px;margin-top:8px}
-  .ver{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--dim);padding:4px 6px;border-radius:6px;cursor:pointer}
+  .ver{display:flex;gap:8px;align-items:baseline;font-size:13.5px;color:var(--dim);padding:4px 6px;border-radius:6px;cursor:pointer}
   .ver:hover{background:var(--panel2)}
   .ver.on{background:var(--panel2);color:var(--text)}
-  .ver b{font-family:var(--mono);font-size:11px}
-  h3.side{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 7px;font-weight:600}
+  .ver b{font-family:var(--mono);font-size:12.5px}
+  h3.side{font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 7px;font-weight:600}
 </style>
 </head>
 <body>

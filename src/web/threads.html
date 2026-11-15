@@ -11,19 +11,19 @@
   header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
   header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
   .spacer{margin-left:auto}
-  main{display:grid;grid-template-columns:290px minmax(0,1fr);height:calc(100vh - 53px)}
+  main{display:grid;grid-template-columns:290px minmax(0,1fr);height:calc(100vh - var(--top) - 54px)}
   @media (max-width:980px){main{grid-template-columns:1fr;height:auto}}
   aside,.mid{overflow-y:auto;padding:14px}
   aside{border-right:1px solid var(--line)}
   .mid{max-width:1040px;width:100%}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
+  h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
   h2:first-child{margin-top:0}
   .build{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:4px}
   .build:hover{background:var(--panel2)}
   .build.on{background:var(--panel2);border-color:var(--accent)}
-  .build .g{font-size:13px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .build .s{font-size:11px;color:var(--faint);margin-top:3px}
-  .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .build .g{font-size:14.5px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .build .s{font-size:12.5px;color:var(--faint);margin-top:3px}
+  .badge{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
   .badge.running,.badge.planning,.badge.reporting{color:var(--accent);border-color:var(--accent)}
   .badge.done{color:var(--good);border-color:var(--good)}
   .badge.failed{color:var(--bad);border-color:var(--bad)}
@@ -36,49 +36,49 @@
   .bar i.done{background:var(--good)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:14px}
   .card h3{margin:0 0 4px;font-size:15px}
-  .card .sub{font-size:12px;color:var(--dim);line-height:1.5}
-  .folder{font-size:12px;color:var(--dim);line-height:1.5}
+  .card .sub{font-size:13.5px;color:var(--dim);line-height:1.5}
+  .folder{font-size:13.5px;color:var(--dim);line-height:1.5}
   .folder code{display:block;color:var(--text);overflow-wrap:anywhere;margin:3px 0 7px}
-  code{font-family:var(--mono);font-size:12px}
+  code{font-family:var(--mono);font-size:13.5px}
 
   .thread{border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--panel)}
   .thread.open{border-color:var(--accent)}
-  .thread .h{display:flex;gap:9px;align-items:center;padding:10px 12px;cursor:pointer;font-size:13px}
+  .thread .h{display:flex;gap:9px;align-items:center;padding:10px 12px;cursor:pointer;font-size:14.5px}
   .thread .h b{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .thread .n{color:var(--faint);font-family:var(--mono);font-size:11.5px}
+  .thread .n{color:var(--faint);font-family:var(--mono);font-size:13px}
   .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint)}
   .dot.running{background:var(--accent);animation:pulse 1.3s ease-in-out infinite}
   .dot.done{background:var(--good)} .dot.failed{background:var(--bad)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  .imp{font-size:11px;color:var(--dim);letter-spacing:1px;white-space:nowrap}
+  .imp{font-size:12.5px;color:var(--dim);letter-spacing:1px;white-space:nowrap}
   .imp i{font-style:normal;color:var(--faint)}
   .ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 12px 10px}
-  .ctl label{font-size:11px;color:var(--faint)}
-  .ctl select,.ctl input{width:auto;font-size:12.5px;padding:5px 8px}
+  .ctl label{font-size:12.5px;color:var(--faint)}
+  .ctl select,.ctl input{width:auto;font-size:14px;padding:5px 8px}
   .ctl input{flex:1;min-width:150px;font-family:var(--mono)}
-  .ctl button{font-size:12px;padding:5px 10px}
-  .thread .brief,.thread .r{font-size:12.5px;color:var(--dim);white-space:pre-wrap;padding:0 12px 10px;line-height:1.55}
+  .ctl button{font-size:13.5px;padding:5px 10px}
+  .thread .brief,.thread .r{font-size:14px;color:var(--dim);white-space:pre-wrap;padding:0 12px 10px;line-height:1.55}
   .thread .r{color:var(--text);max-height:220px;overflow:auto}
-  .thread .e{font-size:12.5px;color:var(--bad);padding:0 12px 10px}
+  .thread .e{font-size:14px;color:var(--bad);padding:0 12px 10px}
   .log{border-top:1px solid var(--line);padding:10px 12px;max-height:440px;overflow:auto}
-  .ev{font-size:12.5px;margin-bottom:9px;line-height:1.5}
-  .ev .who{font-size:11px;color:var(--faint);margin-right:6px}
+  .ev{font-size:14px;margin-bottom:9px;line-height:1.5}
+  .ev .who{font-size:12.5px;color:var(--faint);margin-right:6px}
   .ev.say{white-space:pre-wrap}
   .ev.tool code{color:var(--text);overflow-wrap:anywhere}
   .ev.result pre,.ev.cmd pre{margin:3px 0 0;padding:7px 9px;background:var(--bg);border:1px solid var(--line);border-radius:7px;
-    font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;color:var(--dim)}
-  .ev.status{color:var(--faint);font-size:11.5px}
+    font-family:var(--mono);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;color:var(--dim)}
+  .ev.status{color:var(--faint);font-size:13px}
   .ev.note{border-left:2px solid var(--accent);padding-left:9px}
   .tell{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
   .tell input{flex:1}
-  .report{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
+  .report{white-space:pre-wrap;font-size:15px;line-height:1.65}
   .empty{color:var(--faint);padding:40px 16px;text-align:center;line-height:1.6}
-  .msg{font-size:13px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
+  .msg{font-size:14.5px;color:var(--dim)} .msg.err{color:var(--bad)} .msg.ok{color:var(--good)}
   .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
   dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(520px,94vw)}
   dialog::backdrop{background:rgba(0,0,0,.55)}
-  dialog label{font-size:12.5px;color:var(--dim)}
-.tell .watch{font-size:11.5px;color:var(--faint);white-space:nowrap;align-self:center}
+  dialog label{font-size:14px;color:var(--dim)}
+.tell .watch{font-size:13px;color:var(--faint);white-space:nowrap;align-self:center}
 .tell .watch a{color:var(--dim);cursor:pointer;text-decoration:underline}
 </style>
 </head>
@@ -115,7 +115,7 @@
     <div class="row"><label style="width:92px">Coordinator</label><select id="coordinator" style="flex:1"></select></div>
     <div class="row"><label style="width:92px">At once</label>
       <input id="workers" type="number" min="1" max="8" value="3" style="width:80px">
-      <span class="msg" style="font-size:12px">threads running at the same time</span></div>
+      <span class="msg" style="font-size:13.5px">threads running at the same time</span></div>
     <div class="row" style="justify-content:flex-end;margin-top:4px">
       <button id="cancel">Cancel</button>
       <button class="primary" id="go">Hand over</button>
@@ -175,7 +175,7 @@ async function renderFolder() {
     : `<b style="color:var(--bad)">The Agents’ PC cannot run anything.</b> ${esc(sb.why)}. A thread cannot run a command until there is one.`;
   el.innerHTML = `${line}<code>${esc(sb.dir)}</code>
     <div class="row">
-      <select id="pick" style="width:auto;font-size:12px;padding:3px 6px" title="The folder on the Agents’ PC the threads work in">
+      <select id="pick" style="width:auto;font-size:13.5px;padding:3px 6px" title="The folder on the Agents’ PC the threads work in">
         ${sb.folders.map((f) => `<option value="${esc(f)}" ${f === sb.folder ? 'selected' : ''}>${esc(f)}${(sb.links ?? []).some((l) => l.name === f) ? ' ↗' : ''}</option>`).join('')}
         <option value="+">new folder on the PC…</option>
         <option value="@">link a folder on this computer…</option>
@@ -221,7 +221,7 @@ function renderBuilds() {
           <div class="s"><span class="badge ${esc(b.status)}">${esc(b.status)}</span>
             ${b.total ? ` ${b.done}/${b.total} threads` : ''} · ${ago(b.createdAt)}</div>
         </div>`).join('')
-    : '<p class="msg" style="font-size:12.5px;line-height:1.5">None yet. Talk an idea through in the chat, then hand it over.</p>';
+    : '<p class="msg" style="font-size:14px;line-height:1.5">None yet. Talk an idea through in the chat, then hand it over.</p>';
   for (const el of document.querySelectorAll('.build')) {
     el.onclick = () => select(Number(el.dataset.id));
   }

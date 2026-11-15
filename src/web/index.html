@@ -10,11 +10,11 @@
   header{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
   header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-0.01em}
   header h1 small{color:var(--faint);font-weight:400;margin-left:8px}
-  .stats{display:flex;gap:14px;color:var(--dim);font-size:12px;flex-wrap:wrap}
+  .stats{display:flex;gap:14px;color:var(--dim);font-size:13.5px;flex-wrap:wrap}
   .stats b{color:var(--text)}
-  .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
-  main{--L:var(--col-l,200px);--R:var(--col-r,340px);position:relative;
-    display:grid;grid-template-columns:var(--L) minmax(0,1fr) var(--R);gap:0;height:calc(100vh - 53px)}
+  .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--dim)}
+  main{--L:var(--col-l,260px);--R:var(--col-r,340px);position:relative;
+    display:grid;grid-template-columns:var(--L) minmax(0,1fr) var(--R);gap:0;height:calc(100vh - var(--top) - 54px)}
   /* The columns are dragged by the lines between them. */
   main>.colsplit{position:absolute;top:0;bottom:0;width:7px;z-index:5;cursor:col-resize;touch-action:none}
   main>.colsplit::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:1px;background:transparent;transition:background .12s ease}
@@ -29,15 +29,27 @@
   aside .rowsplit:hover::after,aside .rowsplit.dragging::after{background:var(--accent);left:10%;right:10%}
   /* Put away, the column keeps just enough width to hold its own way back. */
   body.panel-ctx-closed main{--R:38px}
+  /* The room panel — who is speaking, who is here, search — is put away the same way. */
+  main>aside{position:relative;padding-top:46px}
+  main>aside .panel-toggle{left:auto;right:6px;transform:scaleX(-1)}
+  body.panel-room-closed main{--L:38px}
+  body.panel-room-closed main>aside>*:not(.panel-toggle){display:none}
+  body.panel-room-closed main>aside{padding:0;overflow:hidden}
+  body.panel-room-closed main>aside .panel-toggle{right:5px}
+  body.panel-room-closed #splitL{display:none}
+  .mid .composer{padding:8px 20px 14px}
+  .mid .composer>.wrap{max-width:860px;width:100%;margin:0 auto}
+  .msg:not(.me) .b{background:var(--glass)!important;border:1px solid var(--hair)}
+  .sys span{background:var(--glass-soft)!important;border-color:var(--hair)!important}
   body.panel-ctx-closed .ctx>*:not(.panel-toggle){display:none}
   body.panel-ctx-closed .ctx{padding:0;overflow:hidden}
-  @media (max-width:1340px){main{--L:var(--col-l,190px);--R:var(--col-r,290px)}}
+  @media (max-width:1340px){main{--L:var(--col-l,240px);--R:var(--col-r,300px)}}
   @media (max-width:1080px){main{grid-template-columns:1fr;height:auto}aside,section{border:0!important}main>.colsplit{display:none}}
   aside,.mid,.ctx{overflow-y:auto;padding:14px}
   aside{border-right:1px solid var(--line)}
   .ctx{position:relative;border-left:1px solid var(--line)}
   .mid{display:flex;flex-direction:column;padding:0}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
+  h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:18px 0 8px;font-weight:600}
   h2:first-child{margin-top:0}
   button{font:inherit;cursor:pointer;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px 10px}
   button:hover{border-color:var(--accent)}
@@ -48,9 +60,9 @@
   .idea{padding:8px 9px;border-radius:8px;cursor:pointer;margin-bottom:3px;border:1px solid transparent}
   .idea:hover{background:var(--panel2)}
   .idea.on{background:var(--panel2);border-color:var(--accent)}
-  .idea .t{font-weight:550;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .idea .m{color:var(--faint);font-size:11px;margin-top:2px}
-  .badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:20px;border:1px solid var(--line);color:var(--dim);vertical-align:middle}
+  .idea .t{font-weight:550;font-size:14.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .idea .m{color:var(--faint);font-size:12.5px;margin-top:2px}
+  .badge{display:inline-block;font-size:11.5px;padding:1px 6px;border-radius:20px;border:1px solid var(--line);color:var(--dim);vertical-align:middle}
   .badge.raw{color:var(--faint)} .badge.refining,.badge.proposing{color:var(--warn);border-color:var(--warn)}
   .badge.spec{color:var(--accent);border-color:var(--accent)}
   .badge.building{color:var(--human);border-color:var(--human)}
@@ -62,38 +74,38 @@
      This page only says where it sits in the column. */
   .composer{display:flex;flex-direction:column}
   .row{display:flex;gap:8px;align-items:center}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;font-size:14.5px}
   .card .cardh{font-weight:600;margin-bottom:4px}
-  .card .why{color:var(--dim);font-size:12px;white-space:pre-wrap}
+  .card .why{color:var(--dim);font-size:13.5px;white-space:pre-wrap}
   .q .cardh{color:var(--bad)}
   .prop{border-left:3px solid var(--line)}
   .prop.lead{border-left-color:var(--good)}
   .prop.held{border-left-color:var(--bad)}
-  .score{font-family:var(--mono);font-size:11px;color:var(--dim)}
-  .verdict{font-size:12px;color:var(--warn);margin:0 0 8px;font-style:italic}
-  .task{display:flex;gap:7px;align-items:baseline;padding:4px 0;font-size:12.5px;border-bottom:1px solid var(--line)}
+  .score{font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+  .verdict{font-size:13.5px;color:var(--warn);margin:0 0 8px;font-style:italic}
+  .task{display:flex;gap:7px;align-items:baseline;padding:4px 0;font-size:14px;border-bottom:1px solid var(--line)}
   .task:last-child{border:0}
-  .task .id{font-family:var(--mono);color:var(--faint);font-size:11px}
-  .task .st{margin-left:auto;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+  .task .id{font-family:var(--mono);color:var(--faint);font-size:12.5px}
+  .task .st{margin-left:auto;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
   .task.done{opacity:.5}.task.done .tt{text-decoration:line-through}
   .task.claimable .st{color:var(--good)}
-  .agent{display:flex;gap:7px;align-items:center;font-size:12.5px;padding:3px 0}
+  .agent{display:flex;gap:7px;align-items:center;font-size:14px;padding:3px 0}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
   .dot.working{background:var(--good)}.dot.blocked{background:var(--bad)}.dot.idle{background:var(--warn)}.dot.away{background:var(--faint)}
-  .empty{color:var(--faint);font-size:13px;padding:8px 0}
-  .hit{padding:7px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;border-left:2px solid var(--accent);margin-bottom:4px;background:var(--panel)}
+  .empty{color:var(--faint);font-size:14.5px;padding:8px 0}
+  .hit{padding:7px 8px;border-radius:7px;cursor:pointer;font-size:14px;border-left:2px solid var(--accent);margin-bottom:4px;background:var(--panel)}
   .hit:hover{background:var(--panel2)}
   .hit b{color:var(--accent);font-weight:600}
-  .hit .w{color:var(--faint);font-size:11px;display:block;margin-top:2px}
-  .proj{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:12px 0 4px;padding-left:2px;font-weight:600}
+  .hit .w{color:var(--faint);font-size:12.5px;display:block;margin-top:2px}
+  .proj{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:12px 0 4px;padding-left:2px;font-weight:600}
   .attn{border-left:3px solid var(--warn)}
   dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(520px,92vw)}
   dialog::backdrop{background:rgba(0,0,0,.55)}
   dialog h3{margin:0 0 12px;font-size:15px}
   .fields{display:flex;flex-direction:column;gap:9px}
-  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;padding:9px 15px;border-radius:8px;font-size:14.5px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
   .toast.on{opacity:1}
-  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 4px;border-radius:4px}
+  code{font-family:var(--mono);font-size:13.5px;background:var(--panel2);padding:1px 4px;border-radius:4px}
   .mic{position:relative}
   .mic.rec{background:var(--bad);border-color:var(--bad);color:#fff}
   .mic.live{background:var(--good);border-color:var(--good);color:#fff}
@@ -108,13 +120,13 @@
   /* Inside the box the controls are quiet until you go near them: the text you
      are writing is the thing, not the row of buttons under it. */
   .composer .box .row button.icon{background:none;border-color:transparent;color:var(--dim);
-    padding:5px 9px;font-size:13px}
+    padding:5px 9px;font-size:14.5px}
   .composer .box .row button.icon:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}
-  .composer .box .row select.quiet{background:none;border-color:transparent;color:var(--dim);font-size:12.5px;padding:5px 6px}
+  .composer .box .row select.quiet{background:none;border-color:transparent;color:var(--dim);font-size:14px;padding:5px 6px}
   .composer .box .row select.quiet:hover{border-color:var(--line)}
   .composer .box .row button.send{padding:6px 15px}
-  .composer #where{color:var(--faint);font-size:12px}
-  .composer .chips .chip button{background:none;border:0;color:var(--faint);padding:0 2px;font-size:14px;line-height:1}
+  .composer #where{color:var(--faint);font-size:13.5px}
+  .composer .chips .chip button{background:none;border:0;color:var(--faint);padding:0 2px;font-size:15px;line-height:1}
   .composer .chips:empty{display:none}
   .slash{position:absolute;bottom:calc(100% + 6px);left:0;right:0;max-height:266px;overflow:auto;
     background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:5px;z-index:20;
@@ -122,33 +134,33 @@
   .slash .opt{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer}
   .slash .opt.on{background:var(--panel2)}
   .slash .opt .ic{font-size:16px;width:20px;text-align:center;flex:none}
-  .slash .opt .t{font-size:13px;font-weight:550}
-  .slash .opt .d{font-size:11.5px;color:var(--faint);margin-left:auto;text-align:right}
-  .slash .head{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:7px 10px 3px}
+  .slash .opt .t{font-size:14.5px;font-weight:550}
+  .slash .opt .d{font-size:13px;color:var(--faint);margin-left:auto;text-align:right}
+  .slash .head{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:7px 10px 3px}
   .hit{padding:8px 9px;border-radius:8px;border:1px solid var(--line);margin-bottom:6px;cursor:pointer}
   .hit:hover{border-color:var(--accent)}
-  .hit b{font-size:12.5px;display:block}
-  .hit span{font-size:11.5px;color:var(--faint);word-break:break-all}
-  .voicetag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
-  .floor{font-size:12.5px}
+  .hit b{font-size:14px;display:block}
+  .hit span{font-size:13px;color:var(--faint);word-break:break-all}
+  .voicetag{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .floor{font-size:14px}
   .floor .now{display:flex;gap:7px;align-items:center;padding:5px 8px;background:var(--panel2);border-radius:7px;border-left:3px solid var(--good);margin-bottom:6px}
   .floor .wait{display:flex;gap:7px;align-items:baseline;padding:3px 8px;color:var(--dim)}
-  .floor .u{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none}
+  .floor .u{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none}
   .floor .u.blocker{color:var(--bad)} .floor .u.answer{color:var(--accent)}
   .floor .u.objection{color:var(--warn)} .floor .u.proposal{color:var(--human)}
-  .floor .n{color:var(--faint);font-family:var(--mono);font-size:11px;width:14px;flex:none}
-  .floor .tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none;color:var(--faint)}
+  .floor .n{color:var(--faint);font-family:var(--mono);font-size:12.5px;width:14px;flex:none}
+  .floor .tag{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none;color:var(--faint)}
   .floor .now .tag{color:var(--good)}
-  .floor .mv{background:none;border:0;color:var(--faint);padding:0 3px;font-size:12px;line-height:1;cursor:pointer}
+  .floor .mv{background:none;border:0;color:var(--faint);padding:0 3px;font-size:13.5px;line-height:1;cursor:pointer}
   .floor .mv:hover{color:var(--text)}
   .floor .mv:first-of-type{margin-left:auto}
-  .floor select{width:100%;font-size:12px;padding:4px 6px;margin-top:6px}
-  .floor .note{color:var(--faint);font-size:11.5px;line-height:1.45;margin:6px 2px 0}
+  .floor select{width:100%;font-size:13.5px;padding:4px 6px;margin-top:6px}
+  .floor .note{color:var(--faint);font-size:13px;line-height:1.45;margin:6px 2px 0}
   .floor .note a{color:var(--dim)}
-  .chip{display:flex;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--accent);border-radius:7px;padding:5px 9px;font-size:12.5px}
+  .chip{display:flex;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--accent);border-radius:7px;padding:5px 9px;font-size:14px}
   .chip b{color:var(--accent)}
-  .chip button{border:0;background:none;color:var(--dim);padding:0 3px;font-size:14px;line-height:1}
-  .headlink{color:var(--dim);text-decoration:none;font-size:12px;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
+  .chip button{border:0;background:none;color:var(--dim);padding:0 3px;font-size:15px;line-height:1}
+  .headlink{color:var(--dim);text-decoration:none;font-size:13.5px;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
   .headlink:hover{border-color:var(--accent);color:var(--text)}
 
   /* ------------------------------------------------------------ the conversation
@@ -160,12 +172,12 @@
   .feed{flex:1;overflow-y:auto;overflow-x:hidden;padding:22px 20px 6px;min-height:340px}
   .feed .col{max-width:860px;margin:0 auto}
   .av{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;
-    font-weight:650;font-size:14px;user-select:none;
+    font-weight:650;font-size:15px;user-select:none;
     background:hsl(var(--h,0) 42% 30%);color:hsl(var(--h,0) 85% 92%);box-shadow:inset 0 0 0 1px hsl(var(--h,0) 55% 48% / .55)}
   .av.hu{background:var(--text);color:var(--bg);box-shadow:none}
   .av[data-who]{cursor:pointer;transition:transform .12s}
   .av[data-who]:hover{transform:scale(1.08)}
-  .av.two{font-size:12.5px;letter-spacing:-.02em}
+  .av.two{font-size:14px;letter-spacing:-.02em}
   .av.pic{background:none;box-shadow:inset 0 0 0 1px var(--line);padding:0;overflow:hidden}
   .av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
   .av.sm.two{font-size:9px}
@@ -180,29 +192,29 @@
   #dlgAvatar .sw{display:flex;gap:6px;flex-wrap:wrap}
   #dlgAvatar .sw button{width:26px;height:26px;border-radius:50%;padding:0;border:2px solid transparent;background:hsl(var(--h) 42% 30%)}
   #dlgAvatar .sw button.on{border-color:var(--text)}
-  #dlgAvatar label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+  #dlgAvatar label{font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
   #dlgAvatar input[type=range]{padding:0;accent-color:var(--text)}
-  .av.sm{width:20px;height:20px;font-size:10px}
+  .av.sm{width:20px;height:20px;font-size:11.5px}
   .av.xs{width:15px;height:15px;font-size:8.5px;margin-left:-4px;box-shadow:0 0 0 1.5px var(--bg)}
   .msg{display:flex;gap:12px;padding:2px 0;margin-top:16px;position:relative}
   .msg.grouped{margin-top:1px}
   .msg .gut{width:34px;flex:none;padding-top:2px}
   .msg .main{min-width:0;flex:1}
   .msg .h{display:flex;gap:8px;align-items:baseline;margin-bottom:4px;flex-wrap:wrap}
-  .msg .who{font-weight:650;font-size:13.5px;letter-spacing:-.005em}
-  .msg .role{color:var(--faint);font-size:11.5px}
-  .msg .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:0 7px}
-  .msg .when{margin-left:2px;color:var(--faint);font-size:11px;opacity:0;transition:opacity .15s}
+  .msg .who{font-weight:650;font-size:15px;letter-spacing:-.005em}
+  .msg .role{color:var(--faint);font-size:13px}
+  .msg .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .msg .when{margin-left:2px;color:var(--faint);font-size:12.5px;opacity:0;transition:opacity .15s}
   .msg:hover .when{opacity:1}
   .msg .bw{position:relative;display:inline-block;max-width:100%}
   .msg .b{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 14px;background:var(--panel);
-    border-radius:5px 17px 17px 17px;font-size:14.5px;line-height:1.62;transition:background .15s}
+    border-radius:5px 17px 17px 17px;font-size:15.5px;line-height:1.62;transition:background .15s}
   .msg.grouped .b{border-radius:17px}
   .msg:hover .b{background:var(--panel2)}
   .msg.me{justify-content:flex-end}
   .msg.me .main{display:flex;flex-direction:column;align-items:flex-end}
   .msg.me .bw{max-width:80%}
-  .msg.me .b,.msg.me:hover .b{background:var(--text);color:var(--bg);border-radius:18px 18px 5px 18px}
+  .msg.me .b,.msg.me:hover .b{background:var(--accent);color:var(--on-accent);border-radius:18px 18px 5px 18px}
   .msg.me.grouped .b{border-radius:18px}
   .msg.me .b .mention{color:inherit;text-decoration:underline;text-underline-offset:2px}
   .msg.me .b code{background:rgba(127,127,127,.28);color:inherit}
@@ -212,14 +224,14 @@
   .msg.k-decision .b{box-shadow:inset 3px 0 0 var(--good)}
   .msg.k-question .b{box-shadow:inset 3px 0 0 var(--bad)}
   .msg.k-handoff .b{box-shadow:inset 3px 0 0 var(--human)}
-  .msg.k-status .b{background:transparent;border:1px dashed var(--line);color:var(--dim);font-size:13.5px}
+  .msg.k-status .b{background:transparent;border:1px dashed var(--line);color:var(--dim);font-size:15px}
   .msg .b .mention{color:var(--text);font-weight:600;background:var(--panel2);border-radius:5px;padding:0 3px}
   .msg .b strong.hd{display:block;font-size:15px;margin-top:4px}
   .msg .b a{color:var(--text);text-underline-offset:2px}
   .msg .b img,.msg .b video{max-width:100%;border-radius:10px;margin-top:7px;display:block;border:1px solid var(--line)}
   .msg .b audio{width:100%;margin-top:7px}
   .msg.saying .b{box-shadow:inset 3px 0 0 var(--accent)}
-  .msg .rl{font-size:11.5px;color:var(--faint);margin-bottom:4px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .msg .rl{font-size:13px;color:var(--faint);margin-bottom:4px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .msg .rl:hover{color:var(--dim)}
   .msg.flash .b{animation:flash 1.2s ease-out}
   @keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--accent)}100%{box-shadow:0 0 0 2px transparent}}
@@ -231,14 +243,14 @@
     opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity .12s,transform .12s}
   .msg:hover .tools,.msg .tools:focus-within{opacity:1;transform:none;pointer-events:auto}
   .msg.me .tools{right:auto;left:8px}
-  .msg .tools button{background:none;border:0;padding:3px 7px;border-radius:8px;font-size:13px;line-height:1.25;color:var(--dim);transition:transform .1s,background .1s}
+  .msg .tools button{background:none;border:0;padding:3px 7px;border-radius:8px;font-size:14.5px;line-height:1.25;color:var(--dim);transition:transform .1s,background .1s}
   .msg .tools button:hover{background:var(--panel);color:var(--text);transform:scale(1.18)}
-  .msg .tools .askBtn{font-size:11.5px}
+  .msg .tools .askBtn{font-size:13px}
   .msg .tools .askBtn:hover{transform:none}
 
-  .msg .rx{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px;font-size:11.5px;color:var(--faint)}
+  .msg .rx{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px;font-size:13px;color:var(--faint)}
   .msg.me .rx{justify-content:flex-end}
-  .msg .rx .r{border:1px solid var(--line);border-radius:20px;padding:1px 9px;background:var(--panel);color:var(--dim);font-size:12.5px;
+  .msg .rx .r{border:1px solid var(--line);border-radius:20px;padding:1px 9px;background:var(--panel);color:var(--dim);font-size:14px;
     transition:transform .1s,border-color .1s}
   .msg .rx .r:hover{transform:translateY(-1px);border-color:var(--accent)}
   .msg .rx .r.mine{border-color:var(--text);color:var(--text);background:var(--panel2)}
@@ -246,7 +258,7 @@
   .msg .rx .seen .av:first-of-type{margin-left:3px}
 
   .sys{display:flex;justify-content:center;margin:14px 0 4px}
-  .sys span{font-size:11.5px;color:var(--faint);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  .sys span{font-size:13px;color:var(--faint);background:var(--panel);border:1px solid var(--line);border-radius:14px;
     padding:3px 13px;max-width:82%;text-align:center;line-height:1.5}
 
   @keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
@@ -262,25 +274,25 @@
   @keyframes breathe{0%,100%{box-shadow:0 0 0 0 hsl(var(--h,0) 60% 55% / .55)}50%{box-shadow:0 0 0 6px hsl(var(--h,0) 60% 55% / 0)}}
 
   pre.code{position:relative;margin:8px 0;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;
-    overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;white-space:pre;color:var(--text)}
+    overflow:auto;font-family:var(--mono);font-size:14px;line-height:1.55;white-space:pre;color:var(--text)}
   pre.code code{background:none;padding:0;font-size:inherit}
-  pre.code .copy{position:absolute;top:6px;right:6px;font-size:11px;padding:2px 9px;opacity:0;transition:opacity .12s}
+  pre.code .copy{position:absolute;top:6px;right:6px;font-size:12.5px;padding:2px 9px;opacity:0;transition:opacity .12s}
   pre.code:hover .copy{opacity:1}
 
   .hero{text-align:center;padding:8vh 20px 26px;animation:rise .35s ease-out}
   .hero .faces{display:flex;justify-content:center;margin-bottom:18px;min-height:44px}
   .hero .faces .av{width:44px;height:44px;font-size:18px;margin-left:-9px;box-shadow:0 0 0 3px var(--bg)}
   .hero .faces .av:first-child{margin-left:0}
-  .hero h3{font-family:var(--serif);font-weight:500;font-size:27px;margin:0 0 8px;letter-spacing:-.015em}
-  .hero p{color:var(--dim);max-width:470px;margin:0 auto 22px;font-size:14.5px}
+  .hero h3{font-family:var(--sans);font-weight:650;letter-spacing:-.02em;font-size:27px;margin:0 0 8px;letter-spacing:-.015em}
+  .hero p{color:var(--dim);max-width:470px;margin:0 auto 22px;font-size:15.5px}
   .hero .starts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
   .hero .starts button,.hero .starts a{padding:11px 15px;border-radius:13px;background:var(--panel);border:1px solid var(--line);color:var(--text);
-    text-align:left;max-width:250px;font-size:13.5px;text-decoration:none;transition:transform .14s,border-color .14s,background .14s}
+    text-align:left;max-width:250px;font-size:15px;text-decoration:none;transition:transform .14s,border-color .14s,background .14s}
   .hero .starts button:hover,.hero .starts a:hover{transform:translateY(-3px);border-color:var(--accent);background:var(--panel2)}
-  .hero .starts small{display:block;color:var(--faint);font-size:11.5px;margin-top:3px}
+  .hero .starts small{display:block;color:var(--faint);font-size:13px;margin-top:3px}
 
   .latest{position:sticky;bottom:10px;height:0;display:flex;justify-content:center;pointer-events:none;z-index:4}
-  .latest button{pointer-events:auto;transform:translateY(-38px);border-radius:20px;padding:6px 15px;font-size:12.5px;
+  .latest button{pointer-events:auto;transform:translateY(-38px);border-radius:20px;padding:6px 15px;font-size:14px;
     background:var(--text);color:var(--bg);border-color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.4)}
   .latest button[hidden]{display:none}
 
@@ -292,9 +304,9 @@
   .floor .wait[draggable=true]:hover{background:var(--panel2)}
   .floor .wait.drag{opacity:.35}
   .floor .wait.over{box-shadow:inset 0 2px 0 var(--text)}
-  .floor .grip{color:var(--faint);font-size:11px;letter-spacing:-2px;opacity:0;transition:opacity .12s;margin-left:auto}
+  .floor .grip{color:var(--faint);font-size:12.5px;letter-spacing:-2px;opacity:0;transition:opacity .12s;margin-left:auto}
   .floor .wait:hover .grip{opacity:1}
-  .agent{gap:7px;padding:2px 0;font-size:12px;min-width:0}
+  .agent{gap:7px;padding:2px 0;font-size:13.5px;min-width:0}
   .agent>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
   .agent>span:nth-child(3){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 0;min-width:0}
   .agent .av{position:relative;overflow:visible}
@@ -324,7 +336,7 @@
 <main>
   <aside>
     <input id="search" placeholder="Search everything ever said" autocomplete="off"
-      style="margin-bottom:10px;font-size:12.5px;padding:6px 9px">
+      style="margin-bottom:10px;font-size:14px;padding:6px 9px">
     <div id="results"></div>
     <div id="context"></div>
     <h2>Speaking</h2>
@@ -356,7 +368,7 @@
           </span>
           <span class="chip" id="oneToOne" style="display:none">
             talking with <b id="oneToOneWith"></b> — the others are holding
-            <button id="openFloor" title="End the one-to-one and let the others answer" style="font-size:12px;color:var(--text)">open the floor</button>
+            <button id="openFloor" title="End the one-to-one and let the others answer" style="font-size:13.5px;color:var(--text)">open the floor</button>
           </span>
         </div>
 
@@ -423,7 +435,7 @@
       <button id="avUpload" type="button">Use a picture…</button>
       <button id="avNoPic" type="button" hidden>Remove the picture</button>
       <input type="file" id="avFile" accept="image/png,image/jpeg,image/webp" hidden>
-      <span style="color:var(--faint);font-size:11.5px">shrunk to a thumbnail before it is saved</span>
+      <span style="color:var(--faint);font-size:13px">shrunk to a thumbnail before it is saved</span>
     </div>
     <div class="row" style="justify-content:flex-end">
       <button id="avReset" style="margin-right:auto" title="Back to its initials and its own colour">Reset</button>
@@ -437,7 +449,7 @@
   <h3>Who are you?</h3>
   <div class="fields">
     <input id="meName" placeholder="your handle, no spaces (e.g. rakim)" autocomplete="off">
-    <p style="color:var(--dim);font-size:12px;margin:0">
+    <p style="color:var(--dim);font-size:13.5px;margin:0">
       You join as a human, which means agents cannot answer questions addressed to you,
       and you can overrule the room when it deadlocks.
     </p>
@@ -466,7 +478,7 @@
     <input id="searchQ" placeholder="What to look up" autocomplete="off">
     <div id="searchOut" style="max-height:300px;overflow:auto"></div>
     <div class="row" style="justify-content:flex-end">
-      <span id="searchMsg" style="color:var(--dim);font-size:12px;flex:1"></span>
+      <span id="searchMsg" style="color:var(--dim);font-size:13.5px;flex:1"></span>
       <button id="searchClose">Close</button>
       <button class="primary" id="searchGo">Search</button>
     </div>
@@ -478,11 +490,11 @@
   <div class="fields">
     <textarea id="swarmGoal" rows="3" placeholder="The whole job. It gets split into pieces and run in parallel."></textarea>
     <div class="row">
-      <label style="color:var(--dim);font-size:12px;display:flex;gap:7px;align-items:center;margin:0">
+      <label style="color:var(--dim);font-size:13.5px;display:flex;gap:7px;align-items:center;margin:0">
         pieces <input id="swarmN" type="number" min="2" max="8" value="4" style="width:64px">
       </label>
       <select id="swarmSeat" style="width:auto"></select>
-      <span id="swarmMsg" style="color:var(--dim);font-size:12px;flex:1"></span>
+      <span id="swarmMsg" style="color:var(--dim);font-size:13.5px;flex:1"></span>
     </div>
     <div class="row" style="justify-content:flex-end">
       <button id="swarmCancel">Cancel</button>
@@ -500,10 +512,10 @@
         <option value="video">Video</option>
         <option value="audio">Audio</option>
       </select>
-      <span class="hint" id="genNote" style="color:var(--dim);font-size:12px"></span>
+      <span class="hint" id="genNote" style="color:var(--dim);font-size:13.5px"></span>
     </div>
     <textarea id="genPrompt" rows="4" placeholder="Describe it. The generator sees only this text, not the conversation."></textarea>
-    <p class="hint" id="genHint" style="color:var(--dim);font-size:12px;margin:0"></p>
+    <p class="hint" id="genHint" style="color:var(--dim);font-size:13.5px;margin:0"></p>
     <div class="row" style="justify-content:flex-end">
       <button id="genCancel">Cancel</button>
       <button class="primary" id="genGo">Create</button>
@@ -713,8 +725,8 @@ function renderIdeas() {
   $('#roster').innerHTML = o.roster.map((a) => `
     <div class="agent"><span class="avw">${avatar(a.name, a.kind, 'sm')}<span class="dot ${esc(a.status)}"></span></span>
       <span style="font-weight:${a.kind === 'human' ? 650 : 500}">${esc(a.name)}</span>
-      <span style="color:var(--faint);font-size:11px">${esc(a.role)}</span>
-      ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:10px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
+      <span style="color:var(--faint);font-size:12.5px">${esc(a.role)}</span>
+      ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:11.5px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
     </div>`).join('') || '<div class="empty">Nobody has joined.</div>';
 
   // The destination lives on the chip above the box now; this line is for what
@@ -730,7 +742,7 @@ function renderFloor() {
   if (!f || (!f.holder && !f.queue.length)) { el.innerHTML = ''; return; }
   const line = (q, cls) => `<div class="${cls}">
       <span>${esc(q.agent)}</span>
-      ${q.reason ? `<span style="color:var(--faint);font-size:11.5px">${esc(q.reason)}</span>` : ''}
+      ${q.reason ? `<span style="color:var(--faint);font-size:13px">${esc(q.reason)}</span>` : ''}
       <span class="u ${esc(q.urgency)}">${esc(q.urgency)}</span>
     </div>`;
   el.innerHTML =
@@ -1912,7 +1924,7 @@ $('#searchGo').addEventListener('click', async () => {
         <b>${esc(r.title || r.url)}</b>
         <span>${esc(r.url)}</span>
         ${r.snippet ? `<span style="color:var(--dim);display:block;margin-top:3px">${esc(r.snippet.slice(0, 180))}</span>` : ''}
-      </div>`).join('') || '<p style="color:var(--faint);font-size:12.5px">Nothing came back.</p>';
+      </div>`).join('') || '<p style="color:var(--faint);font-size:14px">Nothing came back.</p>';
     $('#searchOut').onclick = (e) => {
       const hit = e.target.closest('[data-i]');
       if (!hit) return;
@@ -2354,6 +2366,7 @@ function listen() {
 }
 
 collapsiblePanel({ el: '#ctx', name: 'ctx', title: 'context panel' });
+collapsiblePanel({ el: 'main>aside', name: 'room', title: 'room panel — who is speaking, who is here, search', startClosed: true });
 
 if (state.me) $('#meLabel').textContent = state.me;
 // How everybody is drawn, before anything is: a face that changes after the

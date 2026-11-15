@@ -8,21 +8,21 @@
 <link rel="stylesheet" href="/theme.css">
 <style>
   /* The machine the agents work on, laid out as one: a desktop, icons, a taskbar. */
-  #desk{flex:1;min-width:0;height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden;
+  #desk{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden;
     background:
       radial-gradient(900px 520px at 78% 12%, color-mix(in srgb,var(--accent) 16%,transparent), transparent 70%),
       radial-gradient(700px 480px at 12% 88%, color-mix(in srgb,var(--good) 10%,transparent), transparent 70%),
       var(--bg)}
-  #top{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:12.5px;color:var(--dim)}
-  #top h1{font-family:var(--serif);font-weight:500;font-size:19px;margin:0;color:var(--text);letter-spacing:-.01em}
-  #top .state{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--good);border-radius:20px;padding:1px 9px;color:var(--good)}
+  #top{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:14px;color:var(--dim)}
+  #top h1{font-family:var(--sans);font-weight:650;letter-spacing:-.02em;font-size:19px;margin:0;color:var(--text);letter-spacing:-.01em}
+  #top .state{font-size:12px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--good);border-radius:20px;padding:1px 9px;color:var(--good)}
   #top .state.off{color:var(--bad);border-color:var(--bad)} #top .state.wait{color:var(--warn);border-color:var(--warn)}
   #top code{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   #surface{flex:1;min-height:0;overflow:auto;padding:8px 14px 14px;display:flex;gap:28px;align-items:flex-start}
   .icons{display:grid;grid-template-rows:repeat(auto-fill,96px);grid-auto-flow:column;grid-auto-columns:96px;gap:4px;height:100%;flex:none}
   .icons.files{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,96px);grid-template-rows:none;grid-auto-rows:96px;flex:1;height:auto;align-content:start}
   .ic{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;padding:10px 4px 6px;border:1px solid transparent;border-radius:10px;
-    background:none;color:var(--text);font:inherit;font-size:12px;cursor:default;text-align:center;user-select:none;height:92px;position:relative}
+    background:none;color:var(--text);font:inherit;font-size:13.5px;cursor:default;text-align:center;user-select:none;height:92px;position:relative}
   .ic:hover{background:color-mix(in srgb,var(--text) 6%,transparent);border-color:color-mix(in srgb,var(--text) 10%,transparent)}
   .ic:focus-visible{outline:2px solid var(--accent)}
   .ic .g{width:44px;height:44px;border-radius:11px;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25);flex:none}
@@ -33,21 +33,21 @@
   .ic .new{position:absolute;top:6px;right:14px;width:9px;height:9px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--bg)}
   .ic.fresh{animation:pop .5s cubic-bezier(.2,.8,.3,1.2)}
   @keyframes pop{from{transform:scale(.6);opacity:0}}
-  .hint{color:var(--faint);font-size:12.5px;line-height:1.6;max-width:340px;padding:14px 6px}
+  .hint{color:var(--faint);font-size:14px;line-height:1.6;max-width:340px;padding:14px 6px}
   #bar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--line);
     background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px);position:relative;z-index:62}
   #bar .apps{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto}
-  #bar button.tb{display:flex;align-items:center;gap:7px;padding:6px 11px;font-size:12.5px;background:none;border:1px solid transparent;border-radius:8px;color:var(--dim);white-space:nowrap;position:relative}
+  #bar button.tb{display:flex;align-items:center;gap:7px;padding:6px 11px;font-size:14px;background:none;border:1px solid transparent;border-radius:8px;color:var(--dim);white-space:nowrap;position:relative}
   #bar button.tb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
   #bar button.tb:hover{background:var(--panel2);color:var(--text)}
   #bar button.tb.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
   #bar button.tb.on::after{content:'';position:absolute;left:30%;right:30%;bottom:-1px;height:2px;border-radius:2px;background:var(--accent)}
-  #bar .busy{font-size:11.5px;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 8px;border-radius:7px}
+  #bar .busy{font-size:13px;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 8px;border-radius:7px}
   #bar .busy:hover{background:var(--panel2)}
   #bar .busy i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
   #bar .busy.on i{background:var(--good);animation:blink 1.4s ease-in-out infinite}
   @keyframes blink{50%{opacity:.25}}
-  #bar .clock{font-size:11.5px;color:var(--dim);text-align:right;line-height:1.25;font-variant-numeric:tabular-nums;padding:0 6px;white-space:nowrap}
+  #bar .clock{font-size:13px;color:var(--dim);text-align:right;line-height:1.25;font-variant-numeric:tabular-nums;padding:0 6px;white-space:nowrap}
   @media (max-width:700px){.icons{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,84px);grid-template-rows:none;height:auto} #surface{flex-direction:column} #bar .clock{display:none}}
 </style>
 </head>

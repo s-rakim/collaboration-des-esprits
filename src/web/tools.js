@@ -33,7 +33,7 @@ const CSS = `
 #tools.moving{user-select:none;transition:none;opacity:.96}
 @keyframes tools-in{from{opacity:0;transform:translateY(10px) scale(.985)}}
 #tools .tbar{display:flex;align-items:center;gap:4px;padding:6px 8px 6px 10px;border-bottom:1px solid var(--line);background:var(--panel);cursor:move;touch-action:none}
-#tools .tbar .ttl{font-size:11px;color:var(--faint);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#tools .tbar .ttl{font-size:12.5px;color:var(--faint);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 @media (max-width:700px){#tools{left:8px!important;right:8px!important;top:auto!important;bottom:8px!important;width:auto!important;height:60vh!important;resize:none}}
 
 /* The browser: a second small window, moved and sized like the terminal. */
@@ -48,32 +48,32 @@ const CSS = `
 
 /* The way in to both: tabs on the right-hand edge of every page. */
 #edge-tabs{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:59;display:flex;flex-direction:column;gap:6px}
-#edge-tabs button{writing-mode:vertical-rl;padding:14px 7px;font-size:12px;letter-spacing:.04em;color:var(--dim);
+#edge-tabs button{writing-mode:vertical-rl;padding:14px 7px;font-size:13.5px;letter-spacing:.04em;color:var(--dim);
   background:var(--panel);border:1px solid var(--line);border-right:0;border-radius:9px 0 0 9px;cursor:pointer;
   transition:padding .12s ease,color .12s ease,background .12s ease}
 #edge-tabs button:hover{padding-right:12px;color:var(--text);background:var(--panel2)}
 #edge-tabs button.on{color:var(--bg);background:var(--text);border-color:var(--text)}
-@media (max-width:700px){#edge-tabs button{padding:10px 5px;font-size:11px}}
+@media (max-width:700px){#edge-tabs button{padding:10px 5px;font-size:12.5px}}
 #dock .nav{cursor:move;touch-action:none;display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
-#dock .nav button{padding:4px 9px;font-size:13px;line-height:1.2;background:none;border-color:transparent;color:var(--dim)}
+#dock .nav button{padding:4px 9px;font-size:14.5px;line-height:1.2;background:none;border-color:transparent;color:var(--dim)}
 #dock .nav button:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}
 #dock .nav form{flex:1;min-width:0;display:flex}
-#dock .nav input{flex:1;min-width:0;border-radius:20px;padding:5px 13px;font-size:12.5px;background:var(--bg)}
-#dock .who{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:11.5px;color:var(--faint);border-bottom:1px solid var(--line);min-height:26px}
+#dock .nav input{flex:1;min-width:0;border-radius:20px;padding:5px 13px;font-size:14px;background:var(--bg)}
+#dock .who{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:13px;color:var(--faint);border-bottom:1px solid var(--line);min-height:26px}
 #dock .who b{color:var(--dim);font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #dock .who .lamp{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
 #dock .who .lamp.on{background:var(--good)}
-#dock .err{color:var(--bad);font-size:12px;padding:5px 12px}
+#dock .err{color:var(--bad);font-size:13.5px;padding:5px 12px}
 #dock .err:empty{display:none}
 #dock .view{flex:1;min-height:0;overflow:auto;background:var(--panel);display:flex;align-items:flex-start;justify-content:center}
 #dock .view img{width:100%;display:block;cursor:pointer;user-select:none;-webkit-user-drag:none}
 #dock .view.busy img{opacity:.75}
-#dock .hello{align-self:center;text-align:center;padding:30px;max-width:420px;color:var(--dim);font-size:13.5px;line-height:1.6}
-#dock .hello h4{font-family:var(--serif);font-weight:500;font-size:20px;color:var(--text);margin:0 0 8px}
+#dock .hello{align-self:center;text-align:center;padding:30px;max-width:420px;color:var(--dim);font-size:15px;line-height:1.6}
+#dock .hello h4{font-family:var(--sans);font-weight:650;letter-spacing:-.02em;font-size:20px;color:var(--text);margin:0 0 8px}
 #dock .hello button{margin-top:14px}
 #dock .type{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel)}
-#dock .type input{flex:1;font-size:12.5px}
-#dock details{border-top:1px solid var(--line);font-size:12px;max-height:38vh;overflow:auto}
+#dock .type input{flex:1;font-size:14px}
+#dock details{border-top:1px solid var(--line);font-size:13.5px;max-height:38vh;overflow:auto}
 #dock summary{padding:7px 12px;cursor:pointer;color:var(--dim);user-select:none}
 #dock .text{white-space:pre-wrap;color:var(--dim);line-height:1.5;padding:0 12px 10px}
 #dock .visits div{padding:5px 12px;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
@@ -85,54 +85,54 @@ const CSS = `
 .split.x::after{width:1px;height:100%} .split.y::after{height:1px;width:100%}
 .split:hover::after,.split.dragging::after{background:var(--accent)}
 .split.x:hover::after,.split.x.dragging::after{width:3px} .split.y:hover::after,.split.y.dragging::after{height:3px}
-#tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}
+#tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:14.5px;cursor:pointer}
 #tools .tbar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
 #tools .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
 #tools .pane{flex:1;min-height:0;display:none;flex-direction:column}
 #tools .pane.on{display:flex}
-#tools .where{padding:8px 12px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#tools .where{padding:8px 12px;font-size:13.5px;color:var(--dim);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #tools .where code{color:var(--text);overflow-wrap:anywhere}
-#tools .where button,#tools .where label{font-size:11.5px;white-space:nowrap}
+#tools .where button,#tools .where label{font-size:13px;white-space:nowrap}
 #tools .scroll{flex:1;min-height:0;overflow:auto;padding:10px 12px}
 #tools .trun{margin-bottom:12px}
-#tools .trun .cmd{font-family:var(--mono);font-size:12.5px;color:var(--text);overflow-wrap:anywhere}
+#tools .trun .cmd{font-family:var(--mono);font-size:14px;color:var(--text);overflow-wrap:anywhere}
 #tools .trun .cmd b{color:var(--faint);font-weight:400}
-#tools .trun .who{font-size:11px;color:var(--faint);margin-left:6px}
+#tools .trun .who{font-size:12.5px;color:var(--faint);margin-left:6px}
 #tools .trun .who.agent{color:var(--warn)}
 #tools .trun pre{margin:4px 0 0;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  font-family:var(--mono);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;color:var(--dim)}
-#tools .trun .code{font-size:11px;color:var(--faint)}
+  font-family:var(--mono);font-size:13.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;color:var(--dim)}
+#tools .trun .code{font-size:12.5px;color:var(--faint)}
 #tools .trun .code.bad{color:var(--bad)}
 #tools .in{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--panel)}
-#tools .in input{flex:1;font-family:var(--mono);font-size:13px}
-#tools .empty{color:var(--faint);font-size:12.5px;padding:14px 2px;line-height:1.55}
-#tools .err{color:var(--bad);font-size:12px;padding:6px 12px}
-#tools .page h4{margin:0 0 2px;font-size:14px}
-#tools .page a{color:var(--dim);font-size:11.5px;overflow-wrap:anywhere}
+#tools .in input{flex:1;font-family:var(--mono);font-size:14.5px}
+#tools .empty{color:var(--faint);font-size:14px;padding:14px 2px;line-height:1.55}
+#tools .err{color:var(--bad);font-size:13.5px;padding:6px 12px}
+#tools .page h4{margin:0 0 2px;font-size:15px}
+#tools .page a{color:var(--dim);font-size:13px;overflow-wrap:anywhere}
 #tools .page img{width:100%;border:1px solid var(--line);border-radius:8px;margin:10px 0;display:block}
-#tools .page .text{font-size:12.5px;color:var(--dim);white-space:pre-wrap;line-height:1.5;max-height:240px;overflow:auto;
+#tools .page .text{font-size:14px;color:var(--dim);white-space:pre-wrap;line-height:1.5;max-height:240px;overflow:auto;
   border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel)}
-#tools .visits{margin-top:14px;font-size:12px}
+#tools .visits{margin-top:14px;font-size:13.5px}
 #tools .visits div{padding:4px 0;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
 #tools .visits b{color:var(--text);font-weight:550}
-#tools .where select{width:auto;font-size:12px;padding:2px 6px}
+#tools .where select{width:auto;font-size:13.5px;padding:2px 6px}
 #tools input[type=checkbox]{width:auto;margin:0 4px 0 0;vertical-align:-2px}
 #tools .where label{display:inline-flex;align-items:center}
-#tools .where .state{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:20px;padding:1px 8px;color:var(--good);border-color:var(--good)}
+#tools .where .state{font-size:12px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:20px;padding:1px 8px;color:var(--good);border-color:var(--good)}
 #tools .where .state.off{color:var(--bad);border-color:var(--bad)}
 #tools .where .state.wait{color:var(--warn);border-color:var(--warn)}
-#tools .warn{padding:10px 12px;font-size:12.5px;line-height:1.55;color:var(--dim);border-bottom:1px solid var(--line)}
+#tools .warn{padding:10px 12px;font-size:14px;line-height:1.55;color:var(--dim);border-bottom:1px solid var(--line)}
 #tools .warn b{color:var(--text)}
 #tools .warn .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
-#tools .warn a{color:var(--faint);font-size:11.5px;cursor:pointer;text-decoration:underline}
-#tools .file{display:flex;gap:8px;align-items:baseline;padding:4px 2px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;cursor:pointer;color:var(--dim)}
+#tools .warn a{color:var(--faint);font-size:13px;cursor:pointer;text-decoration:underline}
+#tools .file{display:flex;gap:8px;align-items:baseline;padding:4px 2px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13.5px;cursor:pointer;color:var(--dim)}
 #tools .file:hover{color:var(--text)}
 #tools .file.heavy,#tools .file.link{cursor:default;color:var(--faint)}
-#tools .file span{margin-left:auto;color:var(--faint);font-size:11px;white-space:nowrap}
+#tools .file span{margin-left:auto;color:var(--faint);font-size:12.5px;white-space:nowrap}
 #tools .view{margin:8px 0 12px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  font-family:var(--mono);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;color:var(--text)}
+  font-family:var(--mono);font-size:13.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;color:var(--text)}
 #tools .out{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-top:1px solid var(--line);background:var(--panel)}
-#tools .out .say{font-size:12px;color:var(--dim);flex-basis:100%;overflow-wrap:anywhere}
+#tools .out .say{font-size:13.5px;color:var(--dim);flex-basis:100%;overflow-wrap:anywhere}
 #tools .out .say.err{color:var(--bad)} #tools .out .say.ok{color:var(--good)}
 `;
 
@@ -163,11 +163,11 @@ function build() {
       <div class="where" id="fWhere"></div>
       <div class="scroll" id="fList"></div>
       <div class="out">
-        <a class="primary" id="fZip" style="text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--line);font-size:13px" download>Download as a zip</a>
+        <a class="primary" id="fZip" style="text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--line);font-size:14.5px" download>Download as a zip</a>
         <button id="fCopy">Copy to a folder on this computer…</button>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           <button id="fOpen" title="Open this folder in your code editor">Open in editor</button>
-          <select id="fEditor" style="width:auto;font-size:12px;padding:5px 6px" title="Which editor"></select>
+          <select id="fEditor" style="width:auto;font-size:13.5px;padding:5px 6px" title="Which editor"></select>
         </span>
         <div class="say" id="fSay"></div>
       </div>
@@ -380,7 +380,7 @@ async function refreshTerminal(all = false) {
          <div class="row"><button id="sTight" class="primary">Stop running without a sandbox</button><button id="sCheck">Check for a sandbox again</button></div>`
       : `<b>Nothing can be run yet.</b> ${esc(sb.why)}. Work here runs in a sandbox — a container that sees one folder and nothing else on this computer — and there is no engine to make one.
          <div class="row"><button id="sLink" class="primary">Link a folder on this computer</button><button id="sCheck">Check again</button><a id="sLoose">run anywhere without a sandbox</a></div>
-         <div style="margin-top:8px;color:var(--faint);font-size:11.5px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
+         <div style="margin-top:8px;color:var(--faint);font-size:13px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
   root.querySelector('#tTitle').textContent = sb.dir;
   root.querySelector('#tCmd').placeholder = sb.isolated ? "a command, run on the Agents' PC — or pc help"
     : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer — or pc help`
@@ -398,7 +398,7 @@ async function refreshTerminal(all = false) {
       <div class="trun">
         <div class="cmd"><b>$</b> ${esc(r.command)}<span class="who ${esc(r.kind)}">${esc(r.by)}${r.thread ? ` · thread ${r.thread}` : ''}</span></div>
         ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}
-        <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? `running… <button data-stop="${r.id}" style="padding:0 8px;font-size:11px;margin-left:6px">Stop</button>` : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
+        <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? `running… <button data-stop="${r.id}" style="padding:0 8px;font-size:12.5px;margin-left:6px">Stop</button>` : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
       </div>`).join('')
     : `<p class="empty">Nothing has been run yet.<br>This is the same terminal the agents use: what you run here they can see,
        and what they run appears here with their name on it. What gets made stays on the Agents' PC until you export it — watch it appear in the Explorer.</p>`;

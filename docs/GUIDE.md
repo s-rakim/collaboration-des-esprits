@@ -48,7 +48,7 @@ with a version the room was not written for.
 
 ### Add your agents
 
-Go to **Setup** (the gear in the rail, or `/setup`).
+Go to **Setup** (the tab in the top bar, or `/setup`).
 
 1. Under **Connections**, add a row per key. The fastest way is the paste box:
    paste the provider's own example snippet (the Python or curl one from their
@@ -181,7 +181,7 @@ agent saying "starting thread 1" in the lobby has not started anything.
    thread something; run one again. The coordinator's report says what was
    built and what was not.
 
-### The tools (tabs on the right-hand edge, and in the rail)
+### The tools (tabs on the right-hand edge)
 
 | Tool | Where it appears | Shortcut |
 |---|---|---|
@@ -206,7 +206,7 @@ Agents reach it from the lobby and from every thread, and so do you.
 - **The tabs on the right-hand edge of every page** — *Agents' PC*, *Terminal*,
   *Browser*, *Explorer*. Each opens a small window you can drag by its bar,
   resize by its corner, and leave open while you carry on in the chat.
-- **Desktop** in the left rail (`/pc`) — the same PC as a whole page: icons
+- The **Agents' PC** tab in the top bar (`/pc`) — the same PC as a whole page: icons
   for every program, the folder's files on the desktop, and a taskbar showing
   what is open and what is running.
 
@@ -490,7 +490,7 @@ Find the symptom; the fix is beside it.
 |---|---|
 | "Firefox is not on this computer" | Install Firefox. If it is installed somewhere unusual, set `ESPRITS_FIREFOX` to the full path of `firefox.exe` and restart. |
 | `Firefox started but did not open its control port` | Another program is using port 9222. Set `ESPRITS_FIREFOX_PORT` to another number and restart. |
-| The picture does not update | Close and reopen the Browser from the rail. |
+| The picture does not update | Close and reopen the Browser from its tab on the right edge. |
 | Clicking the picture does nothing | Make sure Firefox is current; very old versions lack the control this uses. |
 
 ### Other devices (`npm run serve`)

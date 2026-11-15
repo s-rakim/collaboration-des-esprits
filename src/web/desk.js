@@ -25,17 +25,17 @@ const CSS = `
 .fwin.moving{user-select:none;opacity:.96}
 .fwin.front{z-index:61}
 .fwin .tbar{display:flex;align-items:center;gap:8px;padding:7px 8px 7px 12px;border-bottom:1px solid var(--line);background:var(--panel);cursor:move;touch-action:none;flex:none}
-.fwin .tbar .name{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap}
-.fwin .tbar .ttl{font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;flex:1;min-width:0}
+.fwin .tbar .name{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap}
+.fwin .tbar .ttl{font-size:12.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;flex:1;min-width:0}
 .fwin .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:0 8px;line-height:1}
 .fwin .tbar .x:hover{color:var(--text)}
-.fwin button{font-size:12px}
+.fwin button{font-size:13.5px}
 .fwin .bar2{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
 .fwin .bar2 button{padding:4px 9px;background:none;border-color:transparent;color:var(--dim)}
 .fwin .bar2 button:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}
 .fwin .bar2 button:disabled{opacity:.35}
-.fwin .bar2 select{width:auto;font-size:12px;padding:3px 6px}
-.fwin .foot{display:flex;align-items:center;gap:10px;padding:5px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:11px;color:var(--faint);flex:none;min-height:26px}
+.fwin .bar2 select{width:auto;font-size:13.5px;padding:3px 6px}
+.fwin .foot{display:flex;align-items:center;gap:10px;padding:5px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:12.5px;color:var(--faint);flex:none;min-height:26px}
 .fwin .foot .say{margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fwin .foot .say.err{color:var(--bad)} .fwin .foot .say.ok{color:var(--good)}
 .fwin .live{display:inline-flex;align-items:center;gap:5px}
@@ -44,13 +44,13 @@ const CSS = `
 @media (max-width:700px){.fwin{left:8px!important;right:8px!important;top:8px!important;width:auto!important;height:70vh!important;resize:none}}
 
 #explorer{left:calc(50% - 380px);top:90px;width:760px;height:480px}
-#explorer .crumbs{display:flex;align-items:center;gap:2px;flex:1;min-width:120px;font-size:12.5px;overflow:hidden;white-space:nowrap}
+#explorer .crumbs{display:flex;align-items:center;gap:2px;flex:1;min-width:120px;font-size:14px;overflow:hidden;white-space:nowrap}
 #explorer .crumbs a{color:var(--dim);cursor:pointer;padding:2px 5px;border-radius:5px}
 #explorer .crumbs a:hover{background:var(--panel2);color:var(--text)}
 #explorer .crumbs a:last-child{color:var(--text);font-weight:550}
 #explorer .crumbs span{color:var(--faint)}
 #explorer .cols{flex:1;min-height:0;display:flex}
-#explorer .tree{width:190px;flex:none;overflow:auto;padding:6px 4px;font-size:12.5px;background:var(--panel)}
+#explorer .tree{width:190px;flex:none;overflow:auto;padding:6px 4px;font-size:14px;background:var(--panel)}
 #explorer .tree .d{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;cursor:pointer;color:var(--dim);white-space:nowrap}
 #explorer .tree .d:hover{background:var(--panel2);color:var(--text)}
 #explorer .tree .d.on{background:var(--panel2);color:var(--text);font-weight:550}
@@ -58,9 +58,9 @@ const CSS = `
 #explorer .tree .d .dot{width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:auto;flex:none}
 #explorer .main{flex:1;min-width:0;display:flex;flex-direction:column}
 #explorer .list{flex:1;min-height:0;overflow:auto}
-#explorer .row{display:grid;grid-template-columns:20px minmax(0,1fr) 78px 92px 74px;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;
+#explorer .row{display:grid;grid-template-columns:20px minmax(0,1fr) 78px 92px 74px;gap:8px;align-items:center;padding:5px 12px;font-size:14px;
   border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);cursor:default;color:var(--dim);user-select:none}
-#explorer .row.head{position:sticky;top:0;background:var(--bg);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);z-index:1;border-bottom:1px solid var(--line)}
+#explorer .row.head{position:sticky;top:0;background:var(--bg);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);z-index:1;border-bottom:1px solid var(--line)}
 #explorer .row:not(.head):hover{background:var(--panel)}
 #explorer .row.sel{background:var(--panel2);color:var(--text)}
 #explorer .row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
@@ -74,87 +74,87 @@ const CSS = `
 @keyframes desk-flash{from{background:color-mix(in srgb,var(--good) 28%,transparent)}}
 #explorer .tag{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid;border-radius:20px;padding:0 7px;justify-self:end;white-space:nowrap}
 #explorer .tag.new{color:var(--good)} #explorer .tag.changed{color:var(--warn)} #explorer .tag.gone{color:var(--bad)}
-#explorer .empty{color:var(--faint);font-size:12.5px;padding:26px 18px;line-height:1.6;text-align:center}
+#explorer .empty{color:var(--faint);font-size:14px;padding:26px 18px;line-height:1.6;text-align:center}
 #explorer .peek{flex:none;max-height:42%;display:flex;flex-direction:column;background:var(--panel)}
-#explorer .peek .ph{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line)}
+#explorer .peek .ph{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:13px;color:var(--dim);border-bottom:1px solid var(--line)}
 #explorer .peek .ph b{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#explorer .peek .ph button{padding:2px 8px;font-size:11px;white-space:nowrap}
+#explorer .peek .ph button{padding:2px 8px;font-size:12.5px;white-space:nowrap}
 #explorer .peek .ph>span:nth-child(2){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
 #explorer .peek .ph b{flex:none;max-width:40%}
 #explorer .peek>div:last-child,#explorer .peek pre{flex:1;min-height:0}
-#explorer .peek pre{margin:0;padding:8px 12px;overflow:auto;font-family:var(--mono);font-size:11.5px;line-height:1.45;color:var(--dim);white-space:pre-wrap;overflow-wrap:anywhere}
+#explorer .peek pre{margin:0;padding:8px 12px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.45;color:var(--dim);white-space:pre-wrap;overflow-wrap:anywhere}
 #explorer .peek img{max-width:100%;max-height:220px;display:block;margin:8px auto}
 
 .fwin.editor{width:720px;height:500px}
 #code{left:calc(50% - 300px);top:70px} #notes{left:calc(50% - 240px);top:120px;width:560px;height:440px}
 .editor .tabs{display:flex;gap:2px;padding:5px 8px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto;flex:none}
-.editor .tabs .t{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;font-size:12px;color:var(--dim);border:1px solid transparent;border-bottom:0;
+.editor .tabs .t{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;font-size:13.5px;color:var(--dim);border:1px solid transparent;border-bottom:0;
   border-radius:7px 7px 0 0;cursor:pointer;white-space:nowrap}
 .editor .tabs .t.on{background:var(--bg);border-color:var(--line);color:var(--text);margin-bottom:-1px}
 .editor .tabs .t i{font-style:normal;color:var(--warn);width:8px}
 .editor .tabs .t u{text-decoration:none;color:var(--faint);padding:0 4px;border-radius:4px}
 .editor .tabs .t u:hover{background:var(--panel2);color:var(--text)}
-.editor .moved{display:none;padding:6px 12px;font-size:12px;color:var(--text);background:color-mix(in srgb,var(--warn) 16%,transparent);border-bottom:1px solid var(--line);gap:8px;align-items:center}
+.editor .moved{display:none;padding:6px 12px;font-size:13.5px;color:var(--text);background:color-mix(in srgb,var(--warn) 16%,transparent);border-bottom:1px solid var(--line);gap:8px;align-items:center}
 .editor .moved.on{display:flex}
-.editor .moved button{padding:2px 9px;font-size:11.5px}
+.editor .moved button{padding:2px 9px;font-size:13px}
 .editor .pad{flex:1;min-height:0;display:flex;position:relative}
 .editor .gut{flex:none;width:46px;overflow:hidden;background:var(--panel);border-right:1px solid var(--line);color:var(--faint);
-  font-family:var(--mono);font-size:12.5px;line-height:1.5;text-align:right;padding:10px 8px 10px 0;white-space:pre;user-select:none}
+  font-family:var(--mono);font-size:14px;line-height:1.5;text-align:right;padding:10px 8px 10px 0;white-space:pre;user-select:none}
 .editor textarea{flex:1;min-width:0;border:0;border-radius:0;outline:0;resize:none;background:var(--bg);color:var(--text);
-  font-family:var(--mono);font-size:12.5px;line-height:1.5;padding:10px 12px;white-space:pre;overflow:auto;tab-size:2}
+  font-family:var(--mono);font-size:14px;line-height:1.5;padding:10px 12px;white-space:pre;overflow:auto;tab-size:2}
 .editor textarea:focus{box-shadow:none}
-.editor.prose textarea{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--sans,inherit);font-size:14.5px;line-height:1.65;padding:18px 22px}
+.editor.prose textarea{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--sans,inherit);font-size:15.5px;line-height:1.65;padding:18px 22px}
 .editor.prose .gut{display:none}
-.editor .none{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint);font-size:13px;text-align:center;padding:20px}
+.editor .none{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--faint);font-size:14.5px;text-align:center;padding:20px}
 
 #activity{right:60px;top:80px;width:440px;height:520px}
 #activity .scroll{flex:1;min-height:0;overflow:auto;padding:4px 0}
-#activity h5{margin:12px 14px 6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600}
-#activity .kv{display:grid;grid-template-columns:86px minmax(0,1fr);gap:3px 10px;padding:0 14px;font-size:12.5px;color:var(--dim)}
+#activity h5{margin:12px 14px 6px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600}
+#activity .kv{display:grid;grid-template-columns:86px minmax(0,1fr);gap:3px 10px;padding:0 14px;font-size:14px;color:var(--dim)}
 #activity .kv b{color:var(--faint);font-weight:400}
 #activity .kv span{color:var(--text);overflow-wrap:anywhere}
-#activity .sw{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 14px 2px;font-size:12.5px;color:var(--dim)}
+#activity .sw{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 14px 2px;font-size:14px;color:var(--dim)}
 #activity .sw label{display:inline-flex;align-items:center;gap:5px}
 #activity .sw input{width:auto;margin:0}
-#activity .it{padding:8px 14px;border-top:1px solid var(--line);font-size:12.5px}
+#activity .it{padding:8px 14px;border-top:1px solid var(--line);font-size:14px}
 #activity .it .l1{display:flex;align-items:center;gap:8px}
-#activity .it .l1 code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--mono);font-size:12px}
+#activity .it .l1 code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-family:var(--mono);font-size:13.5px}
 #activity .it .l1 b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#activity .it .by{font-size:11px;color:var(--faint);white-space:nowrap}
-#activity .it button{padding:2px 9px;font-size:11.5px}
-#activity .none{padding:4px 14px 8px;font-size:12.5px;color:var(--faint)}
+#activity .it .by{font-size:12.5px;color:var(--faint);white-space:nowrap}
+#activity .it button{padding:2px 9px;font-size:13px}
+#activity .none{padding:4px 14px 8px;font-size:14px;color:var(--faint)}
 
 #pcwin{right:60px;top:64px;width:400px;height:520px}
-#pcwin .bar2 .st{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--good);border-radius:20px;padding:1px 9px;color:var(--good);white-space:nowrap}
+#pcwin .bar2 .st{font-size:12px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--good);border-radius:20px;padding:1px 9px;color:var(--good);white-space:nowrap}
 #pcwin .bar2 .st.off{color:var(--bad);border-color:var(--bad)} #pcwin .bar2 .st.wait{color:var(--warn);border-color:var(--warn)}
-#pcwin .bar2 code{font-size:11.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#pcwin .bar2 code{font-size:13px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 #pcwin .progs{flex:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:4px;padding:8px;overflow:auto;align-content:start}
-#pcwin .progs button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 2px 6px;background:none;border:1px solid transparent;border-radius:9px;color:var(--text);font-size:11.5px}
+#pcwin .progs button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 2px 6px;background:none;border:1px solid transparent;border-radius:9px;color:var(--text);font-size:13px}
 #pcwin .progs button:hover{background:var(--panel);border-color:var(--line)}
 #pcwin .progs i{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line);color:var(--accent)}
 #pcwin svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 #pcwin .sec{flex:1;min-height:0;overflow:auto;padding:0 0 6px}
-#pcwin h6{margin:0;padding:8px 12px 5px;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600;position:sticky;top:0;background:var(--bg);z-index:1}
+#pcwin h6{margin:0;padding:8px 12px 5px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600;position:sticky;top:0;background:var(--bg);z-index:1}
 #pcwin h6 span{text-transform:none;letter-spacing:0;font-weight:400}
 #pcwin .pfiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px 6px;padding:0 8px}
-#pcwin .pfiles button{display:flex;align-items:center;gap:7px;padding:4px 6px;background:none;border:1px solid transparent;border-radius:6px;color:var(--dim);font-size:12.5px;text-align:left;min-width:0}
+#pcwin .pfiles button{display:flex;align-items:center;gap:7px;padding:4px 6px;background:none;border:1px solid transparent;border-radius:6px;color:var(--dim);font-size:14px;text-align:left;min-width:0}
 #pcwin .pfiles button:hover{background:var(--panel);color:var(--text)}
 #pcwin .pfiles button i{flex:none;display:grid} #pcwin .pfiles button.dir i{color:var(--accent)}
 #pcwin .pfiles button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pcwin .pfiles button.fresh{color:var(--text)} #pcwin .pfiles button.fresh::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--good);margin-left:auto;flex:none}
-#pcwin .none{padding:4px 12px 8px;font-size:12.5px;color:var(--faint);line-height:1.5}
-#pcwin .rw{display:flex;align-items:center;gap:8px;padding:4px 12px;font-size:12.5px}
+#pcwin .none{padding:4px 12px 8px;font-size:14px;color:var(--faint);line-height:1.5}
+#pcwin .rw{display:flex;align-items:center;gap:8px;padding:4px 12px;font-size:14px}
 #pcwin .rw code,#pcwin .rw b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-#pcwin .rw code{font-family:var(--mono);font-size:12px;color:var(--text)}
-#pcwin .rw span{font-size:11px;color:var(--faint);white-space:nowrap} #pcwin .rw button{padding:1px 8px;font-size:11px} #pcwin .rw a{color:var(--dim);font-size:11.5px}
+#pcwin .rw code{font-family:var(--mono);font-size:13.5px;color:var(--text)}
+#pcwin .rw span{font-size:12.5px;color:var(--faint);white-space:nowrap} #pcwin .rw button{padding:1px 8px;font-size:12.5px} #pcwin .rw a{color:var(--dim);font-size:13px}
 
 /* Saying something to an agent while it works — the same strip in every window. */
 .steer{display:none;gap:6px;align-items:center;padding:7px 10px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--warn) 9%,var(--panel));flex:none}
 .steer.on{display:flex}
-.steer select{width:auto;max-width:42%;font-size:12px;padding:4px 6px}
-.steer input{flex:1;min-width:0;font-size:12.5px}
-.steer button{font-size:12px;white-space:nowrap}
-.steer .heard{font-size:11px;color:var(--good);white-space:nowrap}
+.steer select{width:auto;max-width:42%;font-size:13.5px;padding:4px 6px}
+.steer input{flex:1;min-width:0;font-size:14px}
+.steer button{font-size:13.5px;white-space:nowrap}
+.steer .heard{font-size:12.5px;color:var(--good);white-space:nowrap}
 `;
 
 let styled = false;
@@ -282,7 +282,7 @@ function buildExplorer() {
       </div>
     </div>
     <div class="foot"><span class="live"><i></i>live</span><span id="xCount"></span>
-      <button data-do="zip" style="padding:1px 8px;font-size:11px" title="Download this PC folder as a zip">Export zip</button>
+      <button data-do="zip" style="padding:1px 8px;font-size:12.5px" title="Download this PC folder as a zip">Export zip</button>
       <span class="say" id="xSay"></span></div>`);
   ex.win = win;
   ex.steer = steerStrip(win);
@@ -512,7 +512,7 @@ function makeEditor({ id, name, prose }) {
         <button data-do="saveas" title="Save under another name">Save as…</button>
         ${prose ? '' : '<button data-do="run" title="Run this file on the Agents\' PC">▶ Run</button>'}
         <button data-do="reload" title="Read it from the disk again">Reload</button>
-        <label style="margin-left:auto;font-size:11.5px;color:var(--dim);display:inline-flex;gap:5px;align-items:center" title="Wrap long lines">
+        <label style="margin-left:auto;font-size:13px;color:var(--dim);display:inline-flex;gap:5px;align-items:center" title="Wrap long lines">
           <input type="checkbox" data-wrap style="width:auto;margin:0" ${prose ? 'checked' : ''}> wrap</label>
       </div>
       <div class="tabs"></div>
@@ -818,7 +818,7 @@ function buildPc() {
   const win = makeWin({ id: 'pcwin', name: "Agents' PC" });
   win.insertAdjacentHTML('beforeend', `
     <div class="bar2" style="flex-wrap:nowrap"><span class="st" id="pState">checking</span><code id="pWhere"></code>
-      <a href="/pc" title="The same PC, as a whole page" style="margin-left:auto;font-size:11.5px;color:var(--dim);white-space:nowrap">full screen ↗</a></div>
+      <a href="/pc" title="The same PC, as a whole page" style="margin-left:auto;font-size:13px;color:var(--dim);white-space:nowrap">full screen ↗</a></div>
     <div class="progs" id="pProgs">${PROGRAMS.map(([id, name, hint, g]) => `<button data-prog="${id}" title="${esc(hint)}"><i>${g}</i>${name}</button>`).join('')}</div>
     <div class="split y" id="pSplitA" title="Drag to resize"></div>
     <div class="sec" id="pFilesSec"><h6>On the PC <span id="pCount"></span></h6><div class="pfiles" id="pFiles"></div></div>
