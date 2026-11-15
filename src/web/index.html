@@ -953,6 +953,7 @@ function renderFeed() {
             <button data-react="👍" title="React">👍</button><button data-react="❤️" title="React">❤️</button><button data-react="👀" title="React">👀</button>
             <button data-act="reply" title="Reply to this">↩</button>
             <button data-act="copy" title="Copy">⧉</button>
+            ${m.idea ? '' : '<button data-act="idea" title="Make this an idea — so it can be planned, handed over and built">💡</button>'}
             ${m.authorKind === 'agent' ? `<button class="askBtn" data-agent="${esc(m.author)}" data-msg="${m.id}" title="Ask ${esc(m.author)} about this — only it answers">ask</button>` : ''}
           </div>
         </div>
@@ -1142,6 +1143,12 @@ $('#feed').addEventListener('click', async (e) => {
   }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'reply') { if (requireMe()) setReply(m); }
+  if (act === 'idea' && requireMe()) {
+    // The message becomes the idea's starting text; the title is the person's to give.
+    $('#ideaTitle').value = m.body.split('\n').find((l) => l.trim())?.replace(/[*#`_]/g, '').trim().slice(0, 80) ?? '';
+    $('#ideaRaw').value = m.body;
+    openDialog('#dlgIdea');
+  }
   if (act === 'copy') {
     await navigator.clipboard?.writeText(m.body).catch(() => {});
     toast('copied', 'info');

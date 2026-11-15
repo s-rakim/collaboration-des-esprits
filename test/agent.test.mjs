@@ -594,3 +594,25 @@ test('a turn reports how long it took and how long before the first word', async
   // A stand-in that answers in one piece never streamed, so there was no first word to time.
   assert.equal(r.firstMs, null);
 });
+
+test('an agent in the lobby can open an idea for what is being discussed, and cannot from inside one', async () => {
+  const ctx = room();
+  const { p, calls } = participant(ctx, [msg(null, [{ name: 'open_idea', input: { title: 'Music source proxy', summary: 'One FastAPI service. Search, tracks, stream.' } }])]);
+  const r = await p.takeTurn({ trigger: 'rakim said: ok, plan it' });
+  assert.deepEqual(r.actions, ['open_idea']);
+
+  const idea = ctx.hub.listIdeas({ limit: 5 }).find((i) => i.title === 'Music source proxy');
+  assert.ok(idea, 'the idea exists');
+  assert.equal(ctx.hub.getIdea(idea.slug).raw, 'One FastAPI service. Search, tracks, stream.');
+  // It says so where the conversation was.
+  const said = ctx.hub.recent({ limit: 3 }).find((m) => m.author === 'gpt');
+  assert.match(said.body, /opened this as an idea: \*\*Music source proxy\*\*/);
+  assert.match(said.body, /Hand over to build/);
+
+  // The rule that keeps an agent from announcing work nobody started.
+  assert.match(calls[0].messages[0].content, /You cannot start a build/);
+
+  const inside = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])]);
+  await inside.p.takeTurn({ trigger: 'rakim said: go on', idea: idea.slug });
+  assert.ok(!inside.calls[0].tools.some((t) => t.function.name === 'open_idea'));
+});

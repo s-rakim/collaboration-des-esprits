@@ -430,6 +430,22 @@ function toolDefs() {
       parameters: { type: 'object', additionalProperties: false, properties: {} },
     },
     {
+      name: 'open_idea',
+      description:
+        'Turn what is being discussed in the lobby into an idea of its own, so it can be proposed against, planned ' +
+        'and built. Use it when lobby talk has become something to make. It creates the idea with your write-up as ' +
+        'its starting text and ends your turn; the person then opens it and hands it over to be built.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string', description: 'One line: what it is.' },
+          summary: { type: 'string', description: 'What has been agreed so far: what is being built, what is not, the plan. This becomes the idea\'s text.' },
+        },
+        required: ['title', 'summary'],
+      },
+    },
+    {
       name: 'say_nothing',
       description:
         'End your turn without speaking. Use this when the room does not need you — somebody already ' +
@@ -585,6 +601,8 @@ export function createModelParticipant({
   function toolsFor(ideaSlug) {
     const off = new Set();
     if (!ideaSlug) for (const n of ['propose', 'weigh_in', 'choose', 'refine_spec', 'plan']) off.add(n);
+    // Opening an idea is how you get out of the lobby; inside one there is nothing to open.
+    else off.add('open_idea');
     if (!web) off.add('web_fetch');
     if (!web?.available?.()) off.add('web_search');
     if (!(plugins?.enabled?.() ?? []).length) { off.add('use_plugin'); off.add('list_plugins'); }
@@ -635,6 +653,12 @@ export function createModelParticipant({
       `  where every agent repeats the same observation is worse than a quiet one, and a reaction still`,
       `  shows you read it.`,
       `- When the human addresses you by name, they want your answer. Reply; do not stay silent.`,
+      `- The lobby is for talk. Proposals, plans and builds belong to an idea. When lobby talk has become`,
+      `  something to make, call open_idea with what was agreed, rather than writing the plan out as a`,
+      `  chat message that nothing can act on.`,
+      `- You cannot start a build, and neither can any agent. A build starts when the human hands an idea`,
+      `  over; the coordinator then cuts it into threads. Never say you are "starting a thread" or doing`,
+      `  work the room has not started — say what should be handed over, and wait.`,
       '',
       // Named, not pasted: the whole point of use_skill is that a model reads
       // the instructions when it needs them, so twelve skills do not cost twelve
@@ -1037,6 +1061,18 @@ export function createModelParticipant({
         if (!idea) return { text: 'FAILED: no idea selected', ends: false };
         const r = hub.refine({ ref: idea, spec: input.spec, summary: input.summary ?? '', by: name });
         return { text: `spec is now rev ${r.rev}`, ends: false };
+      }
+
+      case 'open_idea': {
+        if (idea) return { text: 'FAILED: this is already an idea — work in it', ends: false };
+        const made = hub.dropIdea({ title: String(input.title ?? '').trim(), raw: String(input.summary ?? '').trim(), by: name });
+        // Said in the lobby, where the conversation was, so nobody has to notice a new line in the rail.
+        await speak(
+          `I have opened this as an idea: **${made.title}**. It is in the list on the left — open it to carry on there, `
+          + 'and use "Hand over to build" when it is what you want built.',
+          { idea: null, urgency: replyUrgency },
+        );
+        return { text: `opened the idea "${made.slug}"`, ends: true };
       }
 
       case 'remember': {

@@ -165,6 +165,13 @@ LAN is not encrypted.
 
 ### Ideas and builds
 
+The lobby is for talk. Planning and building happen in an **idea**. If a lobby
+conversation turns into something to make, either an agent opens an idea for it
+(it will say so), or you hover the message that says it best and press 💡.
+
+Agents cannot start a build. Only you can, by handing an idea over — so an
+agent saying "starting thread 1" in the lobby has not started anything.
+
 1. **Drop an idea** — a line is enough. The agents react to it in turn.
 2. Talk it through in the idea's thread.
 3. **Hand over to build** (top of the idea, or the Threads page). That is your
@@ -367,6 +374,7 @@ Find the symptom; the fix is beside it.
 | `rate limited by the provider` | Wait, or use a different key/provider for that seat. |
 | `… sent no reply within 180s` | The provider hung. Try again, or a different model. |
 | An agent answers when you named a different one | Check the spelling after `@` — pick it from the menu that opens when you type `@`. |
+| An agent wrote a plan in the lobby and says it is "starting" work, but nothing happens | Plans and builds need an idea. Hover that message → 💡 to make it one, open the idea, then **Hand over to build**. |
 | The other agents will not speak | You are in a one-to-one. Click **open the floor**, or type `@all`. |
 | An agent is very slow | See [4.3](#43-a-provider-that-is-slow). |
 | An image connection shows up as a chat agent, or errors in chat | Its *Used for* is set to Chat model. Set it to Image generation. |
