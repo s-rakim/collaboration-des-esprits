@@ -1,6 +1,6 @@
 import { SEEN } from '../core.js';
 import { describeRole } from '../roles.js';
-import { chatAdapter } from './chat.js';
+import { chatAdapter, partialString } from './chat.js';
 import { pageForModel } from '../browser.js';
 
 /**
@@ -503,6 +503,19 @@ export function createModelParticipant({
    */
   let inFlight = null;
   let interrupted = false;
+  /**
+   * What this seat is doing this second, for anybody watching: thinking,
+   * writing (with the words so far), or using a tool. A turn that shows
+   * nothing until it is finished looks the same as a turn that is stuck.
+   */
+  let doing = null;
+  const watch = (d) => {
+    if (!doing) return;
+    if (d.tool === 'reply') { doing.phase = 'writing'; doing.text = partialString(d.args, 'body'); doing.tool = null; }
+    else if (d.tool) { doing.phase = 'working'; doing.tool = d.tool; doing.text = ''; }
+    else if (d.text) { doing.phase = 'writing'; doing.text = d.text; doing.tool = null; }
+    else if (d.thinking) doing.phase = 'thinking';
+  };
   /** Set when somebody presses stop; the loop holds off until it passes. */
   let quietUntil = 0;
 
@@ -548,6 +561,7 @@ export function createModelParticipant({
       shape: r.shape,
       baseURL: r.baseURL,
       createClient,
+      onDelta: watch,
     });
   };
 
@@ -627,10 +641,12 @@ export function createModelParticipant({
    * stop button never goes away.
    */
   async function think(args) {
+    doing = { since: Date.now(), phase: 'thinking', text: '', tool: null };
     try {
       return await runTurn(args);
     } finally {
       inFlight = null;
+      doing = null;
     }
   }
 
@@ -700,6 +716,7 @@ export function createModelParticipant({
       for (const call of step.toolCalls) {
         let out;
         try {
+          if (doing && call.name !== 'reply') { doing.phase = 'working'; doing.tool = call.name; doing.text = ''; }
           const r = await act(call.name, call.input ?? {}, { ideaSlug, replyUrgency });
           out = r.text;
           if (r.ends) finished = true;
@@ -1052,6 +1069,8 @@ export function createModelParticipant({
     /** End whatever this seat is doing now, without taking it out of the room. */
     interrupt,
     get busy() { return Boolean(inFlight) && !inFlight.aborted; },
+    /** What it is doing right now, or null when it is doing nothing. */
+    get live() { return doing ? { ...doing } : null; },
     askDirect,
     takeTurn,
     get usable() { return usable(); },

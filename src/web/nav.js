@@ -138,8 +138,13 @@ body{display:flex;min-height:100vh}
   background:none;border:1px solid transparent;border-radius:8px;padding:7px 9px;cursor:pointer;
   white-space:nowrap;overflow:hidden;
 }
+#shell-rail a.item,#shell-rail button.item{transition:background .12s ease,color .12s ease,transform .08s ease}
 #shell-rail a.item:hover,#shell-rail button.item:hover{background:var(--panel2);color:var(--text);border-color:transparent}
-#shell-rail a.item.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
+#shell-rail a.item:active,#shell-rail button.item:active{transform:scale(.985)}
+#shell-rail a.item svg,#shell-rail button.item svg{transition:transform .14s ease}
+#shell-rail a.item:hover svg,#shell-rail button.item:hover svg{transform:scale(1.1)}
+#shell-rail a.item.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550;
+  box-shadow:inset 2px 0 0 var(--text)}
 #shell-rail .item .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 #shell-rail .item .kbd{font-size:10px;color:var(--faint);border:1px solid var(--line);border-radius:4px;
   padding:1px 4px;font-family:var(--mono,monospace)}

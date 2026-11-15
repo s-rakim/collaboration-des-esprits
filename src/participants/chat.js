@@ -52,9 +52,59 @@ export function smallerLimit(message, asked) {
   return null;
 }
 
+/**
+ * What has been learned about an endpoint, kept for as long as the room runs.
+ *
+ * An adapter lives for one turn. Without this, everything a turn found out —
+ * the reply length this model allows, the name it wants for the limit, that it
+ * will not stream — was forgotten when the turn ended, and the next one paid
+ * for a refused request to find it out again. On every turn, for every agent.
+ */
+const learned = new Map();
+const known = (baseURL, model) => {
+  const key = `${baseURL ?? ''}|${model ?? ''}`;
+  if (!learned.has(key)) learned.set(key, {});
+  return learned.get(key);
+};
+
+/**
+ * The value of one string field in JSON that is still being written.
+ *
+ * A reply arrives as the arguments of a tool call — {"body":"…"} — a few
+ * characters at a time. This reads what there is of the body so far, so it can
+ * be shown while it is written rather than after.
+ */
+export function partialString(json, key) {
+  const text = String(json ?? '');
+  const at = text.search(new RegExp(`"${key}"\\s*:\\s*"`));
+  if (at === -1) return '';
+  let i = text.indexOf('"', text.indexOf(':', at) + 1) + 1;
+  let out = '';
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') break;
+    if (c !== '\\') { out += c; continue; }
+    const n = text[++i];
+    if (n === undefined) break;                       // the escape is not all here yet
+    if (n === 'n') out += '\n';
+    else if (n === 't') out += '\t';
+    else if (n === 'r') out += '';
+    else if (n === 'u') {
+      const hex = text.slice(i + 1, i + 5);
+      if (hex.length < 4) break;
+      out += String.fromCharCode(parseInt(hex, 16));
+      i += 4;
+    } else out += n;
+  }
+  return out;
+}
+
 export function chatAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
   timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam, shape,
+  // Called as the answer is written: ({ thinking, text, tool, args }). Asking
+  // for it is asking for the reply to be streamed.
+  onDelta = null,
 }) {
   // A router that serves no /chat/completions needs the other language
   // entirely, not a different parameter. Which one it is gets discovered once
@@ -78,9 +128,10 @@ export function chatAdapter({
    * learned from the only thing that can actually settle it: the server saying
    * so.
    */
-  let lengthKey = tokenParam || 'max_tokens';
+  const memory = known(baseURL, model);
+  let lengthKey = memory.lengthKey || tokenParam || 'max_tokens';
   /** The reply length asked for. Starts as configured; comes down if the endpoint says it must. */
-  let cap = maxTokens;
+  let cap = memory.cap ? Math.min(memory.cap, maxTokens) : maxTokens;
   const client = createClient
     ? createClient(apiKey, baseURL)
     // Some compatible servers (a local Ollama) need no credential, but the SDK
@@ -121,11 +172,78 @@ export function chatAdapter({
         ...(effortParam && effort ? { [effortParam]: effort } : {}),
       });
 
+      /**
+       * One request, streamed when somebody is watching.
+       *
+       * A model that takes forty seconds to answer has usually been writing for
+       * thirty-five of them. Streamed, the first words are on the screen in the
+       * first second or two, and the wait stops looking like nothing happening.
+       */
+      const once = async () => {
+        if (!onDelta || memory.noStream) return client.chat.completions.create(body(), { signal: ctl.signal });
+        let stream;
+        try {
+          stream = await client.chat.completions.create({ ...body(), stream: true }, { signal: ctl.signal });
+        } catch (err) {
+          // An endpoint that will not stream says so; ask it the plain way, and remember.
+          if ((err?.status === 400 || err?.status === 422) && /stream/i.test(err.message ?? '')) {
+            memory.noStream = true;
+            return client.chat.completions.create(body(), { signal: ctl.signal });
+          }
+          throw err;
+        }
+        // It answered all at once anyway (or is a stand-in that always does).
+        if (typeof stream?.[Symbol.asyncIterator] !== 'function') return stream;
+
+        let content = '';
+        let finish = null;
+        let chunks = 0;
+        const calls = [];
+        for await (const chunk of stream) {
+          const choice = chunk?.choices?.[0];
+          if (!choice) continue;
+          chunks += 1;
+          const d = choice.delta ?? {};
+          if (typeof d.content === 'string') content += d.content;
+          for (const part of d.tool_calls ?? []) {
+            const i = part.index ?? 0;
+            calls[i] ??= { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (part.id) calls[i].id = part.id;
+            if (part.function?.name && !calls[i].function.name) calls[i].function.name = part.function.name;
+            if (typeof part.function?.arguments === 'string') calls[i].function.arguments += part.function.arguments;
+          }
+          if (choice.finish_reason) finish = choice.finish_reason;
+          const first = calls.find(Boolean);
+          try {
+            onDelta({
+              // Reasoning that is not the answer: worth knowing it is happening, not worth showing.
+              thinking: !content && !first && Boolean(d.reasoning_content ?? d.reasoning),
+              text: content,
+              tool: first?.function.name || null,
+              args: first?.function.arguments ?? '',
+            });
+          } catch { /* a watcher must not be able to break the turn */ }
+        }
+        if (!chunks) {
+          // Asked to stream and sent nothing that reads as one: it does not
+          // stream. Ask again the plain way rather than report an empty answer.
+          memory.noStream = true;
+          return client.chat.completions.create(body(), { signal: ctl.signal });
+        }
+        const made = calls.filter(Boolean).map((c, i) => ({ ...c, id: c.id || `call_${i}` }));
+        return {
+          choices: [{
+            finish_reason: finish ?? (made.length ? 'tool_calls' : 'stop'),
+            message: { role: 'assistant', content: content || null, ...(made.length ? { tool_calls: made } : {}) },
+          }],
+        };
+      };
+
       const request = async () => {
         let response;
         try {
           try {
-            response = await client.chat.completions.create(body(), { signal: ctl.signal });
+            response = await once();
           } catch (first) {
             // The one case worth retrying automatically: the server naming the
             // length parameter it wanted. It has told us the answer, so asking
@@ -135,11 +253,12 @@ export function chatAdapter({
             // does allow, so ask for that. Checked before the spelling,
             // because a complaint about size names the parameter too.
             const fits = smallerLimit(first.message, cap);
-            if (fits) cap = fits;
+            if (fits) { cap = fits; memory.cap = fits; }
             else if (/max_completion_tokens|max_tokens/i.test(first.message ?? '')) {
               lengthKey = lengthKey === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+              memory.lengthKey = lengthKey;
             } else throw first;
-            response = await client.chat.completions.create(body(), { signal: ctl.signal });
+            response = await once();
           }
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.

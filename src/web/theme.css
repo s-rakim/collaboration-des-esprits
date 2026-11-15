@@ -387,3 +387,52 @@ dialog h3 { margin:0 0 14px; font-family:var(--serif); font-weight:500; font-siz
   border-radius:7px; font-size:11.5px; user-select:all;
 }
 .router .install a { color:var(--dim); font-size:11.5px }
+
+/* ------------------------------------------------------------------ the feel
+ *
+ * None of this changes what anything is; it changes how it answers when you
+ * touch it. A control that does not move when pressed, a field that does not
+ * light when it has the cursor, a list that snaps instead of settling — each
+ * is nothing on its own, and together they are the difference between a page
+ * and a form.
+ */
+
+::selection { background:var(--text); color:var(--bg) }
+
+* { scrollbar-width:thin; scrollbar-color:var(--line) transparent }
+::-webkit-scrollbar { width:10px; height:10px }
+::-webkit-scrollbar-track { background:transparent }
+::-webkit-scrollbar-thumb { background:var(--line); border-radius:10px; border:2px solid var(--bg) }
+::-webkit-scrollbar-thumb:hover { background:var(--faint) }
+
+:focus-visible { outline:2px solid var(--text); outline-offset:2px; border-radius:6px }
+
+button { transition:border-color .12s ease, background .12s ease, transform .08s ease, filter .12s ease, box-shadow .12s ease }
+button:active:not(:disabled) { transform:scale(.97) }
+button.primary { box-shadow:0 1px 0 rgba(255,255,255,.08) inset }
+button.primary:hover:not(:disabled) { box-shadow:0 4px 14px rgba(0,0,0,.28) }
+
+input, textarea, select { transition:border-color .12s ease, box-shadow .12s ease }
+input:focus, textarea:focus, select:focus {
+  outline:0;
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+/* The message box draws its own edge, so the field inside it stays bare. */
+.composer .box textarea:focus, .jobbox .box textarea:focus { box-shadow:none }
+.composer .box, .jobbox .box { transition:border-color .15s ease, box-shadow .15s ease }
+.composer .box:focus-within, .jobbox .box:focus-within {
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), 0 10px 30px rgba(0,0,0,.18);
+}
+
+dialog[open] { animation:dialog-in .18s cubic-bezier(.2,.7,.3,1) }
+dialog::backdrop { backdrop-filter:blur(3px) }
+@keyframes dialog-in { from { opacity:0; transform:translateY(10px) scale(.985) } }
+
+.card { transition:border-color .14s ease, transform .14s ease }
+
+header { backdrop-filter:saturate(1.2) blur(6px) }
+
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
+}

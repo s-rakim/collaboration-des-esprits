@@ -734,6 +734,14 @@ another gives it a turn, and a reply can point at the one message it answers.
 They may hand a conversation back and forth six times before the room stops and
 waits for you.
 
+**You watch an answer being written.** Replies are streamed: the agent whose
+turn it is appears at the bottom of the thread the moment it starts, saying
+whether it is thinking, writing or using a tool, for how long, and with the
+words so far. Hover any message to react to it, reply to it in particular, or
+copy it; type `@` and pick who to talk to; drag the agents in the *Speaking*
+panel to change the order they answer in. `Enter` sends, `Shift`+`Enter` is a
+new line.
+
 **Nothing is silent.** Every message shows which agents had it in their context
 when they last spoke (`✓ read by …`), an agent with nothing to add reacts
 instead of repeating somebody, and one that fails says so in the thread — "bo

@@ -44,29 +44,8 @@
   .badge.building{color:var(--human);border-color:var(--human)}
   .badge.review{color:var(--warn);border-color:var(--warn)}
   .badge.done{color:var(--good);border-color:var(--good)}
-  .feed{flex:1;overflow-y:auto;padding:14px 16px;min-height:340px}
   .msg{margin-bottom:14px}
-  .msg .h{display:flex;gap:8px;align-items:baseline;font-size:12px;margin-bottom:3px;flex-wrap:wrap}
-  .msg .who{font-weight:650}
-  .msg.human .who{color:var(--human)}
-  .msg .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
-  .msg .when{color:var(--faint);font-size:11px;margin-left:auto}
-  .msg .b{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 11px;background:var(--panel);border-radius:var(--radius);border:1px solid var(--line)}
-  /* What you said sits on the right in a bubble of its own, the way every chat
-     has settled on: the column tells you who is speaking before you read a
-     word, which is what the name above each line was doing less well. Only
-     yours moves — a room of models all bubbled right would say nothing. */
-  .msg.me{display:flex;flex-direction:column;align-items:flex-end}
-  .msg.me .h{display:none}
-  .msg.me .b{background:var(--panel2);border-radius:16px 16px 4px 16px;max-width:78%;
     padding:9px 14px}
-  .msg.k-system .b{background:transparent;border:0;border-left:2px solid var(--line);border-radius:0;color:var(--dim);font-size:13px;padding:2px 0 2px 10px}
-  .msg.k-proposal .b{border-left:3px solid var(--accent)}
-  .msg.k-critique .b{border-left:3px solid var(--warn)}
-  .msg.k-decision .b{border-left:3px solid var(--good)}
-  .msg.k-question .b{border-left:3px solid var(--bad)}
-  .msg.k-handoff .b{border-left:3px solid var(--human)}
-  .msg .b .mention{color:var(--accent);font-weight:600}
   /* The shape of the composer lives in theme.css, which both halves share.
      This page only says where it sits in the column. */
   .composer{display:flex;flex-direction:column}
@@ -110,12 +89,9 @@
   .mic.rec,.mic.live{animation:pulse 1.4s ease-in-out infinite}
   #hear.on{background:var(--accent);border-color:var(--accent);color:var(--bg)}
   #hear.talking{animation:pulse 1.4s ease-in-out infinite}
-  .msg.saying{box-shadow:inset 3px 0 0 var(--accent)}
   .vu{height:3px;border-radius:2px;background:var(--line);overflow:hidden;flex:1;min-width:60px;display:none}
   .vu.on{display:block}
   .vu i{display:block;height:100%;width:0%;background:var(--good);transition:width .08s linear}
-  .msg .b img,.msg .b video{max-width:100%;border-radius:8px;margin-top:7px;display:block;border:1px solid var(--line)}
-  .msg .b audio{width:100%;margin-top:7px}
   .slashwrap{position:relative}
   /* Inside the box the controls are quiet until you go near them: the text you
      are writing is the thing, not the row of buttons under it. */
@@ -148,13 +124,6 @@
   .floor .u{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none}
   .floor .u.blocker{color:var(--bad)} .floor .u.answer{color:var(--accent)}
   .floor .u.objection{color:var(--warn)} .floor .u.proposal{color:var(--human)}
-  .msg .acts{opacity:0;transition:opacity .12s;display:flex;gap:6px;margin-left:6px}
-  .msg:hover .acts{opacity:1}
-  .msg .acts button{font-size:11px;padding:1px 7px;border-radius:5px}
-  .msg .rl{font-size:11.5px;color:var(--faint);margin-bottom:3px}
-  .msg .rx{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:11.5px;color:var(--faint)}
-  .msg.me .rx{justify-content:flex-end}
-  .msg .rx .r{border:1px solid var(--line);border-radius:20px;padding:0 7px;color:var(--dim);background:var(--panel)}
   .floor .n{color:var(--faint);font-family:var(--mono);font-size:11px;width:14px;flex:none}
   .floor .tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-left:auto;flex:none;color:var(--faint)}
   .floor .now .tag{color:var(--good)}
@@ -164,12 +133,144 @@
   .floor select{width:100%;font-size:12px;padding:4px 6px;margin-top:6px}
   .floor .note{color:var(--faint);font-size:11.5px;line-height:1.45;margin:6px 2px 0}
   .floor .note a{color:var(--dim)}
-  .msg .rl b{color:var(--dim);font-weight:600}
   .chip{display:flex;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--accent);border-radius:7px;padding:5px 9px;font-size:12.5px}
   .chip b{color:var(--accent)}
   .chip button{border:0;background:none;color:var(--dim);padding:0 3px;font-size:14px;line-height:1}
   .headlink{color:var(--dim);text-decoration:none;font-size:12px;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
   .headlink:hover{border-color:var(--accent);color:var(--text)}
+
+  /* ------------------------------------------------------------ the conversation
+     One column, set to a width a line of text is comfortable at, with every
+     speaker given a face. In a room of several models the question on every
+     line is "who said this", and a coloured initial answers it before a name
+     has been read. */
+  .mid{position:relative}
+  .feed{flex:1;overflow-y:auto;padding:22px 20px 6px;min-height:340px}
+  .feed .col{max-width:860px;margin:0 auto}
+  .av{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;
+    font-weight:650;font-size:14px;user-select:none;
+    background:hsl(var(--h,0) 42% 30%);color:hsl(var(--h,0) 85% 92%);box-shadow:inset 0 0 0 1px hsl(var(--h,0) 55% 48% / .55)}
+  .av.hu{background:var(--text);color:var(--bg);box-shadow:none}
+  .av.sm{width:20px;height:20px;font-size:10px}
+  .av.xs{width:15px;height:15px;font-size:8.5px;margin-left:-4px;box-shadow:0 0 0 1.5px var(--bg)}
+  .msg{display:flex;gap:12px;padding:2px 0;margin-top:16px;position:relative}
+  .msg.grouped{margin-top:1px}
+  .msg .gut{width:34px;flex:none;padding-top:2px}
+  .msg .main{min-width:0;flex:1}
+  .msg .h{display:flex;gap:8px;align-items:baseline;margin-bottom:4px;flex-wrap:wrap}
+  .msg .who{font-weight:650;font-size:13.5px;letter-spacing:-.005em}
+  .msg .role{color:var(--faint);font-size:11.5px}
+  .msg .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:0 7px}
+  .msg .when{margin-left:2px;color:var(--faint);font-size:11px;opacity:0;transition:opacity .15s}
+  .msg:hover .when{opacity:1}
+  .msg .bw{position:relative;display:inline-block;max-width:100%}
+  .msg .b{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 14px;background:var(--panel);
+    border-radius:5px 17px 17px 17px;font-size:14.5px;line-height:1.62;transition:background .15s}
+  .msg.grouped .b{border-radius:17px}
+  .msg:hover .b{background:var(--panel2)}
+  .msg.me{justify-content:flex-end}
+  .msg.me .main{display:flex;flex-direction:column;align-items:flex-end}
+  .msg.me .bw{max-width:80%}
+  .msg.me .b,.msg.me:hover .b{background:var(--text);color:var(--bg);border-radius:18px 18px 5px 18px}
+  .msg.me.grouped .b{border-radius:18px}
+  .msg.me .b .mention{color:inherit;text-decoration:underline;text-underline-offset:2px}
+  .msg.me .b code{background:rgba(127,127,127,.28);color:inherit}
+  .msg.me .b a{color:inherit}
+  .msg.k-proposal .b{box-shadow:inset 3px 0 0 var(--accent)}
+  .msg.k-critique .b{box-shadow:inset 3px 0 0 var(--warn)}
+  .msg.k-decision .b{box-shadow:inset 3px 0 0 var(--good)}
+  .msg.k-question .b{box-shadow:inset 3px 0 0 var(--bad)}
+  .msg.k-handoff .b{box-shadow:inset 3px 0 0 var(--human)}
+  .msg.k-status .b{background:transparent;border:1px dashed var(--line);color:var(--dim);font-size:13.5px}
+  .msg .b .mention{color:var(--text);font-weight:600;background:var(--panel2);border-radius:5px;padding:0 3px}
+  .msg .b strong.hd{display:block;font-size:15px;margin-top:4px}
+  .msg .b a{color:var(--text);text-underline-offset:2px}
+  .msg .b img,.msg .b video{max-width:100%;border-radius:10px;margin-top:7px;display:block;border:1px solid var(--line)}
+  .msg .b audio{width:100%;margin-top:7px}
+  .msg.saying .b{box-shadow:inset 3px 0 0 var(--accent)}
+  .msg .rl{font-size:11.5px;color:var(--faint);margin-bottom:4px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .msg .rl:hover{color:var(--dim)}
+  .msg.flash .b{animation:flash 1.2s ease-out}
+  @keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--accent)}100%{box-shadow:0 0 0 2px transparent}}
+
+  /* What you can do with a message appears when you go near it, and not before:
+     a row of buttons under every line is a page of buttons. */
+  .msg .tools{position:absolute;top:-15px;right:8px;display:flex;gap:1px;padding:3px;z-index:3;
+    background:var(--panel2);border:1px solid var(--line);border-radius:11px;box-shadow:0 8px 22px rgba(0,0,0,.32);
+    opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity .12s,transform .12s}
+  .msg:hover .tools,.msg .tools:focus-within{opacity:1;transform:none;pointer-events:auto}
+  .msg.me .tools{right:auto;left:8px}
+  .msg .tools button{background:none;border:0;padding:3px 7px;border-radius:8px;font-size:13px;line-height:1.25;color:var(--dim);transition:transform .1s,background .1s}
+  .msg .tools button:hover{background:var(--panel);color:var(--text);transform:scale(1.18)}
+  .msg .tools .askBtn{font-size:11.5px}
+  .msg .tools .askBtn:hover{transform:none}
+
+  .msg .rx{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px;font-size:11.5px;color:var(--faint)}
+  .msg.me .rx{justify-content:flex-end}
+  .msg .rx .r{border:1px solid var(--line);border-radius:20px;padding:1px 9px;background:var(--panel);color:var(--dim);font-size:12.5px;
+    transition:transform .1s,border-color .1s}
+  .msg .rx .r:hover{transform:translateY(-1px);border-color:var(--accent)}
+  .msg .rx .r.mine{border-color:var(--text);color:var(--text);background:var(--panel2)}
+  .msg .rx .seen{display:inline-flex;align-items:center;gap:2px;padding-left:4px}
+  .msg .rx .seen .av:first-of-type{margin-left:3px}
+
+  .sys{display:flex;justify-content:center;margin:14px 0 4px}
+  .sys span{font-size:11.5px;color:var(--faint);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:3px 13px;max-width:82%;text-align:center;line-height:1.5}
+
+  @keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+  .msg.new,.sys.new{animation:rise .24s cubic-bezier(.2,.7,.3,1)}
+  .typing .b{min-width:58px}
+  .dots{display:inline-flex;gap:4px;align-items:center;height:1.2em}
+  .dots i{width:6px;height:6px;border-radius:50%;background:var(--dim);animation:bounce 1.15s infinite}
+  .dots i:nth-child(2){animation-delay:.14s}.dots i:nth-child(3){animation-delay:.28s}
+  @keyframes bounce{0%,60%,100%{transform:none;opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+  .caret{display:inline-block;width:2px;height:1.05em;background:currentColor;margin-left:2px;vertical-align:-3px;animation:blink 1s steps(2,start) infinite}
+  @keyframes blink{to{visibility:hidden}}
+  .typing .av{animation:breathe 1.6s ease-in-out infinite}
+  @keyframes breathe{0%,100%{box-shadow:0 0 0 0 hsl(var(--h,0) 60% 55% / .55)}50%{box-shadow:0 0 0 6px hsl(var(--h,0) 60% 55% / 0)}}
+
+  pre.code{position:relative;margin:8px 0;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+    overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;white-space:pre;color:var(--text)}
+  pre.code code{background:none;padding:0;font-size:inherit}
+  pre.code .copy{position:absolute;top:6px;right:6px;font-size:11px;padding:2px 9px;opacity:0;transition:opacity .12s}
+  pre.code:hover .copy{opacity:1}
+
+  .hero{text-align:center;padding:8vh 20px 26px;animation:rise .35s ease-out}
+  .hero .faces{display:flex;justify-content:center;margin-bottom:18px;min-height:44px}
+  .hero .faces .av{width:44px;height:44px;font-size:18px;margin-left:-9px;box-shadow:0 0 0 3px var(--bg)}
+  .hero .faces .av:first-child{margin-left:0}
+  .hero h3{font-family:var(--serif);font-weight:500;font-size:27px;margin:0 0 8px;letter-spacing:-.015em}
+  .hero p{color:var(--dim);max-width:470px;margin:0 auto 22px;font-size:14.5px}
+  .hero .starts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .hero .starts button,.hero .starts a{padding:11px 15px;border-radius:13px;background:var(--panel);border:1px solid var(--line);color:var(--text);
+    text-align:left;max-width:250px;font-size:13.5px;text-decoration:none;transition:transform .14s,border-color .14s,background .14s}
+  .hero .starts button:hover,.hero .starts a:hover{transform:translateY(-3px);border-color:var(--accent);background:var(--panel2)}
+  .hero .starts small{display:block;color:var(--faint);font-size:11.5px;margin-top:3px}
+
+  .latest{position:sticky;bottom:10px;height:0;display:flex;justify-content:center;pointer-events:none;z-index:4}
+  .latest button{pointer-events:auto;transform:translateY(-38px);border-radius:20px;padding:6px 15px;font-size:12.5px;
+    background:var(--text);color:var(--bg);border-color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .latest button[hidden]{display:none}
+
+  /* The order is a list of people, so it is drawn as one — and dragged like one. */
+  .floor .now,.floor .wait{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:9px;color:var(--text);border-left:0;margin-bottom:2px;background:none}
+  .floor .now{background:var(--panel2)}
+  .floor .now .av{animation:breathe 1.6s ease-in-out infinite}
+  .floor .wait[draggable=true]{cursor:grab}
+  .floor .wait[draggable=true]:hover{background:var(--panel2)}
+  .floor .wait.drag{opacity:.35}
+  .floor .wait.over{box-shadow:inset 0 2px 0 var(--text)}
+  .floor .grip{color:var(--faint);font-size:11px;letter-spacing:-2px;opacity:0;transition:opacity .12s;margin-left:auto}
+  .floor .wait:hover .grip{opacity:1}
+  .agent{gap:9px;padding:4px 0}
+  .agent .av{position:relative;overflow:visible}
+  .agent .av .dot{position:absolute;right:-2px;bottom:-2px;box-shadow:0 0 0 2px var(--bg)}
+  .stats span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 10px}
+  .toast{bottom:128px;border-radius:11px;box-shadow:0 10px 30px rgba(0,0,0,.4);transform:translate(-50%,8px);transition:opacity .2s,transform .2s}
+  .toast.on{transform:translate(-50%,0)}
+  .toast[data-kind="info"],.toast[data-kind="ok"]{background:var(--text);color:var(--bg)}
+  .slash .opt .ic .av{vertical-align:middle}
 </style>
 </head>
 <body>
@@ -201,13 +302,20 @@
   </aside>
 
   <div class="mid">
-    <div class="feed" id="feed"></div>
+    <div class="feed" id="feed">
+      <div class="col"><div id="msgs"></div><div id="live"></div></div>
+      <div class="latest"><button id="toLatest" hidden>↓ Latest</button></div>
+    </div>
     <div class="composer">
       <div class="wrap">
         <div class="chips">
           <span class="chip" id="targetRow" style="display:none">
             asking <b id="targetName"></b> <span id="targetAbout"></span>
             <button id="targetClear" title="cancel">&times;</button>
+          </span>
+          <span class="chip" id="replyRow" style="display:none">
+            replying to <b id="replyWho"></b> <span id="replyWhat" style="color:var(--faint);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+            <button id="replyClear" title="cancel">&times;</button>
           </span>
           <span class="chip" id="oneToOne" style="display:none">
             talking with <b id="oneToOneWith"></b> — the others are holding
@@ -221,7 +329,7 @@
             <textarea id="body" rows="1" placeholder="Type / for commands"></textarea>
           </div>
           <button class="stop" id="stop" title="Stop the models" aria-label="Stop" hidden><i></i></button>
-          <button class="go" id="send" title="Send — Ctrl+Enter" aria-label="Send">
+          <button class="go" id="send" title="Send — Enter (Shift+Enter for a new line)" aria-label="Send">
             <svg viewBox="0 0 20 20"><path d="M15.5 5v4.5a2 2 0 0 1-2 2H5"/><path d="M8 8.5l-3 3 3 3"/></svg>
           </button>
         </div>
@@ -344,7 +452,7 @@
 import { markIdea, refreshNav, dialogMessage, collapsiblePanel, openTool } from '/nav.js';
 
 const $ = (s) => document.querySelector(s);
-const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null };
+const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null, live: null, replyTo: null, drawn: null };
 
 // A thread can be opened by link — from the rail on another page, or a
 // bookmark — so the URL is read before anything is drawn.
@@ -364,7 +472,7 @@ try { state.me = localStorage.getItem('esprits.me'); } catch {}
 function toast(msg, kind = 'err') {
   if (dialogMessage(msg, kind)) return;
   const t = $('#toast');
-  t.textContent = msg; t.classList.add('on');
+  t.textContent = msg; t.dataset.kind = kind; t.classList.add('on');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 4000);
 }
 
@@ -410,14 +518,51 @@ const linkMentions = (s) => esc(s).replace(/(^|\s)@([a-zA-Z0-9][\w.-]*)/g, '$1<s
  * embedded — this app's own files — so a model cannot make the page load
  * something arbitrary off the internet by writing an img tag into a message.
  */
+/** A colour for a name: the same name is always the same colour, and nobody has to choose one. */
+const hue = (name) => { let h = 7; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const avatar = (name, kind = 'agent', size = '') =>
+  `<span class="av ${kind === 'human' ? 'hu' : ''} ${size}" style="--h:${hue(name)}" title="${esc(name)}">${esc(String(name).slice(0, 1).toUpperCase())}</span>`;
+
+/**
+ * The few marks models actually use, turned into what they mean.
+ *
+ * Models answer in markdown whether or not anybody asked, and a reply with its
+ * asterisks and backticks showing reads as broken. This is deliberately not a
+ * markdown renderer: everything is escaped first, and only patterns that
+ * cannot carry markup of their own are turned into tags.
+ */
+function inline(text) {
+  let h = esc(text);
+  h = h.replace(/^(\s*)[-*]\s+/gm, '$1• ');
+  h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s).,!?:;]|$)/gm, '$1<em>$2</em>');
+  h = h.replace(/^#{1,4}\s+(.+)$/gm, '<strong class="hd">$1</strong>');
+  h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  h = h.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  h = h.replace(/(^|\s)@([a-zA-Z0-9][\w.-]*)/g, '$1<span class="mention">@$2</span>');
+  return h;
+}
+
 function renderBody(body) {
-  const withoutMedia = String(body).replace(/!\[[^\]]*\]\((\/media\/[\w.-]+)\)/g, '\u0000$1\u0000');
-  return linkMentions(withoutMedia).replace(/\u0000(\/media\/[\w.-]+)\u0000/g, (_, url) => {
-    if (/\.(png|jpe?g|gif|webp|svg)$/i.test(url)) return `<img src="${url}" alt="generated image" loading="lazy">`;
-    if (/\.(mp4|webm|mov)$/i.test(url)) return `<video src="${url}" controls preload="metadata"></video>`;
-    if (/\.(mp3|wav|ogg|webm)$/i.test(url)) return `<audio src="${url}" controls></audio>`;
-    return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
-  });
+  const parts = String(body).split('```');
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // The first line of a fence is its language, not its code.
+      const code = part.replace(/^[\w+#.-]*\n/, '').replace(/\n$/, '');
+      return `<pre class="code"><button class="copy" type="button" data-act="copycode">copy</button><code>${esc(code)}</code></pre>`;
+    }
+    let prose = part;
+    if (i > 0) prose = prose.replace(/^\n/, '');
+    if (i < parts.length - 1) prose = prose.replace(/\n$/, '');
+    const withoutMedia = prose.replace(/!\[[^\]]*\]\((\/media\/[\w.-]+)\)/g, '\u0000$1\u0000');
+    return inline(withoutMedia).replace(/\u0000(\/media\/[\w.-]+)\u0000/g, (_, url) => {
+      if (/\.(png|jpe?g|gif|webp|svg)$/i.test(url)) return `<img src="${url}" alt="generated image" loading="lazy">`;
+      if (/\.(mp4|webm|mov)$/i.test(url)) return `<video src="${url}" controls preload="metadata"></video>`;
+      if (/\.(mp3|wav|ogg|webm)$/i.test(url)) return `<audio src="${url}" controls></audio>`;
+      return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+    });
+  }).join('');
 }
 const ago = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
@@ -460,17 +605,15 @@ function renderIdeas() {
   $('#whereBtn').classList.toggle('on', Boolean(open));
   renderBusy().catch(() => {});
 
+  // Only what there is some of: five zeroes in a row is not information.
   $('#stats').innerHTML = [
-    `<span><b>${o.totals.ideas}</b> ideas</span>`,
-    `<span><b>${o.totals.openProposals}</b> open proposals</span>`,
-    `<span><b>${o.totals.openQuestions}</b> open questions</span>`,
-    `<span><b>${o.totals.decisions}</b> decisions</span>`,
-    `<span><b>${o.totals.openTasks}</b> open tasks</span>`,
-  ].join('');
+    [o.totals.ideas, 'ideas'], [o.totals.openProposals, 'open proposals'], [o.totals.openQuestions, 'open questions'],
+    [o.totals.decisions, 'decisions'], [o.totals.openTasks, 'open tasks'],
+  ].filter(([n]) => n > 0).map(([n, what]) => `<span><b>${n}</b> ${what}</span>`).join('');
 
   $('#roster').innerHTML = o.roster.map((a) => `
-    <div class="agent"><span class="dot ${esc(a.status)}"></span>
-      <span style="${a.kind === 'human' ? 'color:var(--human);font-weight:600' : ''}">${esc(a.name)}</span>
+    <div class="agent"><span class="av sm ${a.kind === 'human' ? 'hu' : ''}" style="--h:${hue(a.name)}">${esc(a.name.slice(0, 1).toUpperCase())}<span class="dot ${esc(a.status)}"></span></span>
+      <span style="font-weight:${a.kind === 'human' ? 650 : 500}">${esc(a.name)}</span>
       <span style="color:var(--faint);font-size:11px">${esc(a.role)}</span>
       ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:10px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
     </div>`).join('') || '<div class="empty">Nobody has joined.</div>';
@@ -508,8 +651,9 @@ function reactionRow(m) {
   const seen = m.reactions.find((r) => r.emoji === '✓');
   const rest = m.reactions.filter((r) => r.emoji !== '✓');
   return `<div class="rx">
-    ${rest.map((r) => `<span class="r" title="${esc(r.by.join(', '))}">${esc(r.emoji)} ${esc(r.by.join(', '))}</span>`).join('')}
-    ${seen ? `<span title="These agents had this message in their context when they last spoke">✓ read by ${esc(seen.by.join(', '))}</span>` : ''}
+    ${rest.map((r) => `<button class="r ${r.by.includes(state.me) ? 'mine' : ''}" data-react="${esc(r.emoji)}"
+      title="${esc(r.by.join(', '))}">${esc(r.emoji)} ${r.by.length}</button>`).join('')}
+    ${seen ? `<span class="seen" title="In the context of: ${esc(seen.by.join(', '))}">✓ read${seen.by.map((n) => avatar(n, 'agent', 'xs')).join('')}</span>` : ''}
   </div>`;
 }
 
@@ -541,11 +685,15 @@ async function loadRounds() {
   const q = state.idea ? `?idea=${encodeURIComponent(state.idea)}` : '';
   state.rounds = await api(`/api/rounds${q}`);
   renderRounds();
+  // The welcome names who is here, so it has to notice when that changes.
+  if (state.heroFor !== null && state.heroFor !== undefined && state.heroFor !== state.rounds.speaking.join()) renderFeed();
 }
 
 function renderRounds() {
   const r = state.rounds; if (!r) return;
   const el = $('#rounds');
+  // Not while a row is in somebody's hand.
+  if (state.dragging) return;
   // Rebuilding this under somebody choosing from one of its menus closes the menu.
   if (el.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
 
@@ -560,18 +708,17 @@ function renderRounds() {
 
   const busy = r.running || r.queue.length;
   const lines = [];
-  if (r.running) lines.push(`<div class="now"><span>${esc(r.running.seat)}</span><span class="tag">answering</span></div>`);
-  r.queue.forEach((j, i) => lines.push(`<div class="wait"><span class="n">${i + 1}</span><span>${esc(j.seat)}</span><span class="tag">next</span></div>`));
+  if (r.running) lines.push(`<div class="now">${avatar(r.running.seat, 'agent', 'sm')}<span>${esc(r.running.seat)}</span><span class="tag">answering</span></div>`);
+  r.queue.forEach((j) => lines.push(`<div class="wait">${avatar(j.seat, 'agent', 'sm')}<span>${esc(j.seat)}</span><span class="tag">next</span></div>`));
 
   if (!busy) {
     const able = new Set(r.speaking);
     lines.push(r.order.length
-      ? `<div class="note" style="margin:0 2px 5px">${one ? 'When the floor opens, the order is:' : 'Say something and they answer in this order:'}</div>`
-      : '<div class="empty">No agent has a seat yet — add one, with its key, on the setup page.</div>');
-    r.order.forEach((name, i) => lines.push(`<div class="wait" ${able.has(name) ? '' : 'style="opacity:.5" title="no working connection — it is skipped"'}>
-      <span class="n">${i + 1}</span><span>${esc(name)}</span>
-      ${r.mode === 'custom' ? `<button class="mv" data-move="${i}" data-by="-1" title="Earlier" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button class="mv" data-move="${i}" data-by="1" title="Later" ${i === r.order.length - 1 ? 'disabled' : ''}>↓</button>` : ''}
+      ? `<div class="note" style="margin:0 2px 6px">${one ? 'When the floor opens, the order is:' : 'They answer in this order — drag to change it:'}</div>`
+      : '<div class="empty">No agent has a seat yet — add a chat key on the setup page.</div>');
+    r.order.forEach((name, i) => lines.push(`<div class="wait" draggable="true" data-name="${esc(name)}"
+        ${able.has(name) ? '' : 'style="opacity:.5" title="no working connection — it is skipped"'}>
+      <span class="n">${i + 1}</span>${avatar(name, 'agent', 'sm')}<span>${esc(name)}</span><span class="grip" title="Drag to reorder">⋮⋮</span>
     </div>`));
   }
 
@@ -605,15 +752,38 @@ $('#rounds').addEventListener('change', async (e) => {
   e.target.blur();
   loadRounds().catch(() => {});
 });
-$('#rounds').addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-move]');
-  if (!b) return;
-  const order = [...state.rounds.order];
-  const from = Number(b.dataset.move), to = from + Number(b.dataset.by);
-  if (to < 0 || to >= order.length) return;
-  [order[from], order[to]] = [order[to], order[from]];
-  try { await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'custom', order }) }); }
-  catch (x) { toast(x.message); }
+/**
+ * The order is changed by picking an agent up and putting it where it should
+ * go. Doing that makes the order yours, so the mode follows without being set.
+ */
+$('#rounds').addEventListener('dragstart', (e) => {
+  const row = e.target.closest('[data-name]');
+  if (!row) return;
+  state.dragging = row.dataset.name;
+  row.classList.add('drag');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', row.dataset.name);
+});
+$('#rounds').addEventListener('dragover', (e) => {
+  const row = e.target.closest('[data-name]');
+  if (!row || !state.dragging) return;
+  e.preventDefault();
+  for (const el of document.querySelectorAll('#rounds .over')) el.classList.remove('over');
+  if (row.dataset.name !== state.dragging) row.classList.add('over');
+});
+$('#rounds').addEventListener('dragend', () => { state.dragging = null; renderRounds(); });
+$('#rounds').addEventListener('drop', async (e) => {
+  const row = e.target.closest('[data-name]');
+  const moved = state.dragging;
+  state.dragging = null;
+  if (!row || !moved || row.dataset.name === moved) return renderRounds();
+  e.preventDefault();
+  const order = state.rounds.order.filter((n) => n !== moved);
+  order.splice(order.indexOf(row.dataset.name), 0, moved);
+  try {
+    state.rounds = { ...state.rounds, ...(await api('/api/rounds/order', { method: 'POST', body: JSON.stringify({ mode: 'custom', order }) })) };
+    toast(`${moved} now answers ${order.indexOf(moved) === 0 ? 'first' : `after ${order[order.indexOf(moved) - 1]}`}`, 'info');
+  } catch (x) { toast(x.message); }
   loadRounds().catch(() => {});
 });
 $('#openFloor').addEventListener('click', async () => {
@@ -622,30 +792,195 @@ $('#openFloor').addEventListener('click', async () => {
   loadRounds().catch(() => {});
 });
 
+const roleOf = (name) => state.overview?.roster.find((a) => a.name === name)?.role ?? '';
+
+/** What a thread with nothing said in it shows instead of a blank page: who is here, and three ways to start. */
+function hero() {
+  const here = state.rounds?.speaking ?? [];
+  const names = here.length <= 2 ? here.join(' and ') : `${here.slice(0, -1).join(', ')} and ${here.at(-1)}`;
+  return `<div class="hero">
+    <div class="faces">${here.map((n) => avatar(n)).join('')}</div>
+    <h3>${state.idea ? 'Nothing said about this yet' : 'Start the room talking'}</h3>
+    <p>${here.length
+      ? `Say something and ${esc(names)} ${here.length === 1 ? 'answers' : 'answer in turn, each seeing what the others said'}. Name one with <b>@</b> to talk to it alone.`
+      : 'Nobody is here to answer yet. Add a chat key on the setup page — each key takes a seat in this room by itself.'}</p>
+    <div class="starts">
+      ${here.length ? `
+        <button data-start="What should we build first, and why?">Ask the whole room<small>What should we build first, and why?</small></button>
+        <button data-start="@${esc(here[0])} introduce yourself in one line">Talk to one agent<small>@${esc(here[0])} introduce yourself…</small></button>
+        <button data-start-idea>Drop an idea<small>a rough thought for them to shape</small></button>`
+      : '<a href="/setup">Add a key<small>and an agent joins</small></a>'}
+    </div>
+  </div>`;
+}
+
 function renderFeed() {
   const shown = state.msgs.filter((m) => (state.idea === null ? true : m.idea === state.idea));
-  const near = $('#feed').scrollTop + $('#feed').clientHeight > $('#feed').scrollHeight - 120;
+  const feed = $('#feed');
+  const near = feed.scrollTop + feed.clientHeight > feed.scrollHeight - 160;
   const byId = new Map(state.msgs.map((m) => [m.id, m]));
-  $('#feed').innerHTML = shown.map((m) => {
+  // Only what has arrived since the last draw moves; redrawing must not make
+  // the whole history jump every time somebody speaks.
+  const drawn = state.drawn;
+  let arrived = 0;
+  let prev = null;
+
+  const talked = shown.some((m) => m.authorKind !== 'system' && m.kind !== 'system');
+  const isSystem = (m) => m && (m.authorKind === 'system' || m.kind === 'system');
+  const joined = (m) => (isSystem(m) ? m.body.match(/^(\S+) joined as /)?.[1] : null);
+
+  const html = shown.map((m, i) => {
+    const fresh = drawn && !drawn.has(m.id);
+    if (fresh) arrived += 1;
+    if (isSystem(m)) {
+      prev = null;
+      // Four people arriving is one event, not four lines of it.
+      if (joined(m)) {
+        if (!talked || joined(shown[i - 1])) return '';
+        const names = [];
+        for (let j = i; joined(shown[j]); j++) names.push(joined(shown[j]));
+        const who = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+        return `<div class="sys" data-id="${m.id}"><span>${esc(who)} joined</span></div>`;
+      }
+      return `<div class="sys ${fresh ? 'new' : ''}" data-id="${m.id}"><span>${inline(m.body)}</span></div>`;
+    }
+    const mine = m.author === state.me;
     const parent = m.replyTo ? byId.get(m.replyTo) : null;
+    // A second line from the same voice a moment later is the same thought going on.
+    const grouped = Boolean(prev && prev.author === m.author && prev.kind === m.kind && !parent
+      && new Date(m.createdAt) - new Date(prev.createdAt) < 5 * 60_000);
+    prev = m;
+    const role = roleOf(m.author);
     return `
-    <div class="msg k-${esc(m.kind)} ${m.authorKind === 'human' ? 'human' : ''}${
-      m.author === state.me ? ' me' : ''}" data-id="${m.id}"
-      title="${esc(m.author)} — ${esc(ago(m.createdAt))}">
-      ${parent ? `<div class="rl">↳ replying to <b>${esc(parent.author)}</b>: ${esc(parent.body.replace(/\n+/g, ' ').slice(0, 90))}${parent.body.length > 90 ? '…' : ''}</div>` : ''}
-      <div class="h">
-        <span class="who">${esc(m.author)}</span>
-        ${m.kind !== 'message' ? `<span class="k">${esc(m.kind)}</span>` : ''}
-        ${state.idea === null && m.idea ? `<span class="k">${esc(m.idea)}</span>` : ''}
-        ${m.authorKind === 'agent' ? `<span class="acts"><button class="askBtn" data-agent="${esc(m.author)}" data-msg="${m.id}">ask ${esc(m.author)}</button></span>` : ''}
-        <span class="when">${ago(m.createdAt)}</span>
+    <div class="msg k-${esc(m.kind)} ${m.authorKind === 'human' ? 'human' : ''}${mine ? ' me' : ''}${grouped ? ' grouped' : ''}${fresh ? ' new' : ''}"
+      data-id="${m.id}">
+      ${mine ? '' : `<div class="gut">${grouped ? '' : avatar(m.author, m.authorKind)}</div>`}
+      <div class="main">
+        ${parent ? `<div class="rl" data-goto="${parent.id}" title="Go to that message">↳ ${esc(parent.author)}: ${esc(parent.body.replace(/\n+/g, ' ').slice(0, 110))}</div>` : ''}
+        ${grouped && !parent ? '' : `<div class="h">
+          ${mine ? '' : `<span class="who">${esc(m.author)}</span>${role && m.authorKind !== 'human' ? `<span class="role">${esc(role)}</span>` : ''}`}
+          ${m.kind !== 'message' ? `<span class="k">${esc(m.kind)}</span>` : ''}
+          ${state.idea === null && m.idea ? `<span class="k">${esc(m.idea)}</span>` : ''}
+          <span class="when" title="${esc(new Date(m.createdAt).toLocaleString())}">${ago(m.createdAt)}</span>
+        </div>`}
+        <div class="bw">
+          <div class="b">${renderBody(m.body)}</div>
+          <div class="tools">
+            <button data-react="👍" title="React">👍</button><button data-react="❤️" title="React">❤️</button><button data-react="👀" title="React">👀</button>
+            <button data-act="reply" title="Reply to this">↩</button>
+            <button data-act="copy" title="Copy">⧉</button>
+            ${m.authorKind === 'agent' ? `<button class="askBtn" data-agent="${esc(m.author)}" data-msg="${m.id}" title="Ask ${esc(m.author)} about this — only it answers">ask</button>` : ''}
+          </div>
+        </div>
+        ${reactionRow(m)}
       </div>
-      <div class="b">${renderBody(m.body)}</div>
-      ${reactionRow(m)}
     </div>`;
-  }).join('') || '<div class="empty">Nothing said yet.</div>';
-  if (near) $('#feed').scrollTop = $('#feed').scrollHeight;
+  }).join('');
+
+  $('#msgs').innerHTML = (talked ? '' : hero()) + html;
+  state.heroFor = talked ? null : (state.rounds?.speaking ?? []).join();
+  state.drawn = new Set(shown.map((m) => m.id));
+  if (near || !drawn) feed.scrollTop = feed.scrollHeight;
+  else if (arrived) $('#toLatest').hidden = false;
 }
+
+/**
+ * The reply being written, while it is written.
+ *
+ * Who is answering, whether they are thinking, writing or using a tool, for
+ * how long, and the words so far. A room that shows nothing until an answer is
+ * finished looks, for those seconds, exactly like a room that has ignored you.
+ */
+function renderLive() {
+  const l = state.live;
+  const el = $('#live');
+  if (!l || (state.idea !== null && l.idea !== state.idea)) { el.innerHTML = ''; return; }
+  const feed = $('#feed');
+  const near = feed.scrollTop + feed.clientHeight > feed.scrollHeight - 160;
+  const secs = l.since ? Math.max(0, Math.round((Date.now() - l.since) / 1000)) : 0;
+  const doing = l.phase === 'writing' ? 'writing' : l.phase === 'working' ? `using ${String(l.tool ?? 'a tool').replace(/_/g, ' ')}` : 'thinking';
+  el.innerHTML = `
+    <div class="msg typing">
+      <div class="gut">${avatar(l.seat)}</div>
+      <div class="main">
+        <div class="h"><span class="who">${esc(l.seat)}</span>
+          <span class="role">${esc(doing)}${secs >= 3 ? ` · ${secs}s` : ''}</span>
+          ${l.next?.length ? `<span class="when" style="opacity:1;margin-left:auto">then ${esc(l.next.join(', '))}</span>` : ''}</div>
+        <div class="bw"><div class="b">${l.text ? `${renderBody(l.text)}<i class="caret"></i>` : '<span class="dots"><i></i><i></i><i></i></span>'}</div></div>
+      </div>
+    </div>`;
+  if (near) feed.scrollTop = feed.scrollHeight;
+}
+// The seconds keep counting between words.
+setInterval(() => { if (state.live) renderLive(); }, 1000);
+
+$('#feed').addEventListener('scroll', () => {
+  const feed = $('#feed');
+  if (feed.scrollTop + feed.clientHeight > feed.scrollHeight - 160) $('#toLatest').hidden = true;
+});
+$('#toLatest').addEventListener('click', () => {
+  $('#feed').scrollTo({ top: $('#feed').scrollHeight, behavior: 'smooth' });
+  $('#toLatest').hidden = true;
+});
+
+/** Replying to one message: it rides above the box until sent or put away. */
+function setReply(m) {
+  state.replyTo = m ? m.id : null;
+  $('#replyRow').style.display = m ? '' : 'none';
+  if (m) {
+    $('#replyWho').textContent = m.author;
+    $('#replyWhat').textContent = m.body.replace(/\s+/g, ' ').slice(0, 80);
+    $('#body').focus();
+  }
+}
+$('#replyClear').addEventListener('click', () => setReply(null));
+
+$('#feed').addEventListener('click', async (e) => {
+  const start = e.target.closest('[data-start]');
+  if (start) { $('#body').value = start.dataset.start; $('#body').dispatchEvent(new Event('input')); $('#body').focus(); return; }
+  if (e.target.closest('[data-start-idea]')) { $('#newIdea').click(); return; }
+
+  const code = e.target.closest('[data-act="copycode"]');
+  if (code) {
+    await navigator.clipboard?.writeText(code.parentElement.querySelector('code').textContent).catch(() => {});
+    code.textContent = 'copied'; setTimeout(() => { code.textContent = 'copy'; }, 1200);
+    return;
+  }
+  const jump = e.target.closest('[data-goto]');
+  if (jump) {
+    const to = $(`#msgs [data-id="${jump.dataset.goto}"]`);
+    if (to) { to.scrollIntoView({ behavior: 'smooth', block: 'center' }); to.classList.add('flash'); setTimeout(() => to.classList.remove('flash'), 1300); }
+    return;
+  }
+  const row = e.target.closest('.msg[data-id]');
+  if (!row) return;
+  const m = state.msgs.find((x) => x.id === Number(row.dataset.id));
+  if (!m) return;
+
+  const react = e.target.closest('[data-react]');
+  if (react) {
+    if (!requireMe()) return;
+    const emoji = react.dataset.react;
+    const mine = m.reactions?.find((r) => r.emoji === emoji)?.by.includes(state.me);
+    try {
+      await api('/api/react', { method: 'POST', body: JSON.stringify({ message: m.id, emoji, as: state.me, remove: Boolean(mine) }) });
+      // Shown at once: the server will say the same thing a moment later.
+      m.reactions ??= [];
+      let group = m.reactions.find((r) => r.emoji === emoji);
+      if (!group) m.reactions.push(group = { emoji, by: [] });
+      group.by = mine ? group.by.filter((n) => n !== state.me) : [...new Set([...group.by, state.me])];
+      m.reactions = m.reactions.filter((r) => r.by.length);
+      renderFeed();
+    } catch (x) { toast(x.message); }
+    return;
+  }
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'reply') { if (requireMe()) setReply(m); }
+  if (act === 'copy') {
+    await navigator.clipboard?.writeText(m.body).catch(() => {});
+    toast('copied', 'info');
+  }
+});
 
 function renderCtx() {
   const c = $('#ctx');
@@ -747,7 +1082,7 @@ async function loadBrief() {
   renderCtx();
 }
 async function loadFeed(reset) {
-  if (reset) { state.msgs = []; state.head = 0; }
+  if (reset) { state.msgs = []; state.head = 0; state.drawn = null; }
   // The feed is paged, so keep pulling until it says we are caught up —
   // otherwise a backlog larger than one page is skipped over.
   for (let page = 0; page < 20; page++) {
@@ -797,6 +1132,9 @@ async function asMe(run) {
 // state rather than a page load, so the feed and the floor stay live.
 window.addEventListener('esprits:idea', async (e) => {
   state.idea = e.detail.idea || null;
+  // A different thread is a different page of conversation: nothing in it is "new".
+  state.drawn = null;
+  setReply(null);
   const url = new URL(location.href);
   if (state.idea) url.searchParams.set('idea', state.idea); else url.searchParams.delete('idea');
   history.replaceState(null, '', url);
@@ -917,8 +1255,9 @@ async function send() {
       setTarget(null);
     } else {
       await asMe(() => api('/api/post', { method: 'POST', body: JSON.stringify({
-        idea: state.idea, body, as: state.me, kind: $('#kind').value,
+        idea: state.idea, body, as: state.me, kind: $('#kind').value, replyTo: state.replyTo,
       }) }));
+      setReply(null);
     }
     $('#body').value = '';
     grow();
@@ -941,7 +1280,8 @@ $('#body').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return runSlash(slash.items[slash.index]); }
     if (e.key === 'Escape') { e.preventDefault(); return closeSlash(); }
   }
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+  // Enter sends, as it does in every chat; Shift+Enter is the new line.
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
 });
 $('#body').addEventListener('blur', () => setTimeout(() => { if (slash.open) closeSlash(); }, 150));
 
@@ -1276,10 +1616,50 @@ $('#body').addEventListener('input', () => {
   const upto = box.value.slice(0, box.selectionStart);
   // A "/" at the very start, or at the start of a line, with no space after it.
   const m = upto.match(/(?:^|\n)\/([a-z]*)$/i);
-  if (!m) return closeSlash();
-  slash.at = box.selectionStart - m[1].length - 1;
-  renderSlash(m[1]);
+  if (m) {
+    slash.at = box.selectionStart - m[1].length - 1;
+    return renderSlash(m[1]);
+  }
+  // An "@" being typed: offer the people it could be, so nobody has to
+  // remember how a name is spelled to be heard by it.
+  const at = upto.match(/(?:^|\s)@([\w.-]*)$/);
+  if (at) {
+    slash.at = box.selectionStart - at[1].length - 1;
+    return renderMentions(at[1]);
+  }
+  closeSlash();
 });
+
+function renderMentions(filter) {
+  const q = filter.toLowerCase();
+  const put = (name) => () => {
+    const box = $('#body');
+    const text = `@${name} `;
+    box.value = box.value.slice(0, slash.at) + text + box.value.slice(slash.at);
+    box.focus();
+    box.setSelectionRange(slash.at + text.length, slash.at + text.length);
+    readyToSend();
+  };
+  const seats = state.rounds?.order ?? [];
+  const able = new Set(state.rounds?.speaking ?? []);
+  slash.items = [
+    ...seats.map((name) => ({
+      key: name, face: avatar(name, 'agent', 'sm'), title: `@${name}`,
+      hint: able.has(name) ? (roleOf(name) || 'talk to it alone') : 'no working connection', run: put(name),
+    })),
+    { key: 'all', face: '<span class="av sm hu">∗</span>', title: '@all', hint: 'everyone answers, in turn', run: put('all') },
+  ].filter((i) => !q || i.key.toLowerCase().startsWith(q));
+  if (!slash.items.length) return closeSlash();
+  slash.index = Math.min(slash.index, slash.items.length - 1);
+  $('#slash').innerHTML = '<div class="head">who to talk to</div>' + slash.items.map((i, n) => `
+    <div class="opt ${n === slash.index ? 'on' : ''}" data-key="${esc(i.key)}">
+      <span class="ic">${i.face}</span>
+      <span class="t">${esc(i.title)}</span>
+      <span class="d">${esc(i.hint)}</span>
+    </div>`).join('');
+  $('#slash').hidden = false;
+  slash.open = true;
+}
 
 $('#slash').addEventListener('mousedown', (e) => {
   // mousedown, not click: the textarea would lose focus first and close this.
@@ -1773,6 +2153,10 @@ $('#stop').addEventListener('click', async () => {
 function listen() {
   const es = new EventSource(`/api/events?since=${state.head}`);
   es.addEventListener('messages', () => refresh());
+  es.addEventListener('live', (e) => {
+    try { state.live = JSON.parse(e.data); } catch { state.live = null; }
+    renderLive();
+  });
   es.addEventListener('reactions', (e) => {
     let since = 0;
     try { since = JSON.parse(e.data).since; } catch { /* take them all */ }

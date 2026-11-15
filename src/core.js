@@ -627,6 +627,14 @@ export class Hub {
     return { message: row.id, by: agent.name, emoji: mark };
   }
 
+  /** Take a reaction back. */
+  unreact({ message, by, emoji }) {
+    const agent = this.#agent(by);
+    const gone = this.db.prepare('DELETE FROM reactions WHERE message_id = ? AND actor = ? AND emoji = ?')
+      .run(Number(message), agent.name, String(emoji ?? '').trim()).changes > 0;
+    return { message: Number(message), by: agent.name, emoji: String(emoji ?? '').trim(), removed: gone };
+  }
+
   /**
    * Mark messages as having reached this agent.
    *

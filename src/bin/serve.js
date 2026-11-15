@@ -405,7 +405,10 @@ app.post('/api/ideas', (req, res) =>
   }),
 );
 app.post('/api/post', (req, res) =>
-  send(res, () => hub.post({ idea: req.body.idea ?? null, body: req.body.body, by: req.body.as, kind: req.body.kind ?? 'message' })),
+  send(res, () => hub.post({
+    idea: req.body.idea ?? null, body: req.body.body, by: req.body.as, kind: req.body.kind ?? 'message',
+    replyTo: req.body.replyTo ?? null,
+  })),
 );
 app.post('/api/answer', (req, res) =>
   send(res, () => hub.answer({ id: req.body.id, answer: req.body.answer, by: req.body.as })),
@@ -1794,8 +1797,12 @@ app.post('/api/coordinator', (req, res) =>
 app.get('/api/reactions', (req, res) =>
   send(res, () => ({ reactions: hub.reactionsSince(req.query.since), head: hub.reactionHead() })));
 
+/** React to a message, or take the reaction back. */
 app.post('/api/react', (req, res) =>
-  send(res, () => hub.react({ message: req.body?.message, by: req.body?.as, emoji: req.body?.emoji })));
+  send(res, () => {
+    const what = { message: req.body?.message, by: req.body?.as, emoji: req.body?.emoji };
+    return req.body?.remove ? hub.unreact(what) : hub.react(what);
+  }));
 
 /**
  * Ask one model directly and get the answer in this request, rather than waiting
@@ -1854,6 +1861,8 @@ app.get('/api/events', (req, res) => {
 
   let last = Number(req.query.since ?? hub.head());
   let marks = hub.reactionHead();
+  let showing = 'null';
+  let quiet = 0;
   res.write(`event: hello\ndata: ${JSON.stringify({ head: last, reactions: marks })}\n\n`);
 
   const tick = setInterval(() => {
@@ -1866,17 +1875,27 @@ app.get('/api/events', (req, res) => {
         res.write(`event: reactions\ndata: ${JSON.stringify({ since: marks, head: marked })}\n\n`);
         marks = marked;
       }
+      // Who is answering, and what they have written so far — sent as it
+      // changes, so a reply is watched being written rather than waited for.
+      const doing = JSON.stringify(rounds.live());
+      if (doing !== showing) {
+        res.write(`event: live\ndata: ${doing}\n\n`);
+        showing = doing;
+      }
       if (head > last) {
         res.write(`event: messages\ndata: ${JSON.stringify({ since: last, head })}\n\n`);
         last = head;
-      } else {
+        quiet = 0;
+      } else if (++quiet % 40 === 0) {
         res.write(': keepalive\n\n');
       }
     } catch {
       clearInterval(tick);
       res.end();
     }
-  }, 1000);
+  // Quick enough that a message appears as it is said and a draft as it is
+  // written; each pass is three small reads of a local file.
+  }, 250);
 
   req.on('close', () => clearInterval(tick));
 });

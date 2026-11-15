@@ -82,7 +82,7 @@ export function createRounds({
   config,
   log = () => {},
   createClient = null,
-  pollMs = 400,
+  pollMs = 200,
   /** How long a one-to-one may sit quiet before the coordinator calls it finished. */
   idleMs = Number(process.env.ESPRITS_FLOOR_IDLE_MS ?? 90_000),
   /** How long after the last word a model coordinator is first asked whether it is over. */
@@ -534,6 +534,18 @@ export function createRounds({
     setOrder,
     coordinator: coordinatorView,
     setCoordinator,
+
+    /** The turn being taken this second: who, where, and what they have written so far. */
+    live() {
+      if (!running) return null;
+      const doing = models.get(running.seat)?.live;
+      return {
+        seat: running.seat, idea: running.idea,
+        since: doing?.since ?? null, phase: doing?.phase ?? 'thinking',
+        tool: doing?.tool ?? null, text: doing?.text ?? '',
+        next: queue.filter((j) => j.key === running.key).map((j) => j.seat),
+      };
+    },
 
     state(idea = undefined) {
       const key = idea === undefined ? null : keyOf(idea);

@@ -572,3 +572,68 @@ test('starter seats an older version parked on an empty connection are taken ove
   assert.deepEqual(seats.all().map((s) => [s.name, s.role]).sort(), [['second', 'critic'], ['stdenis', 'architect']]);
   assert.equal(connections.get('openai'), null, 'and the empty connection goes with the last of them');
 });
+
+test('a reply is read as it is written, and arrives whole', async () => {
+  const { chatAdapter, partialString } = await import('../src/participants/chat.js');
+  const http = await import('node:http');
+
+  // Half a JSON string is still most of a sentence.
+  assert.equal(partialString('{"body":"Start with the imp', 'body'), 'Start with the imp');
+  assert.equal(partialString('{"reply_to":4,"body":"a\\nb \\"quoted\\" \\u00e9"}', 'body'), 'a\nb "quoted" é');
+  assert.equal(partialString('{"bo', 'body'), '');
+
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    requests.push(body);
+    if (server.plain) {
+      // An endpoint that ignores "stream" and answers in one piece.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end('{"choices":[{"finish_reason":"stop","message":{"content":"all at once"}}]}');
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const send = (delta, finish = null) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
+    send({ role: 'assistant', reasoning_content: 'let me think' });
+    send({ tool_calls: [{ index: 0, id: 'call_a', type: 'function', function: { name: 'reply', arguments: '' } }] });
+    for (const piece of ['{"bo', 'dy":"Start ', 'with the ', 'importer."}']) {
+      send({ tool_calls: [{ index: 0, function: { arguments: piece } }] });
+    }
+    send({}, 'tool_calls');
+    res.end('data: [DONE]\n\n');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}/v1`;
+
+  const seen = [];
+  const adapter = chatAdapter({
+    apiKey: 'k', model: 'streamer', maxTokens: 512, baseURL: base, maxRetries: 0,
+    onDelta: (d) => seen.push({ ...d, draft: d.tool === 'reply' ? partialString(d.args, 'body') : d.text }),
+  });
+  const tools = [{ name: 'reply', description: 'say it', parameters: { type: 'object', properties: { body: { type: 'string' } } } }];
+  const step = await adapter.startTurn({ system: 'x', tools }).send('where do we start?');
+
+  assert.equal(requests[0].stream, true);
+  assert.deepEqual(step.toolCalls, [{ id: 'call_a', name: 'reply', input: { body: 'Start with the importer.' } }]);
+  assert.equal(seen[0].thinking, true, 'reasoning is reported as thinking, not shown as the answer');
+  const drafts = seen.map((d) => d.draft).filter(Boolean);
+  assert.deepEqual(drafts, ['Start ', 'Start with the ', 'Start with the importer.', 'Start with the importer.']);
+
+  // An endpoint that does not stream is asked the plain way, once, and then remembered.
+  server.plain = true;
+  requests.length = 0;
+  const flat = chatAdapter({ apiKey: 'k', model: 'no-streamer', maxTokens: 512, baseURL: base, maxRetries: 0, onDelta: () => {} });
+  assert.equal((await flat.startTurn({ system: 'x', tools: [] }).send('hi')).text, 'all at once');
+  assert.deepEqual(requests.map((r) => Boolean(r.stream)), [true, false]);
+  requests.length = 0;
+  const again = chatAdapter({ apiKey: 'k', model: 'no-streamer', maxTokens: 512, baseURL: base, maxRetries: 0, onDelta: () => {} });
+  await again.startTurn({ system: 'x', tools: [] }).send('hi');
+  assert.deepEqual(requests.map((r) => Boolean(r.stream)), [false], 'a later turn does not pay to find it out again');
+
+  // Nobody watching, no stream asked for.
+  requests.length = 0;
+  await chatAdapter({ apiKey: 'k', model: 'quiet', maxTokens: 512, baseURL: base, maxRetries: 0 }).startTurn({ system: 'x', tools: [] }).send('hi');
+  assert.equal(requests[0].stream, undefined);
+  server.close();
+});
