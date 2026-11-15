@@ -867,22 +867,54 @@ folder** of your computer and nothing else. Not your home folder, not the rest
 of the disk, and not the room's own database with your keys in it. Agents and
 you work in there; what gets made stays in there until **you** export it.
 
-It is opened from the rail on every page — the chat included — or with `Ctrl` +
-`` ` ``, and has three parts:
+Its tools are on every page — the chat included — from the rail:
 
-- **Terminal.** The same one for you and the agents, and every command is
-  recorded with who ran it. Commands start in a folder inside the sandbox
+- **Terminal**, a **floating window** (`Ctrl` + `` ` ``). Drag it by its bar,
+  size it by its corner, leave it open while you do something else; it is
+  where you left it next time, and a double-click on the bar sends it home.
+  The same terminal for you and the agents, and every command is recorded with
+  who ran it. Commands start in a folder inside the sandbox
   (`/sandbox/project` to begin with); make more folders by name and switch
   between them. Agents can be switched off from it with one checkbox.
-- **Browser.** A real Firefox window on your screen, on a profile of its own
-  rather than your everyday one, with anything it downloads landing in the
-  sandbox. Search in it and the agents can read the results; they search and
-  you watch it happen. Install Firefox and the room finds it;
-  `ESPRITS_FIREFOX` points at one it cannot find.
-- **Files & export.** What has been made, readable in place, and the only way
-  out: **download as a zip** (dependencies and `.git` left out unless you ask),
-  or **copy to a folder on this computer** that you name. A copy goes into a
-  new folder and never over an existing one.
+- **Browser**, **docked into the page** beside whatever you are looking at —
+  drag its edge to give it more or less of the width. It is a real Firefox on
+  a profile of its own rather than your everyday one, with anything it
+  downloads landing in the sandbox. The view is live: **click, scroll and type
+  in it from the page**, go back and forward, and watch the agents do the
+  same. Install Firefox and the room finds it; `ESPRITS_FIREFOX` points at one
+  it cannot find.
+- **Files & export**, a tab of the terminal window. What has been made,
+  readable in place, and the only way out: **download as a zip** (dependencies
+  and `.git` left out unless you ask), or **copy to a folder on this
+  computer** that you name. A copy goes into a new folder and never over an
+  existing one.
+
+### No Docker? Link a folder
+
+The sandbox needs a container engine. Without one you can **link a folder on
+your own disk** — the project you have open in your editor — and the room
+works there. From the folder menu in the terminal window choose *link a folder
+on this computer…* and give its path.
+
+- **With an engine**, the linked folder is what the container is given, and it
+  is still all it can see.
+- **Without one**, commands run directly on your machine in that folder. That
+  is not isolated, the window says *linked folder* for as long as it is in
+  use, and it applies to that folder only — nothing runs anywhere else unless
+  you switch isolation off altogether.
+
+A folder that holds the room's own data (and so your keys), your whole home
+folder, or a whole drive cannot be linked.
+
+### Your editor
+
+**Open in editor**, on the Files tab, opens the folder in your code editor —
+**any editor that starts from a command**. The ones on the machine are found
+(VS Code, Cursor, Windsurf, VSCodium, Zed, Sublime Text, the JetBrains IDEs
+and more); for anything else choose *another editor…* and type the command
+that starts it, or the full path to its program. Because the room works in the
+linked folder itself, whatever the agents write shows up in your editor as
+they write it.
 
 **It needs a container engine**: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 or [Podman](https://podman.io), installed and running. The room finds whichever

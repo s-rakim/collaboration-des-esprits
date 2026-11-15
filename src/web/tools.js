@@ -1,14 +1,17 @@
 /**
- * The sandbox, as one drawer every page can open: its terminal, its browser,
- * and the files that have piled up in it.
+ * The sandbox's tools, on every page: a terminal that floats, and a browser
+ * that is part of the page.
  *
- * They are the same terminal and the same browser the agents use, so this is
- * not a second copy of either: what a person runs here the agents can see, and
- * what an agent ran is here with its name on it. That is why it lives in the
- * rail rather than on one page — it belongs to the project, not to a tab.
+ * They are shaped by how each is used. A terminal is something you glance at
+ * and type a line into while doing something else, so it is a window you put
+ * where it is out of the way — drag it, size it, leave it open. A browser is
+ * something you look at for as long as the agents are using it, so it takes a
+ * share of the page beside the conversation rather than covering it.
  *
- * The Files tab is the way out. Work stays in the sandbox until a person
- * exports it from here; nothing an agent does puts it anywhere else.
+ * Both are the same ones the agents use. What a person runs or opens here the
+ * agents can see, and what an agent ran or opened is here with its name on it.
+ * The window's Files tab is the way out of the sandbox: work stays in it until
+ * a person exports it from there.
  */
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,28 +25,68 @@ async function api(path, opts = {}) {
 }
 
 const CSS = `
-#tools{position:fixed;top:0;right:0;bottom:0;width:min(560px,96vw);z-index:60;display:none;flex-direction:column;
-  background:var(--bg);border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(0,0,0,.28)}
-#tools.open{display:flex}
-#tools .bar{display:flex;align-items:center;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
-#tools .bar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}
-#tools .bar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
-#tools .bar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
+#tools{position:fixed;right:24px;bottom:24px;width:720px;height:440px;z-index:60;display:none;flex-direction:column;
+  min-width:380px;min-height:230px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);
+  background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;resize:both;
+  box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03)}
+#tools.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
+#tools.moving{user-select:none;transition:none;opacity:.96}
+@keyframes tools-in{from{opacity:0;transform:translateY(10px) scale(.985)}}
+#tools .tbar{display:flex;align-items:center;gap:4px;padding:6px 8px 6px 10px;border-bottom:1px solid var(--line);background:var(--panel);cursor:move;touch-action:none}
+#tools .tbar .ttl{font-size:11px;color:var(--faint);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+@media (max-width:700px){#tools{left:8px!important;right:8px!important;top:auto!important;bottom:8px!important;width:auto!important;height:60vh!important;resize:none}}
+
+/* The browser: a share of the page, beside whatever the page is. */
+#dock{flex:none;width:46vw;min-width:340px;max-width:72vw;height:100vh;position:sticky;top:0;z-index:30;display:none;flex-direction:column;
+  background:var(--bg);border-left:1px solid var(--line)}
+#dock.open{display:flex}
+#dock .grip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2}
+#dock .grip:hover,#dock.sizing .grip{background:color-mix(in srgb,var(--text) 22%,transparent)}
+#dock .nav{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+#dock .nav button{padding:4px 9px;font-size:13px;line-height:1.2;background:none;border-color:transparent;color:var(--dim)}
+#dock .nav button:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}
+#dock .nav form{flex:1;min-width:0;display:flex}
+#dock .nav input{flex:1;min-width:0;border-radius:20px;padding:5px 13px;font-size:12.5px;background:var(--bg)}
+#dock .who{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:11.5px;color:var(--faint);border-bottom:1px solid var(--line);min-height:26px}
+#dock .who b{color:var(--dim);font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dock .who .lamp{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+#dock .who .lamp.on{background:var(--good)}
+#dock .err{color:var(--bad);font-size:12px;padding:5px 12px}
+#dock .err:empty{display:none}
+#dock .view{flex:1;min-height:0;overflow:auto;background:var(--panel);display:flex;align-items:flex-start;justify-content:center}
+#dock .view img{width:100%;display:block;cursor:pointer;user-select:none;-webkit-user-drag:none}
+#dock .view.busy img{opacity:.75}
+#dock .hello{align-self:center;text-align:center;padding:30px;max-width:420px;color:var(--dim);font-size:13.5px;line-height:1.6}
+#dock .hello h4{font-family:var(--serif);font-weight:500;font-size:20px;color:var(--text);margin:0 0 8px}
+#dock .hello button{margin-top:14px}
+#dock .type{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel)}
+#dock .type input{flex:1;font-size:12.5px}
+#dock details{border-top:1px solid var(--line);font-size:12px;max-height:38vh;overflow:auto}
+#dock summary{padding:7px 12px;cursor:pointer;color:var(--dim);user-select:none}
+#dock .text{white-space:pre-wrap;color:var(--dim);line-height:1.5;padding:0 12px 10px}
+#dock .visits div{padding:5px 12px;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
+#dock .visits b{color:var(--text);font-weight:550}
+body.dock-sizing{cursor:col-resize;user-select:none}
+/* On a narrow screen there is no page to share, so it lies over it instead. */
+@media (max-width:1100px){#dock{position:fixed;right:0;top:0;width:min(560px,100vw)!important;max-width:100vw;box-shadow:-12px 0 32px rgba(0,0,0,.35)}}
+#tools .tbar button.tab{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}
+#tools .tbar button.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:550}
+#tools .tbar .x{margin-left:auto;background:none;border:0;color:var(--faint);font-size:18px;cursor:pointer;padding:2px 8px}
 #tools .pane{flex:1;min-height:0;display:none;flex-direction:column}
 #tools .pane.on{display:flex}
 #tools .where{padding:8px 12px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #tools .where code{color:var(--text);overflow-wrap:anywhere}
 #tools .where button,#tools .where label{font-size:11.5px;white-space:nowrap}
 #tools .scroll{flex:1;min-height:0;overflow:auto;padding:10px 12px}
-#tools .run{margin-bottom:12px}
-#tools .run .cmd{font-family:var(--mono);font-size:12.5px;color:var(--text);overflow-wrap:anywhere}
-#tools .run .cmd b{color:var(--faint);font-weight:400}
-#tools .run .who{font-size:11px;color:var(--faint);margin-left:6px}
-#tools .run .who.agent{color:var(--warn)}
-#tools .run pre{margin:4px 0 0;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+#tools .trun{margin-bottom:12px}
+#tools .trun .cmd{font-family:var(--mono);font-size:12.5px;color:var(--text);overflow-wrap:anywhere}
+#tools .trun .cmd b{color:var(--faint);font-weight:400}
+#tools .trun .who{font-size:11px;color:var(--faint);margin-left:6px}
+#tools .trun .who.agent{color:var(--warn)}
+#tools .trun pre{margin:4px 0 0;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
   font-family:var(--mono);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;color:var(--dim)}
-#tools .run .code{font-size:11px;color:var(--faint)}
-#tools .run .code.bad{color:var(--bad)}
+#tools .trun .code{font-size:11px;color:var(--faint)}
+#tools .trun .code.bad{color:var(--bad)}
 #tools .in{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--panel)}
 #tools .in input{flex:1;font-family:var(--mono);font-size:13px}
 #tools .empty{color:var(--faint);font-size:12.5px;padding:14px 2px;line-height:1.55}
@@ -57,6 +100,8 @@ const CSS = `
 #tools .visits div{padding:4px 0;border-top:1px solid var(--line);color:var(--dim);overflow-wrap:anywhere}
 #tools .visits b{color:var(--text);font-weight:550}
 #tools .where select{width:auto;font-size:12px;padding:2px 6px}
+#tools input[type=checkbox]{width:auto;margin:0 4px 0 0;vertical-align:-2px}
+#tools .where label{display:inline-flex;align-items:center}
 #tools .where .state{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:20px;padding:1px 8px;color:var(--good);border-color:var(--good)}
 #tools .where .state.off{color:var(--bad);border-color:var(--bad)}
 #tools .where .state.wait{color:var(--warn);border-color:var(--warn)}
@@ -80,17 +125,20 @@ let timer = null;
 let lastRun = 0;
 let shown = 'terminal';
 
+let styled = false;
+const style = () => { if (!styled) { styled = true; document.head.insertAdjacentHTML('beforeend', `<style>${CSS}</style>`); } };
+
 function build() {
   if (root) return root;
-  document.head.insertAdjacentHTML('beforeend', `<style>${CSS}</style>`);
-  root = document.createElement('aside');
+  style();
+  root = document.createElement('div');
   root.id = 'tools';
   root.innerHTML = `
-    <div class="bar">
+    <div class="tbar">
       <button class="tab" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="browser">Browser</button>
       <button class="tab" data-tab="files">Files</button>
-      <button class="x" title="Close">×</button>
+      <span class="ttl" id="tTitle"></span>
+      <button class="x" title="Close (Ctrl \`)">×</button>
     </div>
     <div class="pane" data-pane="files">
       <div class="where" id="fWhere"></div>
@@ -114,20 +162,12 @@ function build() {
         <input id="tCmd" placeholder="a command, run in the project folder" autocomplete="off" spellcheck="false">
         <button class="primary">Run</button>
       </form>
-    </div>
-    <div class="pane" data-pane="browser">
-      <div class="where" id="bWhere"></div>
-      <form class="in" id="bForm" style="border-top:0;border-bottom:1px solid var(--line)">
-        <input id="bGo" placeholder="an address, or something to search for" autocomplete="off" style="font-family:inherit">
-        <button class="primary">Go</button>
-      </form>
-      <div class="err" id="bErr"></div>
-      <div class="scroll" id="bPage"></div>
     </div>`;
   document.body.append(root);
 
   root.querySelector('.x').addEventListener('click', close);
   for (const b of root.querySelectorAll('[data-tab]')) b.addEventListener('click', () => show(b.dataset.tab));
+  floating(root);
 
   // ---------------------------------------------------------------- terminal
   root.querySelector('#tForm').addEventListener('submit', async (e) => {
@@ -149,8 +189,6 @@ function build() {
       refreshTerminal();
     }
   });
-
-  const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
   /** Choosing a folder is the same wherever it is done: one of the sandbox's, or a new name. */
   root.addEventListener('change', async (e) => {
@@ -253,29 +291,6 @@ function build() {
     } catch (ex) { say.className = 'say err'; say.textContent = ex.message; }
   });
 
-  // ----------------------------------------------------------------- browser
-  root.querySelector('#bForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const box = root.querySelector('#bGo');
-    const go = box.value.trim();
-    if (!go) return;
-    const err = root.querySelector('#bErr');
-    err.textContent = 'going…';
-    try {
-      await api('/api/browser/open', { method: 'POST', body: JSON.stringify({ go, as: me() }) });
-      box.value = '';
-      err.textContent = '';
-    } catch (ex) { err.textContent = ex.message; }
-    refreshBrowser();
-  });
-  root.querySelector('#bWhere').addEventListener('click', async (e) => {
-    const err = root.querySelector('#bErr');
-    try {
-      if (e.target.closest('#bStart')) { err.textContent = 'starting Firefox…'; await api('/api/browser/start', { method: 'POST', body: '{}' }); err.textContent = ''; }
-      if (e.target.closest('#bStop')) await api('/api/browser/stop', { method: 'POST', body: '{}' });
-    } catch (ex) { err.textContent = ex.message; }
-    refreshBrowser();
-  });
   return root;
 }
 
@@ -299,9 +314,7 @@ const badge = (sb) => (sb.preparing ? '<span class="state wait">getting ready</s
   : '<span class="state off">no sandbox</span>');
 
 function refresh(all = false) {
-  if (shown === 'terminal') return refreshTerminal(all);
-  if (shown === 'files') return refreshFiles();
-  return refreshBrowser();
+  return shown === 'files' ? refreshFiles() : refreshTerminal(all);
 }
 
 async function refreshTerminal(all = false) {
@@ -328,6 +341,7 @@ async function refreshTerminal(all = false) {
       : `<b>Nothing can be run yet.</b> ${esc(sb.why)}. Work here runs in a sandbox — a container that sees one folder and nothing else on this computer — and there is no engine to make one.
          <div class="row"><button id="sLink" class="primary">Link a folder on this computer</button><button id="sCheck">Check again</button><a id="sLoose">run anywhere without a sandbox</a></div>
          <div style="margin-top:8px;color:var(--faint);font-size:11.5px">No Docker? Link the project folder you have open in your editor and the room works in it directly.</div>`;
+  root.querySelector('#tTitle').textContent = sb.dir;
   root.querySelector('#tCmd').disabled = !sb.ready;
   root.querySelector('#tCmd').placeholder = sb.isolated ? 'a command, run inside the sandbox'
     : sb.linked && sb.ready ? `a command, run in ${sb.folder} on this computer`
@@ -341,7 +355,7 @@ async function refreshTerminal(all = false) {
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
   box.innerHTML = t.runs.length
     ? t.runs.map((r) => `
-      <div class="run">
+      <div class="trun">
         <div class="cmd"><b>$</b> ${esc(r.command)}<span class="who ${esc(r.kind)}">${esc(r.by)}${r.thread ? ` · thread ${r.thread}` : ''}</span></div>
         ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}
         <div class="code ${r.exitCode ? 'bad' : ''}">${r.running ? 'running…' : `exit ${r.exitCode}${r.timedOut ? ' · stopped, it ran too long' : ''}`}</div>
@@ -349,33 +363,6 @@ async function refreshTerminal(all = false) {
     : `<p class="empty">Nothing has been run yet.<br>This is the same terminal the agents use: what you run here they can see,
        and what they run appears here with their name on it. What gets made stays in the sandbox until you export it from the Files tab.</p>`;
   if (atBottom || all) box.scrollTop = box.scrollHeight;
-}
-
-async function refreshBrowser() {
-  if (!root) return;
-  let b;
-  try { b = await api('/api/browser'); } catch { return; }
-  root.querySelector('#bWhere').innerHTML = b.running
-    ? `<span>Firefox is open — the same window the agents use.</span> <button id="bStop" style="margin-left:auto">Close it</button>`
-    : b.installed
-      ? `<span>Firefox is not open.</span> <button id="bStart" class="primary">Open Firefox</button>`
-      : `<span>Firefox was not found on this machine. Install it from mozilla.org, then reopen this.</span>`;
-
-  let page = null;
-  if (b.running) page = await api('/api/browser/page').catch(() => null);
-  const visits = [...b.visits].reverse();
-  root.querySelector('#bPage').innerHTML = `
-    ${page ? `
-      <div class="page">
-        <h4>${esc(page.title || '(no title)')}</h4>
-        <a href="${esc(page.url)}" target="_blank" rel="noreferrer">${esc(page.url)}</a>
-        <img src="/api/browser/shot?t=${Date.now()}" alt="what the browser is showing">
-        <div class="text">${esc((page.text ?? '').slice(0, 4000)) || '(no readable text)'}</div>
-      </div>` : `<p class="empty">A real Firefox window opens on this machine, on a profile of its own — not your everyday one.
-        You and the agents both drive it: search here and they can read the results; they search and you watch it happen.</p>`}
-    ${visits.length ? `<div class="visits"><strong>Where it has been</strong>${visits.map((v) => `
-      <div><b>${esc(v.by)}</b> ${v.query ? `searched “${esc(v.query)}”` : `opened ${esc(v.title || v.url)}`}
-      <br><span style="color:var(--faint)">${esc(v.url)}</span></div>`).join('')}</div>` : ''}`;
 }
 
 async function refreshFiles() {
@@ -416,21 +403,87 @@ async function refreshFiles() {
 }
 
 function show(tab) {
-  shown = tab;
-  for (const b of root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === tab);
-  for (const p of root.querySelectorAll('[data-pane]')) p.classList.toggle('on', p.dataset.pane === tab);
-  if (tab === 'terminal') { refreshTerminal(true); root.querySelector('#tCmd').focus(); }
-  else if (tab === 'files') refreshFiles();
-  else { refreshBrowser(); root.querySelector('#bGo').focus(); }
+  shown = tab === 'files' ? 'files' : 'terminal';
+  for (const b of root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === shown);
+  for (const p of root.querySelectorAll('[data-pane]')) p.classList.toggle('on', p.dataset.pane === shown);
+  if (shown === 'terminal') { refreshTerminal(true); root.querySelector('#tCmd').focus(); }
+  else refreshFiles();
+}
+
+// ------------------------------------------------------- the floating window
+
+const keep = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } };
+const kept = (key) => { try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; } };
+
+/**
+ * Make the window something you can put where you want it.
+ *
+ * Dragged by its bar, sized by its corner, and found again where it was left.
+ * It is kept on the screen whatever happens to the screen: a window dragged
+ * off the edge, or left where a smaller browser window no longer reaches, is
+ * a window nobody can get back.
+ */
+function floating(win) {
+  const place = (g) => {
+    const w = Math.min(g.w, innerWidth - 16);
+    const h = Math.min(g.h, innerHeight - 16);
+    const x = Math.max(8, Math.min(g.x, innerWidth - w - 8));
+    const y = Math.max(8, Math.min(g.y, innerHeight - 60));
+    Object.assign(win.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto', width: `${w}px`, height: `${h}px` });
+  };
+  const was = kept('esprits.terminal');
+  if (was && Number.isFinite(was.x)) place(was);
+
+  const bar = win.querySelector('.tbar');
+  let from = null;
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') || e.button !== 0) return;
+    const box = win.getBoundingClientRect();
+    from = { dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, h: box.height };
+    bar.setPointerCapture(e.pointerId);
+    win.classList.add('moving');
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (!from) return;
+    place({ x: e.clientX - from.dx, y: e.clientY - from.dy, w: from.w, h: from.h });
+  });
+  const drop = () => {
+    if (!from) return;
+    from = null;
+    win.classList.remove('moving');
+    const box = win.getBoundingClientRect();
+    keep('esprits.terminal', { x: box.left, y: box.top, w: box.width, h: box.height });
+  };
+  bar.addEventListener('pointerup', drop);
+  bar.addEventListener('pointercancel', drop);
+  // Double-click the bar to send it back to its corner.
+  bar.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    Object.assign(win.style, { left: '', top: '', right: '', bottom: '', width: '', height: '' });
+    try { localStorage.removeItem('esprits.terminal'); } catch { /* nothing kept */ }
+  });
+
+  // Sized by its corner: remember that too, once it has stopped changing.
+  let settle = null;
+  new ResizeObserver(() => {
+    if (!win.classList.contains('open') || from) return;
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      const box = win.getBoundingClientRect();
+      if (box.width) keep('esprits.terminal', { x: box.left, y: box.top, w: box.width, h: box.height });
+    }, 300);
+  }).observe(win);
+  addEventListener('resize', () => { const g = kept('esprits.terminal'); if (g && win.classList.contains('open')) place(g); });
 }
 
 export function openTools(tab = 'terminal') {
+  if (tab === 'browser') return openBrowser();
   build().classList.add('open');
   show(tab);
   clearInterval(timer);
   // Polled while it is open, because the other hand on the terminal is an
   // agent's and nothing here would otherwise know it had typed.
-  timer = setInterval(() => (shown === 'terminal' ? refreshTerminal() : shown === 'files' ? refreshFiles() : null), 2000);
+  timer = setInterval(() => (shown === 'terminal' ? refreshTerminal() : refreshFiles()), 2000);
 }
 
 export function close() {
@@ -439,6 +492,189 @@ export function close() {
 }
 
 export function toggleTools(tab) {
+  if (tab === 'browser') return dock?.classList.contains('open') ? closeBrowser() : openBrowser();
   if (root?.classList.contains('open') && shown === tab) close();
   else openTools(tab);
+}
+
+// ------------------------------------------------------------- the browser
+
+let dock = null;
+let looking = null;
+let shotBusy = false;
+
+const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
+
+function buildDock() {
+  if (dock) return dock;
+  style();
+  dock = document.createElement('div');
+  dock.id = 'dock';
+  dock.innerHTML = `
+    <div class="grip" title="Drag to resize"></div>
+    <div class="nav">
+      <button data-act="back" title="Back">←</button>
+      <button data-act="forward" title="Forward">→</button>
+      <button data-act="reload" title="Reload">⟳</button>
+      <form id="bForm"><input id="bGo" placeholder="an address, or something to search for" autocomplete="off" spellcheck="false"></form>
+      <button id="bClose" title="Put the browser away">×</button>
+    </div>
+    <div class="who" id="bWho"></div>
+    <div class="err" id="bErr"></div>
+    <div class="view" id="bView"></div>
+    <form class="type" id="bType">
+      <input id="bKeys" placeholder="type into the page — click a box in it first, Enter sends" autocomplete="off">
+      <button title="Type it, then press Enter in the page">Type ↵</button>
+    </form>
+    <details id="bMore"><summary>What the page says, and where the browser has been</summary>
+      <div class="text" id="bText"></div><div class="visits" id="bVisits"></div></details>`;
+  // Beside the page, as a part of it — or, on a page with no shell, at its edge.
+  const page = document.getElementById('shell-page');
+  if (page) page.after(dock); else document.body.append(dock);
+
+  const width = kept('esprits.dock');
+  if (Number.isFinite(width)) dock.style.width = `${width}px`;
+
+  const say = (text) => { dock.querySelector('#bErr').textContent = text ?? ''; };
+  const act = async (body) => {
+    const view = dock.querySelector('#bView');
+    view.classList.add('busy');
+    try { await post('/api/browser/act', { ...body, as: me() }); say(''); }
+    catch (ex) { say(ex.message); }
+    view.classList.remove('busy');
+    look(true);
+  };
+
+  dock.querySelector('#bClose').addEventListener('click', closeBrowser);
+  dock.querySelector('.nav').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (b) act({ kind: b.dataset.act });
+  });
+  dock.querySelector('#bForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const box = dock.querySelector('#bGo');
+    const go = box.value.trim();
+    if (!go) return;
+    say('going…');
+    try { await post('/api/browser/open', { go, as: me() }); say(''); box.blur(); }
+    catch (ex) { say(ex.message); }
+    look(true);
+  });
+  dock.querySelector('#bType').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const box = dock.querySelector('#bKeys');
+    if (!box.value) return act({ kind: 'key', text: 'enter' });
+    act({ kind: 'type', text: box.value, enter: true });
+    box.value = '';
+  });
+
+  // The picture is the page: a click on it is a click there, a wheel a scroll.
+  const view = dock.querySelector('#bView');
+  const spot = (e, img) => {
+    const box = img.getBoundingClientRect();
+    return { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height };
+  };
+  view.addEventListener('click', async (e) => {
+    if (e.target.id === 'bStart') {
+      say('starting Firefox…');
+      try { await post('/api/browser/start', {}); say(''); } catch (ex) { say(ex.message); }
+      return look(true);
+    }
+    const img = e.target.closest('img');
+    if (img) act({ kind: 'click', ...spot(e, img) });
+  });
+  let wheel = 0; let wheelAt = null; let wheelTimer = null;
+  view.addEventListener('wheel', (e) => {
+    const img = e.target.closest('img');
+    if (!img) return;
+    e.preventDefault();
+    wheel += e.deltaY;
+    wheelAt = spot(e, img);
+    clearTimeout(wheelTimer);
+    // Gathered up: a wheel sends dozens of small turns, and each as its own request would arrive out of order.
+    wheelTimer = setTimeout(() => { const dy = wheel; wheel = 0; act({ kind: 'scroll', dy, ...wheelAt }); }, 140);
+  }, { passive: false });
+
+  dock.querySelector('#bMore').addEventListener('toggle', () => look(true));
+
+  // Sized by its edge.
+  const grip = dock.querySelector('.grip');
+  let sizing = false;
+  grip.addEventListener('pointerdown', (e) => { sizing = true; grip.setPointerCapture(e.pointerId); dock.classList.add('sizing'); document.body.classList.add('dock-sizing'); });
+  grip.addEventListener('pointermove', (e) => {
+    if (!sizing) return;
+    dock.style.width = `${Math.max(340, Math.min(innerWidth * 0.72, innerWidth - e.clientX))}px`;
+  });
+  const done = () => {
+    if (!sizing) return;
+    sizing = false;
+    dock.classList.remove('sizing'); document.body.classList.remove('dock-sizing');
+    keep('esprits.dock', Math.round(dock.getBoundingClientRect().width));
+  };
+  grip.addEventListener('pointerup', done);
+  grip.addEventListener('pointercancel', done);
+  return dock;
+}
+
+/** Look at the browser again: is it open, where is it, and what is it showing. */
+async function look(now = false) {
+  if (!dock?.classList.contains('open')) return;
+  let b;
+  try { b = await api('/api/browser'); } catch { return; }
+  const view = dock.querySelector('#bView');
+  const who = dock.querySelector('#bWho');
+  for (const btn of dock.querySelectorAll('[data-act]')) btn.disabled = !b.running;
+  dock.querySelector('#bKeys').disabled = !b.running;
+
+  if (!b.running) {
+    who.innerHTML = '<span class="lamp"></span><span>not open</span>';
+    view.innerHTML = b.installed
+      ? `<div class="hello"><h4>A browser you share with the agents</h4>
+           A real Firefox window, on a profile of its own rather than your everyday one. Search or open a page here and the
+           agents can read it; they search and you watch it happen — and click, scroll and type in it from this picture.
+           <br><button id="bStart" class="primary">Open Firefox</button></div>`
+      : `<div class="hello"><h4>Firefox is not on this computer</h4>
+           The shared browser is a real Firefox window. Install it from mozilla.org and open this again; nothing else is needed.</div>`;
+  } else {
+    const at = await api('/api/browser/where').catch(() => null);
+    const last = b.visits.at(-1);
+    who.innerHTML = `<span class="lamp on"></span><b>${esc(at?.title || 'Firefox')}</b>
+      ${last ? `<span style="margin-left:auto;white-space:nowrap">last moved by ${esc(last.by)}</span>` : ''}`;
+    const box = dock.querySelector('#bGo');
+    if (at && document.activeElement !== box) box.value = at.url === 'about:blank' ? '' : at.url;
+
+    // The new picture replaces the old only once it has arrived, so the view does not blink between them.
+    if (!view.querySelector('img')) view.innerHTML = '<img alt="what the browser is showing" draggable="false">';
+    if (!shotBusy || now) {
+      shotBusy = true;
+      const next = new Image();
+      next.onload = () => { const img = view.querySelector('img'); if (img) img.src = next.src; shotBusy = false; };
+      next.onerror = () => { shotBusy = false; };
+      next.src = `/api/browser/shot?t=${Date.now()}`;
+    }
+  }
+
+  if (dock.querySelector('#bMore').open) {
+    const page = b.running ? await api('/api/browser/page').catch(() => null) : null;
+    dock.querySelector('#bText').textContent = page ? (page.text ?? '').slice(0, 6000) || '(no readable text)' : '';
+    dock.querySelector('#bVisits').innerHTML = [...b.visits].reverse().map((v) => `
+      <div><b>${esc(v.by)}</b> ${v.query ? `searched “${esc(v.query)}”` : `opened ${esc(v.title || v.url)}`}
+      <br><span style="color:var(--faint)">${esc(v.url)}</span></div>`).join('');
+  }
+}
+
+export function openBrowser() {
+  buildDock().classList.add('open');
+  document.body.classList.add('dock-open');
+  clearInterval(looking);
+  look(true);
+  // Looked at again often enough to watch an agent browse, while it is on the page.
+  looking = setInterval(() => look(), 1500);
+  dock.querySelector('#bGo').focus();
+}
+
+export function closeBrowser() {
+  dock?.classList.remove('open');
+  document.body.classList.remove('dock-open');
+  clearInterval(looking);
 }

@@ -64,7 +64,10 @@ export function fakeFirefox({ pages = {} } = {}) {
             reply({ type: 'success', realm: 'r1', result: { type: 'string', value: JSON.stringify({ url: state.url, ...page }) } });
             break;
           }
-          case 'browsingContext.captureScreenshot': reply({ data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]).toString('base64') }); break;
+          case 'input.performActions': state.actions = (state.actions ?? []).concat(msg.params.actions); reply({}); break;
+          case 'browsingContext.traverseHistory': state.history = (state.history ?? 0) + msg.params.delta; reply({}); break;
+          case 'browsingContext.reload': state.reloads = (state.reloads ?? 0) + 1; reply({ navigation: 'n2', url: state.url }); break;
+                    case 'browsingContext.captureScreenshot': reply({ data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]).toString('base64') }); break;
           default: refuse(`unknown command ${msg.method}`);
         }
       }

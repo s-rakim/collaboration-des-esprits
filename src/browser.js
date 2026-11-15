@@ -264,6 +264,70 @@ export function createBrowser({
     return Buffer.from(out.data ?? '', 'base64');
   }
 
+  /** Where the browser is, and how big its page is — the little that a view of it needs between pictures. */
+  async function where() {
+    const ctx = await tab();
+    const out = await send('script.evaluate', {
+      expression: 'JSON.stringify({ title: document.title, url: location.href, w: innerWidth, h: innerHeight })',
+      target: { context: ctx }, awaitPromise: false, resultOwnership: 'none',
+    }, 8000);
+    let v = {};
+    try { v = JSON.parse(out.result?.value ?? '{}'); } catch { /* a page that will not say */ }
+    return { title: v.title ?? '', url: v.url ?? '', width: Number(v.w) || 1280, height: Number(v.h) || 800 };
+  }
+
+  /** The key codes WebDriver uses for the keys that are not characters. */
+  const KEYS = { enter: '\uE007', backspace: '\uE003', tab: '\uE004', escape: '\uE00C' };
+
+  /**
+   * Do something to the page that is showing, the way a hand would.
+   *
+   * The view of the browser inside the room is a picture, and a picture that
+   * cannot be clicked is a browser you can only watch. A click or a scroll
+   * there is sent here as a place on the picture, from 0 to 1 each way, and
+   * turned into the same point on the real page.
+   */
+  async function act({ kind, x = 0.5, y = 0.5, dy = 0, text = '', enter = false }) {
+    const ctx = await tab();
+    const unit = (n) => Math.min(1, Math.max(0, Number(n) || 0));
+    if (kind === 'back' || kind === 'forward') {
+      await send('browsingContext.traverseHistory', { context: ctx, delta: kind === 'back' ? -1 : 1 });
+    } else if (kind === 'reload') {
+      try { await send('browsingContext.reload', { context: ctx, wait: 'complete' }); }
+      catch (err) { if (!/did not answer/.test(err.message)) throw err; }
+    } else if (kind === 'click' || kind === 'scroll') {
+      const page = await where();
+      const px = Math.round(unit(x) * page.width);
+      const py = Math.round(unit(y) * page.height);
+      const actions = kind === 'click'
+        ? [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+            { type: 'pointerMove', x: px, y: py, duration: 0 },
+            { type: 'pointerDown', button: 0 },
+            { type: 'pointerUp', button: 0 },
+          ] }]
+        : [{ type: 'wheel', id: 'wheel', actions: [
+            { type: 'scroll', x: px, y: py, deltaX: 0, deltaY: Math.round(Math.max(-4000, Math.min(4000, Number(dy) || 0))) },
+          ] }];
+      await send('input.performActions', { context: ctx, actions });
+    } else if (kind === 'type') {
+      const keys = [...String(text).slice(0, 2000), ...(enter ? [KEYS.enter] : [])];
+      if (!keys.length) throw new Error('there is nothing to type');
+      await send('input.performActions', { context: ctx, actions: [{
+        type: 'key', id: 'keyboard',
+        actions: keys.flatMap((value) => [{ type: 'keyDown', value }, { type: 'keyUp', value }]),
+      }] });
+    } else if (kind === 'key') {
+      const value = KEYS[String(text).toLowerCase()];
+      if (!value) throw new Error(`there is no key called ${text}`);
+      await send('input.performActions', { context: ctx, actions: [{ type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value }, { type: 'keyUp', value }] }] });
+    } else {
+      throw new Error(`a browser cannot be asked to ${kind}`);
+    }
+    // A moment for the page to answer what was done to it, so the picture taken next shows the result.
+    await new Promise((r) => setTimeout(r, 250));
+    return where();
+  }
+
   function visits({ limit = 30, thread = undefined } = {}) {
     const rows = thread === undefined || thread === null
       ? db.prepare('SELECT * FROM browser_visits ORDER BY id DESC LIMIT ?').all(Math.min(limit, 200))
@@ -278,7 +342,7 @@ export function createBrowser({
     return { running: connected(), ours: Boolean(child), port, installed: connected() || Boolean(locate()) };
   }
 
-  return { start, stop, status, open, search, read, screenshot, visits };
+  return { start, stop, status, open, search, read, where, act, screenshot, visits };
 }
 
 /**

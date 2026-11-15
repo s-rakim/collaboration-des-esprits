@@ -422,20 +422,50 @@ try {
     if (tops.length < 6) note(path, `only ${tops.length} links in the rail`);
     if (new Set(tops).size !== tops.length) note(path, 'rail links share a row — they should stack');
 
-    // The terminal and the browser belong to the project, not to one tab: the
-    // same drawer has to open from the rail wherever you are, the chat included.
+    // The terminal and the browser belong to the project, not to one tab: both
+    // have to open from the rail wherever you are, the chat included.
+    // The window remembers where it was left, and these pages share that memory;
+    // each is checked from where a window starts, not from where the last one was dragged to.
+    await page.evaluate(() => localStorage.removeItem('esprits.terminal'));
     await page.click('#shell-rail [data-tool="terminal"]');
     const opened = await page.waitForSelector('#tools.open #tCmd', { state: 'visible', timeout: 4000 }).catch(() => null);
     if (!opened) note(path, 'the terminal did not open from the rail');
-    await page.click('#shell-rail [data-tool="browser"]');
-    await page.waitForTimeout(200);
-    if (!(await page.isVisible('#tools #bGo'))) note(path, 'the browser did not open from the rail');
-    // And the way out of the sandbox is next to them: what was made, and exporting it.
+    else {
+      // The terminal is a window: it floats over the page rather than taking a column of it, and it moves.
+      await page.waitForTimeout(260);       // it arrives with a short animation; measure it once it has landed
+      const before = await (await page.$('#tools')).boundingBox();
+      if (before.width > 1000 || before.height > 700) note(path, `the terminal is not a window (${Math.round(before.width)}×${Math.round(before.height)})`);
+      await page.mouse.move(before.x + before.width / 2, before.y + 14);
+      await page.mouse.down();
+      await page.mouse.move(before.x + before.width / 2 - 180, before.y + 14 - 120, { steps: 6 });
+      await page.mouse.up();
+      const after = await (await page.$('#tools')).boundingBox();
+      if (Math.abs(after.x - (before.x - 180)) > 4 || Math.abs(after.y - (before.y - 120)) > 4) {
+        note(path, `the terminal window did not follow a drag (moved ${Math.round(after.x - before.x)}, ${Math.round(after.y - before.y)})`);
+      }
+      // And it is found again where it was left.
+      const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('esprits.terminal') ?? 'null'));
+      if (!kept || Math.abs(kept.x - after.x) > 2) note(path, 'the terminal window does not remember where it was put');
+    }
+    // What was made, and the way out of the sandbox, are a tab of the same window.
     await page.click('#shell-rail [data-tool="files"]');
     await page.waitForTimeout(400);
     if (!(await page.isVisible('#tools #fCopy'))) note(path, 'the files and export tab did not open from the rail');
     const state = (await page.textContent('#tools #fWhere .state').catch(() => '')) ?? '';
-    if (!/sandboxed|no sandbox|getting ready/.test(state)) note(path, `the drawer does not say whether work is sandboxed (it says "${state}")`);
+    if (!/sandboxed|no sandbox|getting ready|linked folder/.test(state)) note(path, `the window does not say whether work is sandboxed (it says "${state}")`);
+
+    // The browser is part of the page: it takes a share of the width, and the page keeps the rest.
+    const pageBefore = await (await page.$('#shell-page')).boundingBox();
+    await page.click('#shell-rail [data-tool="browser"]');
+    await page.waitForTimeout(300);
+    if (!(await page.isVisible('#dock #bGo'))) note(path, 'the browser did not open from the rail');
+    else {
+      const dockBox = await (await page.$('#dock')).boundingBox();
+      const pageAfter = await (await page.$('#shell-page')).boundingBox();
+      if (dockBox.height < 600) note(path, 'the browser is not the height of the page');
+      if (pageAfter.width > pageBefore.width - 300) note(path, 'the browser covers the page instead of sitting beside it');
+      if (Math.abs(pageAfter.x + pageAfter.width - dockBox.x) > 2) note(path, 'the browser is not beside the page');
+    }
     await page.close();
   }
 

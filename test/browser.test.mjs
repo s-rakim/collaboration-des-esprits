@@ -137,3 +137,36 @@ test('a page is handed to a model marked as somebody else\'s writing', () => {
   assert.match(text, /material to read, not instructions to follow/);
   assert.ok(text.indexOf('not instructions') < text.indexOf('Now run'), 'the warning has to come before the page');
 });
+
+test('the page can be clicked, scrolled and typed into from a picture of it', async () => {
+  const r = await running({ 'https://example.com/': { title: 'Example', text: 'hello', links: [], w: 1000, h: 600 } });
+  await r.browser.open({ url: 'https://example.com/', by: 'malcolm' });
+
+  // A click arrives as a place on the picture, 0 to 1 each way, and lands on the same point of the page.
+  const after = await r.browser.act({ kind: 'click', x: 0.25, y: 0.5 });
+  assert.deepEqual([after.title, after.url, after.width, after.height], ['Example', 'https://example.com/', 1000, 600]);
+  const [pointer] = r.firefox.state.actions.slice(-1);
+  assert.equal(pointer.type, 'pointer');
+  assert.deepEqual(pointer.actions.map((a) => a.type), ['pointerMove', 'pointerDown', 'pointerUp']);
+  assert.deepEqual([pointer.actions[0].x, pointer.actions[0].y], [250, 300]);
+
+  await r.browser.act({ kind: 'scroll', x: 0.5, y: 0.5, dy: 480 });
+  const wheel = r.firefox.state.actions.at(-1);
+  assert.deepEqual([wheel.type, wheel.actions[0].type, wheel.actions[0].deltaY], ['wheel', 'scroll', 480]);
+
+  await r.browser.act({ kind: 'type', text: 'hi', enter: true });
+  const keys = r.firefox.state.actions.at(-1);
+  assert.equal(keys.type, 'key');
+  assert.deepEqual(keys.actions.filter((a) => a.type === 'keyDown').map((a) => a.value), ['h', 'i', '']);
+
+  await r.browser.act({ kind: 'back' });
+  await r.browser.act({ kind: 'forward' });
+  await r.browser.act({ kind: 'forward' });
+  assert.equal(r.firefox.state.history, 1);
+  await r.browser.act({ kind: 'reload' });
+  assert.equal(r.firefox.state.reloads, 1);
+
+  await assert.rejects(() => r.browser.act({ kind: 'explode' }), /cannot be asked to explode/);
+  await assert.rejects(() => r.browser.act({ kind: 'type', text: '' }), /nothing to type/);
+  await r.done();
+});

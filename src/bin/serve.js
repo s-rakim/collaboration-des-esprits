@@ -820,6 +820,17 @@ app.post('/api/browser/open', fromOurPages, (req, res) =>
 app.get('/api/browser/page', (_req, res) =>
   send(res, async () => { try { return await browser.read(); } catch (err) { throw new Invalid(err.message); } }));
 
+/** Where the browser is right now — cheap enough to ask every second or two. */
+app.get('/api/browser/where', (_req, res) =>
+  send(res, async () => { try { return await browser.where(); } catch (err) { throw new Invalid(err.message); } }));
+
+/** Click, scroll, type, go back: what a hand does to a page, from the view of it in the room. */
+app.post('/api/browser/act', fromOurPages, (req, res) =>
+  send(res, async () => {
+    person(req.body?.as);
+    try { return await browser.act(req.body ?? {}); } catch (err) { throw new Invalid(err.message); }
+  }));
+
 app.get('/api/browser/shot', async (_req, res) => {
   try {
     res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }).send(await browser.screenshot());
