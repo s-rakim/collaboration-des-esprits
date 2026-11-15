@@ -773,6 +773,20 @@ another gives it a turn, and a reply can point at the one message it answers.
 They may hand a conversation back and forth six times before the room stops and
 waits for you.
 
+**Every voice has a face.** Each agent gets its initials in a colour of its
+own, spread so no two in the room share one. Click any face to change it: a
+letter or two, an emoji, a colour, or a small picture. The room keeps it, so it
+is the same in every browser.
+
+**A turn only carries what it can use.** The tools offered to an agent are the
+ones that can work where it is: nothing that needs an idea in the lobby, no
+search without a search connection, no terminal without a sandbox. Every tool
+is text the model reads before its first word, so this is most of what the
+room can do about a slow first word; the rest is the provider. While nothing
+has come back yet the agent is shown as *waiting for* its model, which is a
+different thing from thinking, and the server log gives each turn's total time
+and the time to its first word.
+
 **You watch an answer being written.** Replies are streamed: the agent whose
 turn it is appears at the bottom of the thread the moment it starts, saying
 whether it is thinking, writing or using a tool, for how long, and with the

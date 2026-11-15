@@ -50,6 +50,10 @@ export const SETTINGS = {
     env: 'ESPRITS_TURN_ORDER_MODE', default: '',
     label: 'Who sets the order agents answer in: added (default), custom, coordinator',
   },
+  avatars: {
+    env: 'ESPRITS_AVATARS', default: '',
+    label: 'How each name is drawn: a glyph, a colour, or a picture',
+  },
   auto_seated: {
     env: 'ESPRITS_AUTO_SEATED', default: '',
     label: 'Connections that have already been given a seat automatically',

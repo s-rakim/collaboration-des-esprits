@@ -368,6 +368,19 @@ completion = client.chat.completions.create(model="vendor/big", max_tokens=4096)
     return 'wren first, then back to the order the keys were added';
   });
 
+  await check('a face can be changed, and the room keeps it', async () => {
+    const set = await api('/api/avatars', { method: 'POST', body: JSON.stringify({ name: 'wren', glyph: '🦉', hue: 215 }) });
+    if (set.avatars.wren?.glyph !== '🦉' || set.avatars.wren?.hue !== 215) throw new Error(JSON.stringify(set));
+    const kept = await api('/api/avatars');
+    if (kept.avatars.wren?.glyph !== '🦉') throw new Error('it was not kept');
+    let refused = '';
+    try { await api('/api/avatars', { method: 'POST', body: JSON.stringify({ name: 'wren', image: 'https://example.com/x.png' }) }); } catch (err) { refused = err.message; }
+    if (!/PNG, JPEG or WebP/.test(refused)) throw new Error(`a picture that is a link was taken: ${refused || 'no refusal'}`);
+    const cleared = await api('/api/avatars', { method: 'POST', body: JSON.stringify({ name: 'wren' }) });
+    if (cleared.avatars.wren) throw new Error('resetting did not clear it');
+    return 'set, kept, a link refused as a picture, and reset';
+  });
+
   // ------------------------------------------------- terminal, and a build
 
   await check('commands run in a sandbox, or not at all until you say otherwise', async () => {

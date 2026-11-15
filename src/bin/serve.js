@@ -1819,6 +1819,56 @@ app.post('/api/coordinator', (req, res) =>
     catch (err) { throw new Invalid(err.message); }
   }));
 
+// ------------------------------------------------------------------ avatars
+
+/**
+ * How each name is drawn.
+ *
+ * A face is how you tell five voices apart at a glance, and two agents whose
+ * names start with the same letter in nearly the same colour are one face. So
+ * each can be given a glyph, a colour, or a small picture — kept here, by
+ * name, so every browser that opens the room sees the same ones.
+ */
+const readAvatars = () => {
+  try {
+    const kept = JSON.parse(config.get('avatars') || '{}');
+    return kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : {};
+  } catch { return {}; }
+};
+
+app.get('/api/avatars', (_req, res) => send(res, () => ({ avatars: readAvatars() })));
+
+app.post('/api/avatars', (req, res) =>
+  send(res, () => {
+    const name = String(req.body?.name ?? '').replace(/^@+/, '').trim();
+    if (!name || name.length > 64) throw new Invalid('whose avatar?');
+    const all = readAvatars();
+    const next = {};
+
+    const glyph = String(req.body?.glyph ?? '').trim();
+    if (glyph) {
+      // A letter or two, or one emoji — which can be several code points long.
+      if ([...glyph].length > 8 || /[<>&"]/.test(glyph)) throw new Invalid('an avatar is a letter or two, or one emoji');
+      next.glyph = glyph;
+    }
+    if (req.body?.hue !== undefined && req.body?.hue !== null && req.body?.hue !== '') {
+      const hue = Number(req.body.hue);
+      if (!Number.isFinite(hue)) throw new Invalid('a colour is a number from 0 to 359');
+      next.hue = ((Math.round(hue) % 360) + 360) % 360;
+    }
+    const image = String(req.body?.image ?? '');
+    if (image) {
+      if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) throw new Invalid('a picture has to be a PNG, JPEG or WebP');
+      // The page shrinks it before sending; this is the backstop, not the plan.
+      if (image.length > 120_000) throw new Invalid('that picture is too large — it is shown at the size of a thumbnail, so a small one is enough');
+      next.image = image;
+    }
+
+    if (Object.keys(next).length) all[name] = next; else delete all[name];
+    config.set('avatars', Object.keys(all).length ? JSON.stringify(all) : '');
+    return { avatars: all };
+  }));
+
 /** Reactions added since a point, for a page that already has the messages. */
 app.get('/api/reactions', (req, res) =>
   send(res, () => ({ reactions: hub.reactionsSince(req.query.since), head: hub.reactionHead() })));
@@ -2059,6 +2109,9 @@ function syncSeats() {
         image: (prompt) => makeMedia('image', prompt, seat.name),
         video: (prompt) => makeMedia('video', prompt, seat.name),
         audio: (prompt) => makeMedia('audio', prompt, seat.name),
+        // Whether there is a connection of that kind at all, so a tool that
+        // could only say "not configured" is not offered in the first place.
+        available: (kind) => Boolean(connections.ofKind(CONNECTION_FOR[kind] ?? kind)[0]),
       },
       web,
       plugins,

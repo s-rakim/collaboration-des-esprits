@@ -266,7 +266,9 @@ export function createRounds({
             ? `${job.seat} used up its turn without getting to an answer.`
             : `${job.seat} read that and had nothing to add.`);
         }
-        log(`${job.seat}: ${r.actions.join(', ') || 'no action'}`);
+        const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+        log(`${job.seat}: ${r.actions.join(', ') || 'no action'}`
+          + (r.ms ? ` — ${secs(r.ms)}${r.firstMs !== null && r.firstMs !== undefined ? `, first word after ${secs(r.firstMs)}` : ''}` : ''));
       } catch (err) {
         // In the thread, not only in the server's log: a person looking at the
         // chat cannot tell an agent that failed from one that is ignoring them.
@@ -541,7 +543,7 @@ export function createRounds({
       const doing = models.get(running.seat)?.live;
       return {
         seat: running.seat, idea: running.idea,
-        since: doing?.since ?? null, phase: doing?.phase ?? 'thinking',
+        since: doing?.since ?? null, phase: doing?.phase ?? 'waiting', model: doing?.model ?? null,
         tool: doing?.tool ?? null, text: doing?.text ?? '',
         next: queue.filter((j) => j.key === running.key).map((j) => j.seat),
       };

@@ -511,6 +511,7 @@ export function createModelParticipant({
   let doing = null;
   const watch = (d) => {
     if (!doing) return;
+    doing.firstAt ??= Date.now();
     if (d.tool === 'reply') { doing.phase = 'writing'; doing.text = partialString(d.args, 'body'); doing.tool = null; }
     else if (d.tool) { doing.phase = 'working'; doing.tool = d.tool; doing.text = ''; }
     else if (d.text) { doing.phase = 'writing'; doing.text = d.text; doing.tool = null; }
@@ -570,6 +571,34 @@ export function createModelParticipant({
       name, role, kind: 'agent', model: currentModel(),
       capabilities: ['discusses', 'proposes', 'scores', 'plans'],
     });
+  }
+
+  /**
+   * The tools for one turn: only the ones that can work here, now.
+   *
+   * Every tool offered is a few hundred tokens the model reads before it says
+   * a word, on every turn. Most of them usually cannot be used at all — there
+   * is no idea to propose against in the lobby, no search connection, no
+   * plugin, nothing to run a command in — and offering a tool that can only
+   * answer "not configured" is slower and worse than not offering it.
+   */
+  function toolsFor(ideaSlug) {
+    const off = new Set();
+    if (!ideaSlug) for (const n of ['propose', 'weigh_in', 'choose', 'refine_spec', 'plan']) off.add(n);
+    if (!web) off.add('web_fetch');
+    if (!web?.available?.()) off.add('web_search');
+    if (!(plugins?.enabled?.() ?? []).length) { off.add('use_plugin'); off.add('list_plugins'); }
+    if (!(skills?.menu?.({ role }) ?? []).length) off.add('use_skill');
+    for (const kind of ['image', 'video', 'audio']) {
+      if (!media?.[kind] || media.available?.(kind) === false) off.add(`generate_${kind}`);
+    }
+    let canRun = false;
+    try { canRun = Boolean(terminal?.folder().ok && terminal.agentsAllowed()); } catch { /* no terminal */ }
+    if (!canRun) off.add('run_command');
+    let canBrowse = false;
+    try { canBrowse = Boolean(browser && browser.status?.().installed !== false); } catch { /* no browser */ }
+    if (!canBrowse) for (const n of ['browser_search', 'browser_open', 'browser_read']) off.add(n);
+    return toolDefs().filter((t) => !off.has(t.name));
   }
 
   const systemPrompt = () => {
@@ -641,9 +670,15 @@ export function createModelParticipant({
    * stop button never goes away.
    */
   async function think(args) {
-    doing = { since: Date.now(), phase: 'thinking', text: '', tool: null };
+    // "waiting" until the provider sends its first byte. It is a different
+    // thing from thinking, and most of a long wait is usually this one.
+    doing = { since: Date.now(), phase: 'waiting', text: '', tool: null, model: currentModel(), firstAt: null };
+    const mine = doing;
     try {
-      return await runTurn(args);
+      const result = await runTurn(args);
+      // How long it took, and how long before anything came back: the two
+      // numbers that say whether a slow turn was the provider or the answer.
+      return { ...result, ms: Date.now() - mine.since, firstMs: mine.firstAt ? mine.firstAt - mine.since : null };
     } finally {
       inFlight = null;
       doing = null;
@@ -680,7 +715,7 @@ export function createModelParticipant({
     // tick on the page means "this was in its context", whatever it says next.
     try { hub.acknowledge({ by: name, messages: said.map((m) => m.id) }); } catch { /* a receipt must not cost the turn */ }
 
-    const turn = adapter().startTurn({ system: systemPrompt(), tools: toolDefs() });
+    const turn = adapter().startTurn({ system: systemPrompt(), tools: toolsFor(ideaSlug) });
     inFlight = turn;
     interrupted = false;
     const done = [];

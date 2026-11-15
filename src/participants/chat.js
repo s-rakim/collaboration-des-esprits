@@ -298,7 +298,14 @@ export function chatAdapter({
               throw new Error(`could not reach ${baseURL || 'the provider'} — check the base URL, and that the service is running`);
             }
             if (err.status === 404) {
-              throw new Error(`${baseURL} answered 404 — the base URL is probably missing or has an extra path segment (most end in /v1)`);
+              // Two different things answer 404: an address with no API at it,
+              // and a real API that has no model by that name. Saying "check
+              // the URL" for the second sends somebody to fix what is not broken.
+              const said = String(err.message ?? '');
+              const aboutModel = /model|not found for account|does not exist|no such/i.test(said) || /\/v\d+\/?$/.test(String(baseURL ?? ''));
+              throw new Error(aboutModel
+                ? `${baseURL} has no model called "${model}" for this key (404) — press "find" on its row in setup to see the models it offers`
+                : `${baseURL} answered 404 — the base URL is probably missing or has an extra path segment (most end in /v1)`);
             }
             throw new Error(`provider API error ${err.status}: ${err.message}`);
           }

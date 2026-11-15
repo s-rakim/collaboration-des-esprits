@@ -145,12 +145,31 @@
      line is "who said this", and a coloured initial answers it before a name
      has been read. */
   .mid{position:relative}
-  .feed{flex:1;overflow-y:auto;padding:22px 20px 6px;min-height:340px}
+  .feed{flex:1;overflow-y:auto;overflow-x:hidden;padding:22px 20px 6px;min-height:340px}
   .feed .col{max-width:860px;margin:0 auto}
   .av{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;
     font-weight:650;font-size:14px;user-select:none;
     background:hsl(var(--h,0) 42% 30%);color:hsl(var(--h,0) 85% 92%);box-shadow:inset 0 0 0 1px hsl(var(--h,0) 55% 48% / .55)}
   .av.hu{background:var(--text);color:var(--bg);box-shadow:none}
+  .av[data-who]{cursor:pointer;transition:transform .12s}
+  .av[data-who]:hover{transform:scale(1.08)}
+  .av.two{font-size:12.5px;letter-spacing:-.02em}
+  .av.pic{background:none;box-shadow:inset 0 0 0 1px var(--line);padding:0;overflow:hidden}
+  .av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+  .av.sm.two{font-size:9px}
+  .avw{position:relative;display:inline-flex;flex:none}
+  .avw .dot{position:absolute;right:-2px;bottom:-2px;box-shadow:0 0 0 2px var(--bg)}
+  #dlgAvatar .big{width:84px;height:84px;font-size:34px;cursor:default}
+  #dlgAvatar .big.two{font-size:28px}
+  #dlgAvatar .big:hover{transform:none}
+  #dlgAvatar .pick{display:flex;flex-wrap:wrap;gap:5px}
+  #dlgAvatar .pick button{width:34px;height:34px;padding:0;font-size:17px;border-radius:9px;background:var(--bg)}
+  #dlgAvatar .pick button.on{border-color:var(--text);background:var(--panel2)}
+  #dlgAvatar .sw{display:flex;gap:6px;flex-wrap:wrap}
+  #dlgAvatar .sw button{width:26px;height:26px;border-radius:50%;padding:0;border:2px solid transparent;background:hsl(var(--h) 42% 30%)}
+  #dlgAvatar .sw button.on{border-color:var(--text)}
+  #dlgAvatar label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+  #dlgAvatar input[type=range]{padding:0;accent-color:var(--text)}
   .av.sm{width:20px;height:20px;font-size:10px}
   .av.xs{width:15px;height:15px;font-size:8.5px;margin-left:-4px;box-shadow:0 0 0 1.5px var(--bg)}
   .msg{display:flex;gap:12px;padding:2px 0;margin-top:16px;position:relative}
@@ -368,6 +387,34 @@
   <div class="ctx" id="ctx"></div>
 </main>
 
+<dialog id="dlgAvatar">
+  <h3>How <span id="avWho"></span> looks</h3>
+  <div class="fields">
+    <div class="row" style="gap:16px;align-items:center">
+      <span id="avBig"></span>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <label for="avGlyph">A letter or two, or one emoji</label>
+        <input id="avGlyph" maxlength="8" autocomplete="off" placeholder="leave empty for its initials">
+      </div>
+    </div>
+    <div class="pick" id="avPick"></div>
+    <label>Colour</label>
+    <div class="sw" id="avSw"></div>
+    <input type="range" id="avHue" min="0" max="359" step="1" aria-label="Colour">
+    <div class="row">
+      <button id="avUpload" type="button">Use a picture…</button>
+      <button id="avNoPic" type="button" hidden>Remove the picture</button>
+      <input type="file" id="avFile" accept="image/png,image/jpeg,image/webp" hidden>
+      <span style="color:var(--faint);font-size:11.5px">shrunk to a thumbnail before it is saved</span>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button id="avReset" style="margin-right:auto" title="Back to its initials and its own colour">Reset</button>
+      <button id="avCancel">Cancel</button>
+      <button class="primary" id="avSave">Save</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="dlgMe">
   <h3>Who are you?</h3>
   <div class="fields">
@@ -452,7 +499,7 @@
 import { markIdea, refreshNav, dialogMessage, collapsiblePanel, openTool } from '/nav.js';
 
 const $ = (s) => document.querySelector(s);
-const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null, live: null, replyTo: null, drawn: null };
+const state = { me: null, idea: null, head: 0, msgs: [], brief: null, overview: null, floor: null, target: null, live: null, replyTo: null, drawn: null, avatars: {} };
 
 // A thread can be opened by link — from the rail on another page, or a
 // bookmark — so the URL is read before anything is drawn.
@@ -518,10 +565,42 @@ const linkMentions = (s) => esc(s).replace(/(^|\s)@([a-zA-Z0-9][\w.-]*)/g, '$1<s
  * embedded — this app's own files — so a model cannot make the page load
  * something arbitrary off the internet by writing an img tag into a message.
  */
-/** A colour for a name: the same name is always the same colour, and nobody has to choose one. */
+/** A colour for a name nobody has placed yet: the same name is always the same colour. */
 const hue = (name) => { let h = 7; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const avatar = (name, kind = 'agent', size = '') =>
-  `<span class="av ${kind === 'human' ? 'hu' : ''} ${size}" style="--h:${hue(name)}" title="${esc(name)}">${esc(String(name).slice(0, 1).toUpperCase())}</span>`;
+
+/** What to write in a face when nobody chose: enough letters to tell "st-etienne" from "st-malo". */
+function initials(name) {
+  const parts = String(name).split(/[-_.\s]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  const word = parts[0] ?? '?';
+  return word.slice(0, 1).toUpperCase() + word.slice(1, 2).toLowerCase();
+}
+
+/**
+ * How a name is drawn: what somebody chose for it, or else its initials in a
+ * colour of its own. The agents in the room are spread round the colour wheel
+ * by their place in it, so no two of them land on the same one.
+ */
+function look(name) {
+  const chosen = state.avatars?.[name] ?? {};
+  const place = (state.rounds?.added ?? []).indexOf(name);
+  return {
+    hue: chosen.hue ?? (place >= 0 ? Math.round((place * 137.5 + 28) % 360) : hue(name)),
+    glyph: chosen.glyph || initials(name),
+    image: chosen.image || null,
+  };
+}
+
+function avatar(name, kind = 'agent', size = '', { edit = true } = {}) {
+  const l = look(name);
+  // The smallest ones have room for one character.
+  const glyph = size === 'xs' ? [...l.glyph][0] : l.glyph;
+  const two = [...glyph].length > 1 && /^[\w]+$/.test(glyph);
+  const mine = kind === 'human' && !state.avatars?.[name];
+  return `<span class="av ${mine ? 'hu' : ''} ${size} ${two ? 'two' : ''} ${l.image ? 'pic' : ''}" style="--h:${l.hue}"
+    ${edit ? `data-who="${esc(name)}" data-kind="${esc(kind)}"` : ''} title="${esc(name)}${edit ? ' — click to change how it looks' : ''}">${
+    l.image ? `<img src="${l.image}" alt="">` : esc(glyph)}</span>`;
+}
 
 /**
  * The few marks models actually use, turned into what they mean.
@@ -612,7 +691,7 @@ function renderIdeas() {
   ].filter(([n]) => n > 0).map(([n, what]) => `<span><b>${n}</b> ${what}</span>`).join('');
 
   $('#roster').innerHTML = o.roster.map((a) => `
-    <div class="agent"><span class="av sm ${a.kind === 'human' ? 'hu' : ''}" style="--h:${hue(a.name)}">${esc(a.name.slice(0, 1).toUpperCase())}<span class="dot ${esc(a.status)}"></span></span>
+    <div class="agent"><span class="avw">${avatar(a.name, a.kind, 'sm')}<span class="dot ${esc(a.status)}"></span></span>
       <span style="font-weight:${a.kind === 'human' ? 650 : 500}">${esc(a.name)}</span>
       <span style="color:var(--faint);font-size:11px">${esc(a.role)}</span>
       ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:10px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
@@ -653,7 +732,7 @@ function reactionRow(m) {
   return `<div class="rx">
     ${rest.map((r) => `<button class="r ${r.by.includes(state.me) ? 'mine' : ''}" data-react="${esc(r.emoji)}"
       title="${esc(r.by.join(', '))}">${esc(r.emoji)} ${r.by.length}</button>`).join('')}
-    ${seen ? `<span class="seen" title="In the context of: ${esc(seen.by.join(', '))}">✓ read${seen.by.map((n) => avatar(n, 'agent', 'xs')).join('')}</span>` : ''}
+    ${seen ? `<span class="seen" title="In the context of: ${esc(seen.by.join(', '))}">✓ read${seen.by.map((n) => avatar(n, 'agent', 'xs', { edit: false })).join('')}</span>` : ''}
   </div>`;
 }
 
@@ -898,7 +977,13 @@ function renderLive() {
   const feed = $('#feed');
   const near = feed.scrollTop + feed.clientHeight > feed.scrollHeight - 160;
   const secs = l.since ? Math.max(0, Math.round((Date.now() - l.since) / 1000)) : 0;
-  const doing = l.phase === 'writing' ? 'writing' : l.phase === 'working' ? `using ${String(l.tool ?? 'a tool').replace(/_/g, ' ')}` : 'thinking';
+  // "Waiting" is the provider not having sent a byte yet; it is where most of a
+  // long wait goes, and it is not the agent's doing.
+  const model = String(l.model ?? '').split('/').pop();
+  const doing = l.phase === 'writing' ? 'writing'
+    : l.phase === 'working' ? `using ${String(l.tool ?? 'a tool').replace(/_/g, ' ')}`
+    : l.phase === 'thinking' ? 'thinking'
+    : `waiting for ${model || 'the model'}`;
   el.innerHTML = `
     <div class="msg typing">
       <div class="gut">${avatar(l.seat)}</div>
@@ -922,6 +1007,82 @@ $('#toLatest').addEventListener('click', () => {
   $('#feed').scrollTo({ top: $('#feed').scrollHeight, behavior: 'smooth' });
   $('#toLatest').hidden = true;
 });
+
+/**
+ * Changing how somebody looks.
+ *
+ * Click any face. What is chosen is kept by the room, under the name, so it
+ * is the same in every browser and for everybody in it.
+ */
+const GLYPHS = ['🦊', '🐙', '🦉', '🐺', '🦁', '🐼', '🐝', '🤖', '👾', '🧠', '⚡', '🔥', '🌊', '🌙', '⭐', '🎯', '🛠️', '🔬', '📐', '🎨'];
+const SWATCHES = [8, 32, 55, 95, 150, 185, 215, 255, 290, 330];
+const draft = { name: null, kind: 'agent', glyph: '', hue: 0, image: '' };
+
+function drawAvatarEditor() {
+  const glyph = draft.glyph || initials(draft.name);
+  const two = [...glyph].length > 1 && /^[\w]+$/.test(glyph);
+  $('#avBig').innerHTML = `<span class="av big ${two ? 'two' : ''} ${draft.image ? 'pic' : ''}" style="--h:${draft.hue}">${
+    draft.image ? `<img src="${draft.image}" alt="">` : esc(glyph)}</span>`;
+  $('#avPick').innerHTML = GLYPHS.map((g) => `<button type="button" data-glyph="${g}" class="${draft.glyph === g ? 'on' : ''}">${g}</button>`).join('');
+  $('#avSw').innerHTML = SWATCHES.map((h) => `<button type="button" data-hue="${h}" style="--h:${h}" class="${Number(draft.hue) === h ? 'on' : ''}" title="colour"></button>`).join('');
+  $('#avHue').value = draft.hue;
+  $('#avNoPic').hidden = !draft.image;
+}
+
+function editAvatar(name, kind) {
+  const l = look(name);
+  Object.assign(draft, { name, kind, glyph: state.avatars?.[name]?.glyph ?? '', hue: l.hue, image: l.image ?? '' });
+  $('#avWho').textContent = name;
+  $('#avGlyph').value = draft.glyph;
+  drawAvatarEditor();
+  openDialog('#dlgAvatar');
+}
+
+document.addEventListener('click', (e) => {
+  const face = e.target.closest('.av[data-who]');
+  if (!face || face.closest('#dlgAvatar')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  editAvatar(face.dataset.who, face.dataset.kind);
+}, true);
+
+$('#avGlyph').addEventListener('input', (e) => { draft.glyph = e.target.value.trim(); draft.image = ''; drawAvatarEditor(); });
+$('#avHue').addEventListener('input', (e) => { draft.hue = Number(e.target.value); drawAvatarEditor(); });
+$('#avPick').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-glyph]'); if (!b) return;
+  draft.glyph = b.dataset.glyph; draft.image = ''; $('#avGlyph').value = draft.glyph; drawAvatarEditor();
+});
+$('#avSw').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-hue]'); if (!b) return;
+  draft.hue = Number(b.dataset.hue); drawAvatarEditor();
+});
+$('#avUpload').addEventListener('click', () => $('#avFile').click());
+$('#avNoPic').addEventListener('click', () => { draft.image = ''; drawAvatarEditor(); });
+$('#avFile').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    // Drawn at the size it is shown: a face in a chat is a thumbnail, and
+    // storing a photograph to show a thumbnail is weight for nothing.
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    const canvas = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
+    canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 128, 128);
+    draft.image = canvas.toDataURL('image/jpeg', 0.86);
+    drawAvatarEditor();
+  } catch { toast('that file could not be read as a picture'); }
+});
+async function saveAvatar(body) {
+  try {
+    state.avatars = (await api('/api/avatars', { method: 'POST', body: JSON.stringify(body) })).avatars;
+    $('#dlgAvatar').close();
+    renderIdeas(); renderRounds(); renderFeed(); renderLive();
+  } catch (x) { toast(x.message); }
+}
+$('#avSave').addEventListener('click', () => saveAvatar({ name: draft.name, glyph: draft.glyph, hue: draft.hue, image: draft.image }));
+$('#avReset').addEventListener('click', () => saveAvatar({ name: draft.name }));
+$('#avCancel').addEventListener('click', () => $('#dlgAvatar').close());
 
 /** Replying to one message: it rides above the box until sent or put away. */
 function setReply(m) {
@@ -1644,7 +1805,7 @@ function renderMentions(filter) {
   const able = new Set(state.rounds?.speaking ?? []);
   slash.items = [
     ...seats.map((name) => ({
-      key: name, face: avatar(name, 'agent', 'sm'), title: `@${name}`,
+      key: name, face: avatar(name, 'agent', 'sm', { edit: false }), title: `@${name}`,
       hint: able.has(name) ? (roleOf(name) || 'talk to it alone') : 'no working connection', run: put(name),
     })),
     { key: 'all', face: '<span class="av sm hu">∗</span>', title: '@all', hint: 'everyone answers, in turn', run: put('all') },
@@ -2168,6 +2329,9 @@ function listen() {
 collapsiblePanel({ el: '#ctx', name: 'ctx', title: 'context panel' });
 
 if (state.me) $('#meLabel').textContent = state.me;
+// How everybody is drawn, before anything is: a face that changes after the
+// page has appeared reads as a different person arriving.
+state.avatars = (await api('/api/avatars').catch(() => ({ avatars: {} }))).avatars ?? {};
 await refresh();
 await ensureJoined();
 if (state.me) $('#meLabel').textContent = state.me;

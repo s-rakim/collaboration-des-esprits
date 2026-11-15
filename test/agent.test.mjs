@@ -118,7 +118,6 @@ test('the request uses the seat\u2019s own model and its tool surface', async ()
   assert.equal(req.model, 'gpt-5.2');
   assert.equal(req.messages[0].role, 'system', 'the charter goes in a system message');
   assert.equal(req.tool_choice, 'auto');
-  assert.ok(req.tools.some((t) => t.function.name === 'generate_image'), 'media tools are offered too');
   assert.ok(req.tools.some((t) => t.function.name === 'propose'), 'tools are translated to the function shape');
 });
 
@@ -553,4 +552,45 @@ test('an agent addressed by name is told the human wants its answer', async () =
   const { p, calls } = participant(ctx, [msg(null, [{ name: 'reply', input: { body: 'Yes.' } }])]);
   await p.takeTurn({ trigger: 'rakim addressed you by name: can it scale?', direct: true });
   assert.match(calls[0].messages.find((m) => m.role === 'system').content, /addresses you by name, they want your answer/);
+});
+
+test('only the tools that can work here are offered, so a turn is not slowed by ones that cannot', async () => {
+  const ctx = room();
+  const names = (calls) => calls[0].tools.map((t) => t.function.name);
+
+  // The lobby, in a room with nothing connected: talk, records, and nothing else.
+  const bare = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])]);
+  await bare.p.takeTurn({ trigger: 'rakim said: hello' });
+  const offered = names(bare.calls);
+  for (const gone of ['propose', 'weigh_in', 'choose', 'refine_spec', 'plan',          // need an idea
+    'generate_image', 'generate_video', 'generate_audio', 'web_search', 'use_plugin', 'list_plugins',
+    'use_skill', 'run_command', 'browser_search', 'browser_open', 'browser_read']) {
+    assert.ok(!offered.includes(gone), `${gone} cannot work here and was offered anyway`);
+  }
+  for (const kept of ['reply', 'react', 'say_nothing', 'ask', 'remember', 'save_artifact']) {
+    assert.ok(offered.includes(kept), `${kept} should always be there`);
+  }
+
+  // In an idea, the tools that act on one come back.
+  const idea = ctx.hub.dropIdea({ title: 'Scoped', raw: '', by: 'rakim' });
+  const inIdea = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])]);
+  await inIdea.p.takeTurn({ trigger: 'rakim said: thoughts?', idea: idea.slug });
+  assert.ok(names(inIdea.calls).includes('propose'));
+
+  // And what is connected is offered: an image connection, and only that kind.
+  const media = { image: async () => '/media/x.png', video: async () => '', audio: async () => '', available: (kind) => kind === 'image' };
+  const drawing = participant(ctx, [msg(null, [{ name: 'say_nothing', input: {} }])], () => {}, SEAT, media);
+  await drawing.p.takeTurn({ trigger: 'rakim said: draw it' });
+  assert.ok(names(drawing.calls).includes('generate_image'));
+  assert.ok(!names(drawing.calls).includes('generate_video'));
+  assert.ok(names(drawing.calls).length < offered.length + 3);
+});
+
+test('a turn reports how long it took and how long before the first word', async () => {
+  const ctx = room();
+  const { p } = participant(ctx, [msg(null, [{ name: 'reply', input: { body: 'Hello.' } }])]);
+  const r = await p.takeTurn({ trigger: 'rakim said: hello' });
+  assert.ok(Number.isFinite(r.ms) && r.ms >= 0);
+  // A stand-in that answers in one piece never streamed, so there was no first word to time.
+  assert.equal(r.firstMs, null);
 });
