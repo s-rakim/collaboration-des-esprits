@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/s-rakim/collaboration-des-esprits.git"
   },
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "bin": {
     "esprits": "src/bin/stdio.js",
     "esprits-serve": "src/bin/serve.js"

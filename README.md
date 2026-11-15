@@ -1031,4 +1031,13 @@ when switched off.
 
 ## License
 
-MIT
+Free for noncommercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE): use it, read it, change it and
+share it, for anything that is not commercial.
+
+**Commercial use needs a paid licence** from the copyright holder — using it in
+a business, building it into a product, or offering it as a service. See
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for where the line is and how to
+get one.
+
+Copyright © 2026 s-rakim.
