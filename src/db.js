@@ -161,6 +161,15 @@ export function openDb(path) {
   addColumn('participants', 'connection', 'TEXT');
   addColumn('ideas', 'project_id', 'INTEGER');
   addColumn('terminal_runs', 'shell', "TEXT NOT NULL DEFAULT 'pc'");
+  addColumn('messages', 'chat_id', 'INTEGER');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)');
+  // A message written to the lobby belongs to whichever chat the room is in.
+  // Stamped here, as it is written, so nothing that posts has to know chats exist.
+  db.exec(`CREATE TRIGGER IF NOT EXISTS messages_lobby_chat AFTER INSERT ON messages
+    WHEN NEW.idea_id IS NULL AND NEW.chat_id IS NULL
+    BEGIN
+      UPDATE messages SET chat_id = (SELECT CAST(v AS INTEGER) FROM settings WHERE k = 'lobby_chat') WHERE id = NEW.id;
+    END`);
 
   // The checking role was called something else once. A room that already has
   // a seat, a task or a handoff under the old name keeps it under the new one,

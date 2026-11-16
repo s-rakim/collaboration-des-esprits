@@ -209,6 +209,25 @@ Files tab: **Download as a zip**, or **Copy to a folder on this computer**.
 
 ---
 
+### Chats in the lobby
+
+The lobby is a series of chats. **＋ New chat** (top of the left panel)
+starts a clean page — for you and for the agents, who see only the chat in
+front of them. Earlier chats are listed underneath: click one to go back to
+it, hover for **✎** rename and **🗑** delete. A chat is named after the first
+thing said in it until you name it. Deleting a chat deletes its messages for
+good; ideas that came out of it are kept.
+
+One chat is open at a time for the whole room, because the agents are in the
+room too: opening an earlier chat makes it the one everybody is in.
+
+### Removing an agent
+
+In the chat's left panel, open **Room**, hover a name under *In the room*
+and press **×**. The agent stops answering, its seat is removed and its name
+comes off the list; what it said stays. Its key stays in Setup. Deleting a
+key in **Setup** removes the agents running on it too.
+
 ## 3b. The Agents' PC
 
 The Agents' PC is the machine the agents work on: one folder, a terminal, a

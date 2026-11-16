@@ -165,6 +165,23 @@ export class Hub {
     return this.#agentView(this.db.prepare('SELECT * FROM agents WHERE id = ?').get(agent.id));
   }
 
+  /**
+   * Take somebody off the room's list.
+   *
+   * Only their place in the room goes — the name on the roster, where they
+   * had read up to, their place in any queue. What they said, decided and
+   * built stays, under their name: a conversation with holes cut in it where
+   * a model used to be is worse than one that remembers who said what.
+   */
+  removeAgent(name) {
+    const row = this.db.prepare('SELECT id, name FROM agents WHERE name = ? COLLATE NOCASE').get(String(name ?? ''));
+    if (!row) return false;
+    this.db.prepare('DELETE FROM cursors WHERE agent_id = ?').run(row.id);
+    this.db.prepare('DELETE FROM floor_queue WHERE agent_name = ?').run(row.name);
+    this.db.prepare('DELETE FROM agents WHERE id = ?').run(row.id);
+    return true;
+  }
+
   roster() {
     return this.db
       .prepare('SELECT * FROM agents ORDER BY kind DESC, name')
@@ -688,7 +705,10 @@ export class Hub {
       .prepare(
         `SELECT m.*, i.slug AS idea_slug FROM messages m
          LEFT JOIN ideas i ON i.id = m.idea_id
-         WHERE ${ideaId === null ? 'm.idea_id IS NULL' : 'm.idea_id = ?'}
+         WHERE ${ideaId === null
+           // The lobby is the chat the room is in, and only that: an earlier chat is not this conversation.
+           ? "m.idea_id IS NULL AND m.chat_id IS (SELECT CAST(v AS INTEGER) FROM settings WHERE k = 'lobby_chat')"
+           : 'm.idea_id = ?'}
          ORDER BY m.id DESC LIMIT ?`,
       )
       .all(...(ideaId === null ? [] : [ideaId]), Math.min(Math.max(1, Number(limit) || 40), 200));

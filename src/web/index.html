@@ -30,13 +30,38 @@
   /* Put away, the column keeps just enough width to hold its own way back. */
   body.panel-ctx-closed main{--R:38px}
   /* The room panel — who is speaking, who is here, search — is put away the same way. */
-  main>aside{position:relative;padding-top:46px}
+  main>aside{position:relative;padding-top:54px}
   main>aside .panel-toggle{left:auto;right:6px;transform:scaleX(-1)}
-  body.panel-room-closed main{--L:38px}
-  body.panel-room-closed main>aside>*:not(.panel-toggle){display:none}
-  body.panel-room-closed main>aside{padding:0;overflow:hidden}
-  body.panel-room-closed main>aside .panel-toggle{right:5px}
-  body.panel-room-closed #splitL{display:none}
+  body.panel-chats-closed main{--L:38px}
+  body.panel-chats-closed main>aside>*:not(.panel-toggle){display:none}
+  body.panel-chats-closed main>aside{padding:0;overflow:hidden}
+  body.panel-chats-closed main>aside .panel-toggle{right:5px}
+  body.panel-chats-closed #splitL{display:none}
+  .agent .rm{display:none;margin-left:auto;flex:none;width:22px;height:22px;padding:0;border:0;background:none;color:var(--faint);border-radius:6px;font-size:15px;line-height:1;box-shadow:none}
+  .agent .st + .rm{margin-left:4px}
+  .agent:hover .rm,.agent:focus-within .rm{display:grid;place-items:center}
+  .agent .rm:hover{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+  /* The lobby's chats: a new one, and the ones to go back to. */
+  .newchat{width:calc(100% - 34px);text-align:left;padding:9px 13px;border-radius:12px;font-weight:600;position:absolute;top:8px;left:12px}
+  .chats{display:flex;flex-direction:column;gap:2px;margin:6px -4px 10px}
+  .chats .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:10px 8px 4px;font-weight:600}
+  .chat{display:flex;align-items:center;gap:6px;padding:8px 6px 8px 10px;border-radius:10px;cursor:pointer;color:var(--dim);font-size:14px;min-width:0;border:1px solid transparent}
+  .chat:hover{background:color-mix(in srgb,var(--text) 6%,transparent);color:var(--text)}
+  .chat.on{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text);border-color:var(--hair);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+  .chat .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat .n{font-size:11.5px;color:var(--faint);flex:none}
+  .chat button{display:none;flex:none;width:24px;height:24px;padding:0;border:0;background:none;color:var(--faint);border-radius:6px;font-size:13px;line-height:1}
+  .chat:hover button,.chat:focus-within button{display:grid;place-items:center}
+  .chat:hover .n{display:none}
+  .chat button:hover{background:color-mix(in srgb,var(--text) 12%,transparent);color:var(--text)}
+  .chat button.del:hover{color:var(--bad)}
+  .roomd{border-top:1px solid var(--hair);padding-top:8px;margin-top:4px}
+  .roomd>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--dim);padding:4px 4px;list-style:none;user-select:none}
+  .roomd>summary::before{content:'▸';display:inline-block;width:14px;color:var(--faint);font-size:10px}
+  .roomd[open]>summary::before{content:'▾'}
+  .roomd>summary small{font-weight:400;color:var(--faint);margin-left:4px}
+  /* The page's own bar says where you are, and nothing else. */
+  header .stats{display:none}
   .mid .composer{padding:8px 20px 14px}
   .mid .composer>.wrap{max-width:860px;width:100%;margin:0 auto}
   .msg:not(.me) .b{background:var(--glass)!important;border:1px solid var(--hair)}
@@ -335,8 +360,12 @@
 
 <main>
   <aside>
+    <button id="newChat" class="newchat" title="Start a new chat in the lobby — a clean page for you and the agents">＋ New chat</button>
+    <div id="chats" class="chats"></div>
+    <details class="roomd" id="roomd">
+    <summary>Room <small>who answers, who is here, search</small></summary>
     <input id="search" placeholder="Search everything ever said" autocomplete="off"
-      style="margin-bottom:10px;font-size:14px;padding:6px 9px">
+      style="margin:8px 0 10px;font-size:14px;padding:6px 9px">
     <div id="results"></div>
     <div id="context"></div>
     <h2>Speaking</h2>
@@ -346,6 +375,7 @@
     <h2 style="margin-top:8px">In the room</h2>
     <div class="sect" id="roster"></div>
     <div class="rowsplit" id="splitRoster" title="Drag to resize · double-click to reset"></div>
+    </details>
   </aside>
   <div class="colsplit" id="splitL" title="Drag to resize · double-click to reset"></div>
   <div class="colsplit" id="splitR" title="Drag to resize · double-click to reset"></div>
@@ -727,6 +757,7 @@ function renderIdeas() {
       <span style="font-weight:${a.kind === 'human' ? 650 : 500}">${esc(a.name)}</span>
       <span style="color:var(--faint);font-size:12.5px">${esc(a.role)}</span>
       ${a.workingOn.length ? `<span class="st" style="margin-left:auto;font-size:11.5px;color:var(--good)">#${a.workingOn[0].id}</span>` : ''}
+      ${a.name !== state.me ? `<button class="rm" data-remove-agent="${esc(a.name)}" title="Remove ${esc(a.name)} from the room">×</button>` : ''}
     </div>`).join('') || '<div class="empty">Nobody has joined.</div>';
 
   // The destination lives on the chip above the box now; this line is for what
@@ -1339,6 +1370,7 @@ window.addEventListener('esprits:idea', async (e) => {
   if (state.idea) url.searchParams.set('idea', state.idea); else url.searchParams.delete('idea');
   history.replaceState(null, '', url);
   renderIdeas(); renderFeed();
+  state.chatsSig = ''; loadChats();
   try { await loadBrief(); } catch (err) { toast(err.message); }
 });
 
@@ -2352,7 +2384,9 @@ $('#stop').addEventListener('click', async () => {
 // Live updates: the server tells us the high-water mark moved, we pull the delta.
 function listen() {
   const es = new EventSource(`/api/events?since=${state.head}`);
-  es.addEventListener('messages', () => refresh());
+  es.addEventListener('messages', () => { refresh(); loadChats(); });
+  // Somebody — in another tab, perhaps — moved the room to another chat.
+  es.addEventListener('chat', () => { if (state.idea) { state.chatsSig = ''; loadChats(); } else location.reload(); });
   es.addEventListener('live', (e) => {
     try { state.live = JSON.parse(e.data); } catch { state.live = null; }
     renderLive();
@@ -2366,7 +2400,75 @@ function listen() {
 }
 
 collapsiblePanel({ el: '#ctx', name: 'ctx', title: 'context panel' });
-collapsiblePanel({ el: 'main>aside', name: 'room', title: 'room panel — who is speaking, who is here, search', startClosed: true });
+collapsiblePanel({ el: 'main>aside', name: 'chats', title: 'chats and room panel' });
+
+// --------------------------------------------------------------- lobby chats
+
+const whenAgo = (iso) => {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 90) return 'now';
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+};
+
+async function loadChats() {
+  const c = await api('/api/chats').catch(() => null);
+  if (!c) return;
+  state.chats = c;
+  const sig = JSON.stringify([c.current, state.idea, c.chats.map((x) => [x.id, x.title, x.messages])]);
+  if (sig === state.chatsSig) return;
+  state.chatsSig = sig;
+  $('#chats').innerHTML = `<div class="lbl">Chats</div>` + c.chats.map((x) => `
+    <div class="chat ${x.current && !state.idea ? 'on' : ''}" data-chat="${x.id}" title="${esc(x.title)} — ${x.messages} message${x.messages === 1 ? '' : 's'}">
+      <span class="t">${esc(x.title)}</span><span class="n">${x.messages ? whenAgo(x.lastAt) : ''}</span>
+      <button data-rename="${x.id}" title="Rename">✎</button><button class="del" data-delete="${x.id}" title="Delete this chat">🗑</button>
+    </div>`).join('');
+}
+
+const chatDo = (path, body = {}) => asMe(() => api(path, { method: 'POST', body: JSON.stringify({ ...body, as: state.me }) }));
+/** The lobby is a different conversation now: start the page again in it. */
+const intoLobby = () => { location.href = '/'; };
+
+$('#roster').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-remove-agent]');
+  if (!b) return;
+  const name = b.dataset.removeAgent;
+  if (!confirm(`Remove ${name} from the room?\n\nIt stops answering and its name comes off the list. What it has said stays in the conversation. If it has a seat, the seat is removed too — its key stays in Setup.`)) return;
+  try { await chatDo(`/api/roster/${encodeURIComponent(name)}/remove`); toast(`${name} removed`, 'ok'); await refresh(); }
+  catch (err) { toast(err.message); }
+});
+
+$('#newChat').addEventListener('click', async () => {
+  if (!state.me) return toast('say who you are first');
+  try { await chatDo('/api/chats'); intoLobby(); } catch (err) { toast(err.message); }
+});
+
+$('#chats').addEventListener('click', async (e) => {
+  const row = e.target.closest('[data-chat]');
+  if (!row) return;
+  const id = Number(row.dataset.chat);
+  const chat = state.chats?.chats.find((x) => x.id === id);
+  try {
+    if (e.target.closest('[data-rename]')) {
+      const title = prompt('A name for this chat (leave empty to name it after its first message)', chat?.named ? chat.title : '');
+      if (title === null) return;
+      await chatDo(`/api/chats/${id}/rename`, { title });
+      state.chatsSig = ''; return loadChats();
+    }
+    if (e.target.closest('[data-delete]')) {
+      if (!confirm(`Delete “${chat?.title ?? 'this chat'}”?\n\n${chat?.messages ?? 0} message${chat?.messages === 1 ? '' : 's'} will be deleted for good. Ideas that came out of it are kept.`)) return;
+      const r = await chatDo(`/api/chats/${id}/delete`);
+      // Deleting the chat the room was in moves the room; the page follows.
+      if (chat?.current) return intoLobby();
+      state.chats = r; state.chatsSig = ''; return loadChats();
+    }
+    if (chat?.current && !state.idea) return;
+    if (!chat?.current) await chatDo(`/api/chats/${id}/open`);
+    intoLobby();
+  } catch (err) { toast(err.message); }
+});
+loadChats();
 
 if (state.me) $('#meLabel').textContent = state.me;
 // How everybody is drawn, before anything is: a face that changes after the

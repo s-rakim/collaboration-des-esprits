@@ -23,6 +23,7 @@ import { createTerminal } from '../workspace.js';
 import { createPc, isPcCommand } from '../pc.js';
 import { createPermissions } from '../permissions.js';
 import { FREE_PROVIDERS, FREE_SOURCE } from '../free-providers.js';
+import { createChats } from '../chats.js';
 import { cdTarget } from '../shells.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
@@ -112,6 +113,10 @@ const rounds = createRounds({
   hub, seats, models, config,
   log: (m) => process.stdout.write(`${m}\n`),
 });
+
+/** The lobby's chats. Moving to another one drops whoever was queued to answer in the last. */
+const chats = createChats({ db: hub.db, onSwitch: () => { try { rounds.clear(); } catch { /* nothing waiting */ } } });
+chats.init();
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -396,6 +401,21 @@ app.get('/api/tasks', (req, res) => send(res, () => hub.tasks({ idea: req.query.
 app.get('/api/search', (req, res) => send(res, () => hub.search({ query: req.query.q, idea: req.query.idea })));
 
 /** The lobby plus every idea, newest last — what the UI renders as the feed. */
+// --------------------------------------------------------------------- chats
+
+/** The lobby's chats: the one the room is in, and the ones to go back to. */
+app.get('/api/chats', (_req, res) => send(res, () => chats.list()));
+
+const chatAction = (path, fn) => app.post(path, fromOurPages, (req, res) =>
+  send(res, () => {
+    person(req.body?.as);
+    try { return fn(req); } catch (err) { throw new Invalid(err.message); }
+  }));
+chatAction('/api/chats', () => chats.start());
+chatAction('/api/chats/:id/open', (req) => chats.open(req.params.id));
+chatAction('/api/chats/:id/rename', (req) => chats.rename(req.params.id, req.body?.title));
+chatAction('/api/chats/:id/delete', (req) => chats.remove(req.params.id));
+
 app.get('/api/feed', (req, res) =>
   send(res, () => {
     const since = Number(req.query.since ?? 0);
@@ -404,6 +424,7 @@ app.get('/api/feed', (req, res) =>
         `SELECT m.*, i.slug AS idea_slug FROM messages m
          LEFT JOIN ideas i ON i.id = m.idea_id
          WHERE m.id > ? ${req.query.idea ? 'AND i.slug = ?' : ''}
+           AND (m.idea_id IS NOT NULL OR m.chat_id IS (SELECT CAST(v AS INTEGER) FROM settings WHERE k = 'lobby_chat'))
          ORDER BY m.id LIMIT ?`,
       )
       .all(...(req.query.idea ? [since, req.query.idea, FEED_PAGE] : [since, FEED_PAGE]));
@@ -1275,16 +1296,34 @@ app.post('/api/seats', (req, res) =>
   }),
 );
 
+/**
+ * Take an agent out of the room altogether: stop its model, give up its seat,
+ * and take its name off the list. What it said stays in the conversation.
+ */
+function removeFromRoom(name) {
+  const running = models.get(name);
+  if (running) {
+    running.stop();
+    models.delete(name);
+  }
+  const seat = seats.remove(name);
+  const listed = hub.removeAgent(name);
+  return seat || listed;
+}
+
 app.delete('/api/seats/:name', (req, res) =>
-  send(res, () => {
-    const running = models.get(req.params.name);
-    if (running) {
-      running.stop();
-      models.delete(req.params.name);
-    }
-    return { removed: seats.remove(req.params.name) };
-  }),
+  send(res, () => ({ removed: removeFromRoom(req.params.name) })),
 );
+
+/** Remove anybody from the room's list — an agent with a seat, one that joined from outside, a name left over. */
+app.post('/api/roster/:name/remove', fromOurPages, (req, res) =>
+  send(res, () => {
+    const by = person(req.body?.as);
+    if (String(req.params.name).toLowerCase() === String(by).toLowerCase()) throw new Invalid('that is you — change your name instead, with the button beside it');
+    if (!removeFromRoom(req.params.name)) throw new NotFound(`nobody called ${req.params.name} is in the room`);
+    hub.notice({ body: `${by} removed ${req.params.name} from the room.` });
+    return { removed: true, roster: hub.roster() };
+  }));
 
 // ---------------------------------------------------------------- connections
 
@@ -1305,7 +1344,13 @@ app.post('/api/connections', (req, res) =>
 );
 
 app.delete('/api/connections/:name', (req, res) =>
-  send(res, () => ({ removed: connections.remove(req.params.name) })),
+  send(res, () => {
+    // Deleting a key takes the agents that were running on it out of the room
+    // with it; a seat with nothing to run on is a name that never answers.
+    const gone = seats.all().filter((s) => s.connection === req.params.name).map((s) => s.name);
+    for (const name of gone) removeFromRoom(name);
+    return { removed: connections.remove(req.params.name), agents: gone };
+  }),
 );
 
 /**
@@ -2109,10 +2154,14 @@ app.get('/api/events', (req, res) => {
   let marks = hub.reactionHead();
   let showing = 'null';
   let quiet = 0;
+  let inChat = chats.current();
   res.write(`event: hello\ndata: ${JSON.stringify({ head: last, reactions: marks })}\n\n`);
 
   const tick = setInterval(() => {
     try {
+      // The room moved to another chat: the lobby on this page is now a different conversation.
+      const nowIn = chats.current();
+      if (nowIn !== inChat) { inChat = nowIn; res.write(`event: chat\ndata: ${JSON.stringify({ current: nowIn })}\n\n`); }
       const head = hub.head();
       // A reaction changes a message that is already on the page, so it does
       // not move the head and has to be announced on its own.
@@ -2340,7 +2389,33 @@ function startScheduler() {
   setTimeout(tick, 2_000).unref();
 }
 
+/**
+ * Put right any connection that was marked as speaking the Messages shape by
+ * mistake. An earlier check took a 404 on a GET as proof, and some providers
+ * answer that way while speaking the chat shape — so their seats were sent to
+ * an address that does not exist. Asked again, properly, once at start.
+ */
+async function healShapes() {
+  for (const c of connections.all()) {
+    if (c.kind !== 'chat' || c.extra?.shape !== 'messages') continue;
+    try {
+      const conn = connections.resolve(c.name);
+      const shape = await detectShape(conn.baseURL, { apiKey: conn.apiKey });
+      if (shape !== 'chat') continue;
+      saveConnection({ name: conn.name, kind: conn.kind, baseURL: conn.baseURL, model: conn.model, extra: { ...(conn.extra ?? {}), shape } });
+      process.stdout.write(`${conn.name}: was set to the wrong request shape — corrected\n`);
+      // The seats on it are restarted so they pick the right shape up.
+      for (const s of seats.all().filter((x) => x.connection === conn.name)) {
+        const running = models.get(s.name);
+        if (running) { running.stop(); models.delete(s.name); }
+      }
+      syncSeats();
+    } catch { /* unreachable now; it is asked again when it is tested */ }
+  }
+}
+
 function startParticipants() {
+  healShapes();
   syncSeats();
   rounds.start();
 

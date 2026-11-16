@@ -192,8 +192,9 @@ export function messagesAdapter({
 export async function detectShape(baseURL, { fetchImpl = fetch, timeoutMs = 8000, apiKey } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const res = await fetchImpl(`${String(baseURL).replace(/\/+$/, '')}/chat/completions`, {
+  const base = String(baseURL).replace(/\/+$/, '');
+  const ask = async (path) => {
+    const res = await fetchImpl(`${base}${path}`, {
       method: 'GET',
       signal: ctl.signal,
       headers: apiKey ? { authorization: `Bearer ${apiKey}`, 'x-api-key': apiKey } : {},
@@ -202,7 +203,16 @@ export async function detectShape(baseURL, { fetchImpl = fetch, timeoutMs = 8000
     // the connection is never released — which is a leak in a long-running
     // server and a process that will not exit in a test.
     await res.body?.cancel().catch(() => {});
-    return res.status === 404 ? 'messages' : 'chat';
+    return res.status;
+  };
+  try {
+    if ((await ask('/chat/completions')) !== 404) return 'chat';
+    // A 404 there is not yet an answer. Some providers — Groq is one — answer
+    // 404 to a GET on a path that only takes POST, and they speak the chat
+    // shape perfectly well. It is the Messages shape only if that path is
+    // there when this one is not; an endpoint that 404s both is asked the
+    // usual way, and the real call reports whatever is really wrong.
+    return (await ask('/messages')) !== 404 ? 'messages' : 'chat';
   } catch {
     // Unreachable is not an answer about shape. Say the usual one and let the
     // real call report the real problem.

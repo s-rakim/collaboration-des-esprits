@@ -291,7 +291,7 @@ export function resolveTheme(saved) {
  */
 export const DERIVED = {
   dark: [
-    '--bar-bg:color-mix(in srgb, var(--panel) 62%, transparent);',
+    '--bar-bg:linear-gradient(180deg, color-mix(in srgb, #fff 7%, transparent), transparent), color-mix(in srgb, var(--panel) 42%, transparent);',
     '--bar-fg:var(--dim);', '--bar-on:var(--text);', '--bar-line:color-mix(in srgb, var(--line) 70%, transparent);',
     '--bar-go-bg:var(--accent);', '--bar-go-fg:var(--bg);',
     '--on-accent:var(--bg);', '--glow:var(--accent);', '--glow-strength:13%;',

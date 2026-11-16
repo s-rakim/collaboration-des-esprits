@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS messages (
   reply_to    INTEGER REFERENCES messages(id),
   ref_kind    TEXT,                                  -- task | question | decision
   ref_id      INTEGER,
+  created_at  TEXT NOT NULL,
+  chat_id     INTEGER                                -- which of the lobby's chats; NULL inside an idea
+);
+
+-- The lobby's chats: each a conversation of its own, kept to go back to.
+CREATE TABLE IF NOT EXISTS chats (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL DEFAULT '',              -- empty: named after the first thing said in it
   created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_idea ON messages(idea_id, id);

@@ -16,19 +16,26 @@
  */
 
 :root {
-  --radius:12px;
+  --radius:18px;
   --top:52px;
 
   --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
   --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:"JetBrains Mono","Cascadia Code",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 
-  /* Glass: a surface you can see the glow through. */
-  --glass:color-mix(in srgb, var(--panel) 62%, transparent);
-  --glass-strong:color-mix(in srgb, var(--panel) 86%, transparent);
-  --glass-soft:color-mix(in srgb, var(--panel) 38%, transparent);
+  /* Liquid glass: a surface that bends the light behind it. Each is a sheen
+     laid over a tint — brighter at the top-left where light would land,
+     nearly clear at the bottom-right — so a pane reads as thick glass. */
+  --sheen:linear-gradient(135deg, color-mix(in srgb, #fff 13%, transparent) 0%, color-mix(in srgb, #fff 4%, transparent) 38%, transparent 62%, color-mix(in srgb, #fff 5%, transparent) 100%);
+  --glass:var(--sheen), color-mix(in srgb, var(--panel) 46%, transparent);
+  --glass-strong:var(--sheen), color-mix(in srgb, var(--panel) 80%, transparent);
+  --glass-soft:color-mix(in srgb, var(--panel) 30%, transparent);
+  /* The edge of a pane: a lit rim inside, a soft shadow beneath. */
+  --rim:inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent), inset 0 -1px 0 color-mix(in srgb, #000 18%, transparent), inset 0 0 0 1px color-mix(in srgb, #fff 5%, transparent);
+  --lift:0 10px 34px rgba(0,0,0,.28);
+  --blur:blur(30px) saturate(1.9) brightness(1.06);
   /* A hairline: the border colour, thinned, so edges are felt more than seen. */
-  --hair:color-mix(in srgb, var(--line) 70%, transparent);
+  --hair:color-mix(in srgb, var(--text) 13%, transparent);
   --shadow:0 18px 50px rgba(0,0,0,.42);
 }
 
@@ -44,11 +51,13 @@ body {
   font:15px/1.6 var(--sans);
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
-  /* The glow the glass sits on. Fixed, so panes scroll over it. In the dark
-     it is plain light; in the light it is the accent, faintly. */
+  /* What the glass has to bend: slow pools of light behind everything.
+     In the dark they are plain light; in the light they are the accent. */
   background:
-    radial-gradient(1100px 620px at 84% -10%, color-mix(in srgb, var(--glow) var(--glow-strength), transparent), transparent 62%),
-    radial-gradient(900px 620px at -8% 110%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .65), transparent), transparent 60%),
+    radial-gradient(900px 560px at 86% -6%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * 1.5), transparent), transparent 60%),
+    radial-gradient(760px 620px at -6% 104%, color-mix(in srgb, var(--glow) var(--glow-strength), transparent), transparent 58%),
+    radial-gradient(520px 420px at 22% 18%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .6), transparent), transparent 66%),
+    radial-gradient(640px 480px at 70% 78%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .55), transparent), transparent 64%),
     var(--bg);
   background-attachment:fixed;
 }
@@ -487,3 +496,49 @@ header #toolTerminal, header #toolBrowser { display:none }
 
 /* On the chat page the bar's own "New idea" is the way to drop one. */
 header #newIdea { display:none }
+
+/* ------------------------------------------------------------- liquid glass
+ *
+ * One treatment for every pane: the sheen and tint from --glass, the page
+ * behind it blurred and brightened, a lit rim, generous corners. Applied here
+ * rather than page by page, so a pane added later is glass for nothing.
+ */
+.card, dialog, .topmenu, .freecard, .router,
+body #tools, body #dock, body .fwin,
+.composer .box, .jobbox .box, .composer .menu,
+body main > aside, body main > .ctx, body main > #rail {
+  backdrop-filter:var(--blur);
+  -webkit-backdrop-filter:var(--blur);
+}
+.card, .freecard, .router, .thread, .build {
+  background:var(--glass) !important;
+  border:1px solid var(--hair) !important;
+  border-radius:var(--radius) !important;
+  box-shadow:var(--rim), var(--lift);
+}
+dialog, .topmenu, .composer .menu { background:var(--glass-strong); border-radius:20px; box-shadow:var(--rim), 0 30px 80px rgba(0,0,0,.5) }
+body #tools, body #dock, body .fwin {
+  background:var(--sheen), color-mix(in srgb, var(--bg) 70%, transparent);
+  border:1px solid var(--hair);
+  border-radius:20px;
+  box-shadow:var(--rim), 0 34px 90px rgba(0,0,0,.55);
+}
+.composer .box, .jobbox .box { background:var(--glass); border:1px solid var(--hair); border-radius:22px; box-shadow:var(--rim), var(--lift); padding:11px 11px 11px 18px }
+body header { background:none; backdrop-filter:none; -webkit-backdrop-filter:none; border-bottom:0; min-height:50px }
+body main > aside, body main > .ctx, body main > #rail { background:var(--glass-soft); border-color:var(--hair) !important }
+
+/* Controls: rounded like drops, with the same lit rim. */
+button { border-radius:12px; box-shadow:inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent) }
+button:hover:not(:disabled) { transform:translateY(-1px) }
+button:active:not(:disabled) { transform:translateY(0) scale(.97) }
+button.primary { border-radius:12px; box-shadow:inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 8px 22px color-mix(in srgb, var(--accent) 22%, rgba(0,0,0,.3)) }
+input, textarea, select { border-radius:12px; background:color-mix(in srgb, var(--bg) 55%, transparent) }
+body #edge-tabs button { background:var(--glass); border:1px solid var(--hair); border-right:0; border-radius:14px 0 0 14px; box-shadow:var(--rim); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur) }
+
+/* Room to breathe: the same things, with more air between them. */
+h2 { letter-spacing:.09em; margin-top:26px }
+.card { padding:18px 20px }
+
+@media (prefers-reduced-transparency:reduce) {
+  :root { --glass:var(--panel); --glass-strong:var(--panel); --glass-soft:var(--panel); --blur:none }
+}

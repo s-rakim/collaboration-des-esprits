@@ -85,8 +85,8 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 @media (min-width:701px){#shell-page{margin-right:38px}}
 
 #topbar{flex:none;height:var(--top);position:relative;z-index:45;display:flex;align-items:center;gap:6px;padding:0 14px;
-  background:var(--bar-bg);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
-  border-bottom:1px solid var(--bar-line)}
+  background:var(--bar-bg);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border-bottom:1px solid var(--bar-line);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 14%,transparent),0 8px 30px rgba(0,0,0,.18)}
 #topbar svg{width:17px;height:17px;flex:none}
 #topbar .brand{display:flex;align-items:center;gap:9px;font-size:15.5px;font-weight:650;letter-spacing:-.02em;color:var(--bar-on);
   text-decoration:none;margin-right:10px;white-space:nowrap}
@@ -95,21 +95,21 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 
 #topbar .tabs{display:flex;align-items:stretch;gap:2px;height:100%;min-width:0;overflow-x:auto;scrollbar-width:none}
 #topbar .tabs::-webkit-scrollbar{display:none}
-#topbar a.tab,#topbar button.tab{position:relative;display:flex;align-items:center;gap:8px;padding:0 13px;margin:9px 0;border-radius:9px;
+#topbar a.tab,#topbar button.tab{position:relative;display:flex;align-items:center;gap:8px;padding:0 14px;margin:8px 0;border-radius:999px;
   font:inherit;font-size:14px;font-weight:500;color:var(--bar-fg);text-decoration:none;background:none;border:0;cursor:pointer;white-space:nowrap;
   transition:color .12s ease,background .12s ease}
 #topbar a.tab:hover,#topbar button.tab:hover{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 10%,transparent)}
-#topbar .tab.on{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 14%,transparent)}
-#topbar .tab.on::after{content:'';position:absolute;left:14px;right:14px;bottom:-9px;height:2px;border-radius:2px 2px 0 0;background:var(--bar-on)}
+#topbar .tab.on{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 14%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 22%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--bar-on) 10%,transparent)}
+#topbar .tab.on::after{content:none}
 
 #topbar .grow{flex:1;min-width:8px}
-#topbar .pill{display:flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:9px;font:inherit;font-size:13.5px;cursor:pointer;
+#topbar .pill{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 12%,transparent);font:inherit;font-size:13.5px;cursor:pointer;
   color:var(--bar-fg);background:color-mix(in srgb,var(--bar-on) 8%,transparent);border:1px solid color-mix(in srgb,var(--bar-on) 16%,transparent);white-space:nowrap;max-width:260px}
 #topbar .pill:hover{color:var(--bar-on);border-color:color-mix(in srgb,var(--bar-on) 35%,transparent)}
 #topbar .pill.icon{padding:0;width:34px;justify-content:center}
 #topbar .pill .t{overflow:hidden;text-overflow:ellipsis}
 #topbar .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
-#topbar .go{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:9px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+#topbar .go{display:flex;align-items:center;gap:7px;height:34px;padding:0 15px;border-radius:999px;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 50%,transparent),0 6px 18px rgba(0,0,0,.25);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
   color:var(--bar-go-fg);background:var(--bar-go-bg);border:1px solid var(--bar-go-bg);white-space:nowrap}
 #topbar .go:hover{filter:brightness(1.08)}
 #topbar .go kbd{font:500 10.5px var(--mono);opacity:.7;border:1px solid currentColor;border-radius:4px;padding:0 4px}
@@ -119,8 +119,8 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 /* The menus that drop from the bar. */
 #topbar .drop{position:relative;display:flex;align-items:center;height:100%}
 .topmenu{position:absolute;top:calc(100% - 4px);right:0;z-index:50;min-width:270px;max-height:min(70vh,560px);overflow:auto;padding:6px;
-  background:var(--glass-strong);backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6);
-  border:1px solid var(--line);border-radius:13px;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:menu-in .13s ease-out}
+  background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border:1px solid var(--hair);border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:menu-in .13s ease-out}
 .topmenu.left{left:0;right:auto}
 .topmenu[hidden]{display:none}
 @keyframes menu-in{from{opacity:0;transform:translateY(-6px)}}

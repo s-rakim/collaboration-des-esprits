@@ -123,10 +123,17 @@ test('which shape a router speaks is asked, not assumed', async () => {
   assert.equal(await detectShape(`http://127.0.0.1:${serves.address().port}/v1`), 'chat');
   serves.close();
 
-  const doesNot = http.createServer((req, res) => { res.writeHead(404); res.end('{}'); });
+  const doesNot = http.createServer((req, res) => { res.writeHead(req.url.includes('/messages') ? 405 : 404); res.end('{}'); });
   await new Promise((r) => doesNot.listen(0, '127.0.0.1', r));
   assert.equal(await detectShape(`http://127.0.0.1:${doesNot.address().port}/v1`), 'messages');
   doesNot.close();
+
+  // A provider that answers 404 to a GET on every path — as Groq does — is not
+  // thereby speaking the other shape: it is asked the usual way.
+  const neither = http.createServer((req, res) => { res.writeHead(404); res.end('{"error":"Unknown request URL"}'); });
+  await new Promise((r) => neither.listen(0, '127.0.0.1', r));
+  assert.equal(await detectShape(`http://127.0.0.1:${neither.address().port}/openai/v1`), 'chat');
+  neither.close();
 
   // Unreachable is not an answer about shape; the real call reports the real
   // problem rather than this guessing at it.
