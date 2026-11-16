@@ -637,3 +637,25 @@ test('a reply is read as it is written, and arrives whole', async () => {
   assert.equal(requests[0].stream, undefined);
   server.close();
 });
+
+test('every free provider in the catalogue can be added as a connection as it stands', async () => {
+  const { FREE_PROVIDERS, FREE_SOURCE } = await import('../src/free-providers.js');
+  assert.ok(FREE_PROVIDERS.length >= 12);
+  assert.match(FREE_SOURCE.url, /^https:\/\/github\.com\//);
+  const names = new Set();
+  for (const p of FREE_PROVIDERS) {
+    assert.ok(!names.has(p.name), `${p.name} is listed twice`);
+    names.add(p.name);
+    assert.match(p.baseURL, /^https:\/\/[^\s]+[^/]$/, `${p.name} needs an address, without a trailing slash`);
+    assert.match(p.keyUrl, /^https:\/\//, `${p.name} needs the page a key comes from`);
+    assert.ok(p.limits && p.needs, `${p.name} must say what the free tier allows and what it asks for`);
+    // A model to start with, or a declaration that the provider's own list supplies it.
+    assert.ok(p.models.length || p.discoverModels, `${p.name} has no model and does not say where one comes from`);
+    for (const m of p.models) assert.ok(m.id && !/\s/.test(m.id), `${p.name}: "${m.id}" is not a model id`);
+  }
+  // It saves like any other connection.
+  const { connections } = fresh();
+  const groq = FREE_PROVIDERS.find((p) => p.name === 'Groq');
+  const saved = connections.save({ name: 'groq', kind: 'chat', baseURL: groq.baseURL, model: groq.models[0].id, apiKey: 'gsk_NOT-A-REAL-KEY_fixture' });
+  assert.equal(saved.baseURL, groq.baseURL);
+});

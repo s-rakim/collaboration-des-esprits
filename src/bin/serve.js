@@ -22,6 +22,7 @@ import { createRouters } from '../routers.js';
 import { createTerminal } from '../workspace.js';
 import { createPc, isPcCommand } from '../pc.js';
 import { createPermissions } from '../permissions.js';
+import { FREE_PROVIDERS, FREE_SOURCE } from '../free-providers.js';
 import { cdTarget } from '../shells.js';
 import { createBrowser } from '../browser.js';
 import { createThreads } from '../threads.js';
@@ -1286,6 +1287,9 @@ app.delete('/api/seats/:name', (req, res) =>
 );
 
 // ---------------------------------------------------------------- connections
+
+/** Providers with a free tier, to start a connection from. A list to read; nothing is called. */
+app.get('/api/free-providers', (_req, res) => send(res, () => ({ source: FREE_SOURCE, providers: FREE_PROVIDERS })));
 
 app.get('/api/connections', (_req, res) =>
   send(res, () => ({ connections: connections.all(), kinds: KINDS, presets: PRESETS })),

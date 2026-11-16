@@ -77,6 +77,18 @@
   .sched .del{color:var(--bad);border-color:transparent;background:none;padding:4px 7px}
   .sched .run{font-size:12.5px;padding:4px 8px}
   @media (max-width:900px){.sched{grid-template-columns:1fr 1fr}}
+  .freegrid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  .freecard{border:1px solid var(--hair);border-radius:12px;padding:12px 14px;background:var(--glass-soft);display:flex;flex-direction:column;gap:6px;min-width:0}
+  .freecard .fh{display:flex;align-items:center;gap:8px;font-size:15.5px}
+  .freecard .tag{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--line);border-radius:20px;padding:0 8px;color:var(--faint)}
+  .freecard .tag.ok{color:var(--good);border-color:var(--good)}
+  .freecard .fl{font-size:13.5px;color:var(--dim);line-height:1.45}
+  .freecard .fl span{display:inline-block;min-width:70px;color:var(--faint);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  .freecard .fn{font-size:13px;color:var(--faint);line-height:1.45}
+  .freecard .fa{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:6px;min-width:0}
+  .freecard .fa select{flex:1;min-width:0;font-size:13.5px;padding:6px 8px}
+  .freecard .fa .fm{flex:1;min-width:0;font-size:13px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .freecard .fa a{font-size:13px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -198,6 +210,17 @@ function render() {
 
         <span class="modelnote" id="connNote"></span>
       </div>
+    </div>
+
+    <h2 id="free">Free model APIs</h2>
+    <div class="card">
+      <p class="hint" style="margin-top:0">
+        Providers with a free tier. Pick a model and press <b>Add</b>: it becomes a connection above with the address filled in —
+        get a key from the provider's page, paste it in, and save. Free tiers change and free models are often slow or busy;
+        if a seat times out, try another model here. <span id="freeSource"></span>
+      </p>
+      <input id="freeFind" placeholder="find a provider or a model…" autocomplete="off" spellcheck="false" style="max-width:340px;margin-bottom:10px">
+      <div class="freegrid" id="freeList"></div>
     </div>
 
     <h2>The models in your chat</h2>
@@ -606,6 +629,55 @@ function wireConns() {
     });
   }
 }
+
+// ---------------------------------------------------------- free model APIs
+
+let free = null;
+
+function renderFree() {
+  if (!free) return;
+  const q = $('#freeFind').value.trim().toLowerCase();
+  const have = new Set((roster?.connections ?? []).map((c) => String(c.baseURL ?? '').replace(/\/+$/, '')));
+  const shown = free.providers.filter((p) => !q || `${p.name} ${p.group} ${p.models.map((m) => `${m.id} ${m.kind ?? ''}`).join(' ')} ${(p.families ?? []).join(' ')}`.toLowerCase().includes(q));
+  $('#freeSource').innerHTML = `From <a href="${esc(free.source.url)}" target="_blank" rel="noopener noreferrer">${esc(free.source.name)}</a>, as of ${esc(free.source.asOf)}.`;
+  $('#freeList').innerHTML = shown.map((p) => {
+    const i = free.providers.indexOf(p);
+    return `<div class="freecard">
+      <div class="fh"><b>${esc(p.name)}</b>${p.keyOptional ? '<span class="tag ok">no key needed</span>' : ''}${have.has(p.baseURL.replace(/\/+$/, '')) ? '<span class="tag">added</span>' : ''}</div>
+      <div class="fl"><span>Free tier</span>${esc(p.limits)}</div>
+      <div class="fl"><span>Needs</span>${esc(p.needs)}</div>
+      ${p.notes ? `<div class="fn">${esc(p.notes)}</div>` : ''}
+      <div class="fa">
+        ${p.models.length
+          ? `<select data-free-model="${i}">${p.models.map((m) => `<option value="${esc(m.id)}">${esc(m.id)}${m.context ? ` · ${esc(m.context)}` : ''}${m.kind ? ` · ${esc(m.kind)}` : ''}</option>`).join('')}</select>`
+          : `<span class="fm" title="${esc((p.families ?? []).join(', '))}">pick the model after adding — ${esc((p.families ?? []).slice(0, 3).join(', '))}…</span>`}
+        <button data-free-add="${i}" class="primary">Add</button>
+        <a href="${esc(p.keyUrl)}" target="_blank" rel="noopener noreferrer">${p.keyOptional ? 'Site' : 'Get a key'} ↗</a>
+      </div>
+    </div>`;
+  }).join('') || '<p class="hint" style="margin:0">Nothing matches.</p>';
+}
+
+async function loadFree() {
+  free = await api('/api/free-providers').catch(() => null);
+  renderFree();
+}
+
+document.addEventListener('input', (e) => { if (e.target.id === 'freeFind') renderFree(); });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-free-add]');
+  if (!b || !free) return;
+  const p = free.providers[Number(b.dataset.freeAdd)];
+  const model = document.querySelector(`[data-free-model="${b.dataset.freeAdd}"]`)?.value ?? '';
+  const base = p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'free';
+  const taken = new Set([...(roster?.connections ?? []).map((c) => c.name), ...[...document.querySelectorAll('#conns input[data-f="name"], #conns [name="name"]')].map((x) => x.value)]);
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+  addConnRow({ name, kind: 'chat', baseURL: p.baseURL, model });
+  // Up to where it landed, so the next thing to do — the key — is in front of you.
+  $('#conns').lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  say(p.keyOptional ? `${p.name} added above — it needs no key; press Save changes` : `${p.name} added above — paste its key in, then Save changes`, 'ok');
+});
 
 function addConnRow(seed) {
   if (!roster.connections.length) $('#conns').innerHTML = '';
@@ -1179,6 +1251,7 @@ async function renderRouters() {
 
 async function loadAll() {
   roster = await api('/api/seats');
+  if (!free) loadFree(); else renderFree();
   if (roster.roles?.length) ROLES = roster.roles;
   renderConns();
   renderSeats();

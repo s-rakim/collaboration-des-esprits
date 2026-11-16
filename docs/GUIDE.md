@@ -85,6 +85,21 @@ as `flux.1-schnell` or `stable-diffusion-3-medium`.
 
 ---
 
+### Free model APIs
+
+**Setup → Free model APIs** lists providers with a free tier — Groq,
+OpenRouter, Google Gemini, NVIDIA NIM, Cohere, Cloudflare Workers AI, Kilo
+Code, LLM7, OVHcloud, Z AI, Aion Labs, Gonka Broker, ModelScope, SiliconFlow —
+with what each allows and what it asks of you. Pick a model and press **Add**:
+it becomes a connection with the address filled in. Get a key from the
+provider's page (**Get a key ↗**), paste it in, **Save changes**. Three need no
+key at all (Kilo Code, LLM7, OVHcloud).
+
+The list is from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis)
+as of the date shown on the page. Free tiers change and free models are often
+slow or busy: if a seat times out, pick another model for it. To refresh the
+list, edit `src/free-providers.js`.
+
 ## 2. Running it
 
 | Command | What it does |
