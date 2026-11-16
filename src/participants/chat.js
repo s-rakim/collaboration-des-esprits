@@ -248,6 +248,21 @@ export function chatAdapter({
             // The one case worth retrying automatically: the server naming the
             // length parameter it wanted. It has told us the answer, so asking
             // a person to go and find it would be a strange thing to do.
+            // And the other: the connection dropped before anything came back.
+            // That is the network hiccuping far more often than it is the
+            // address being wrong, so it is tried again, twice, a moment apart,
+            // before anybody is told about it.
+            const dropped = (e) => e instanceof OpenAI.APIError && (e.status === undefined || e.status === null)
+              && !(e instanceof OpenAI.APIConnectionTimeoutError) && e.name !== 'APIConnectionTimeoutError' && e.name !== 'APIUserAbortError';
+            if (dropped(first) && !ctl.signal.aborted) {
+              let last = first;
+              for (const wait of [700, 2000]) {
+                await new Promise((r) => setTimeout(r, wait));
+                if (ctl.signal.aborted) break;
+                try { response = await once(); last = null; break; } catch (again) { last = again; if (!dropped(again)) break; }
+              }
+              if (last) throw last;
+            } else {
             if (first?.status !== 400 && first?.status !== 422) throw first;
             // Asked for more than the model allows: it has said how much it
             // does allow, so ask for that. Checked before the spelling,
@@ -259,6 +274,7 @@ export function chatAdapter({
               memory.lengthKey = lengthKey;
             } else throw first;
             response = await once();
+            }
           }
         } catch (err) {
           // The SDK's typed errors carry a status; map the ones worth naming.
@@ -295,7 +311,12 @@ export function chatAdapter({
           if (err instanceof OpenAI.RateLimitError) throw new Error('rate limited by the provider — backing off');
           if (err instanceof OpenAI.APIError) {
             if (err.status === undefined || err.status === null) {
-              throw new Error(`could not reach ${baseURL || 'the provider'} — check the base URL, and that the service is running`);
+              const why = err.cause?.code || err.cause?.cause?.code || '';
+              const local = /(^|\/\/)(127\.0\.0\.1|localhost|\[::1\])/.test(baseURL || '');
+              throw new Error(local
+                ? `could not reach ${baseURL} — check the base URL, and that the service is running${why ? ` (${why})` : ''}`
+                : `the connection to ${baseURL || 'the provider'} dropped, three times running${why ? ` (${why})` : ''}. `
+                  + 'That is this computer\'s internet or the provider being briefly unreachable, not the key — send it again in a moment');
             }
             if (err.status === 404) {
               // Two different things answer 404: an address with no API at it,

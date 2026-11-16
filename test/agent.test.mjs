@@ -651,3 +651,33 @@ test('an agent in the lobby can open an idea for what is being discussed, and ca
   await inside.p.takeTurn({ trigger: 'rakim said: go on', idea: idea.slug });
   assert.ok(!inside.calls[0].tools.some((t) => t.function.name === 'open_idea'));
 });
+
+test('a connection that drops is tried again before anybody is told, and a dead one says it is not the key', async () => {
+  const { default: OpenAI } = await import('openai');
+  const { chatAdapter } = await import('../src/participants/chat.js');
+  const answer = { choices: [{ finish_reason: 'stop', message: { content: 'here' } }] };
+  const dropping = (times) => {
+    let n = 0;
+    return { calls: () => n, createClient: () => ({ chat: { completions: { create: async () => {
+      n += 1;
+      if (n <= times) throw new OpenAI.APIConnectionError({ message: 'Connection error.', cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }) });
+      return answer;
+    } } } }) };
+  };
+
+  // Twice dropped, third time through: the turn simply has its answer.
+  const flaky = dropping(2);
+  const ok = await chatAdapter({ apiKey: 'k', model: 'm', baseURL: 'https://api.example.com/v1', createClient: flaky.createClient })
+    .startTurn({ system: 's', tools: [] }).send('hello');
+  assert.equal(ok.text, 'here');
+  assert.equal(flaky.calls(), 3);
+
+  // Dropped every time: said plainly, with the reason, and not blamed on the key or the address.
+  const dead = dropping(99);
+  await assert.rejects(
+    () => chatAdapter({ apiKey: 'k', model: 'm', baseURL: 'https://api.example.com/v1', createClient: dead.createClient })
+      .startTurn({ system: 's', tools: [] }).send('hello'),
+    (err) => /dropped, three times running \(ECONNRESET\)/.test(err.message) && /not the key/.test(err.message),
+  );
+  assert.equal(dead.calls(), 3);
+});
