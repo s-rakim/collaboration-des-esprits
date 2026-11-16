@@ -206,3 +206,22 @@ test('a swarm needs a goal', () => {
   const ctx = room();
   assert.throws(() => ctx.hub.createSwarm({ goal: '  ', by: 'rakim' }), Invalid);
 });
+
+test('a run can be deleted from the Work page, and the finished ones cleared at once', () => {
+  const ctx = room();
+  const a = ctx.hub.createSwarm({ goal: 'First', seat: 'worker', workers: 1, by: 'rakim' });
+  const b = ctx.hub.createSwarm({ goal: 'Second', seat: 'worker', workers: 1, by: 'rakim' });
+  const c = ctx.hub.createSwarm({ goal: 'Still going', seat: 'worker', workers: 1, by: 'rakim' });
+  ctx.hub.cancelSwarm({ id: a.id });
+  ctx.hub.cancelSwarm({ id: b.id });
+
+  assert.deepEqual(ctx.hub.deleteSwarm({ id: a.id }), { removed: true, id: a.id });
+  assert.ok(!ctx.hub.swarms().some((r) => r.id === a.id));
+  assert.equal(ctx.hub.db.prepare('SELECT COUNT(*) AS n FROM swarm_tasks WHERE run_id = ?').get(a.id).n, 0);
+  assert.throws(() => ctx.hub.deleteSwarm({ id: a.id }));
+
+  // Clearing takes the finished ones and leaves what is still going.
+  assert.deepEqual(ctx.hub.clearSwarms(), { removed: 1 });
+  assert.deepEqual(ctx.hub.swarms().map((r) => r.goal), ['Still going']);
+  assert.equal(c.goal, 'Still going');
+});

@@ -1052,6 +1052,10 @@ app.post('/api/swarms', (req, res) =>
 );
 
 app.post('/api/swarms/:id/cancel', (req, res) => send(res, () => swarm.cancel(Number(req.params.id))));
+/** Delete a run from the Work page — stopping it first if it is still going. */
+app.delete('/api/swarms/:id', (req, res) => send(res, () => swarm.remove(Number(req.params.id))));
+/** Delete every finished, failed or cancelled run at once. */
+app.post('/api/swarms/clear', fromOurPages, (_req, res) => send(res, () => swarm.clear()));
 
 app.post('/api/swarms/:id/retry', (req, res) =>
   send(res, () => {

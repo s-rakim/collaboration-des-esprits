@@ -206,5 +206,12 @@ export function createSwarmRunner({ hub, seats, log = () => {}, createClient = n
       return hub.cancelSwarm({ id });
     },
     isRunning: (id) => running.has(id),
+    /** Stop it if it is going, then delete it. */
+    remove: (id) => {
+      const r = running.get(id);
+      if (r) { r.cancelled = true; try { hub.cancelSwarm({ id }); } catch { /* already gone */ } }
+      return hub.deleteSwarm({ id });
+    },
+    clear: () => hub.clearSwarms(),
   };
 }

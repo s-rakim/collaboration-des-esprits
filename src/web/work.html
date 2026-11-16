@@ -34,6 +34,12 @@
   .run{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:4px}
   .run:hover{background:var(--panel2)}
   .run.on{background:var(--panel2);border-color:var(--accent)}
+  .run{position:relative}
+  .run .rm{position:absolute;top:6px;right:6px;display:none;width:24px;height:24px;padding:0;border:0;background:none;color:var(--faint);border-radius:7px;font-size:16px;line-height:1;box-shadow:none;z-index:1}
+  .run:hover .rm,.run:focus-within .rm{display:grid;place-items:center}
+  .run .rm:hover{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent);transform:none}
+  .run:hover .g{padding-right:26px}
+  .clearruns{width:100%;margin-top:10px;font-size:13.5px;color:var(--dim)}
   .run .g{font-size:14.5px;font-weight:550;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .run .s{font-size:12.5px;color:var(--faint);margin-top:3px;font-family:var(--mono)}
   .badge{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
@@ -138,14 +144,45 @@ function renderRuns() {
     ? state.runs.map((r) => {
         const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
         return `<div class="run ${state.current?.id === r.id ? 'on' : ''}" data-id="${r.id}">
+          <button class="rm" data-del-run="${r.id}" title="Delete this run">×</button>
           <span class="g">${esc(r.goal)}</span>
           <span class="s"><span class="badge ${esc(r.status)}">${esc(r.status)}</span>
             ${r.total ? ` ${r.done}/${r.total}` : ''} · ${ago(r.createdAt)}</span>
           ${r.total ? `<div class="bar"><i class="${r.status === 'done' ? 'done' : ''}" style="width:${pct}%"></i></div>` : ''}
         </div>`;
-      }).join('')
+      }).join('') + (state.runs.some((r) => ['done', 'failed', 'cancelled'].includes(r.status))
+        ? '<button id="clearRuns" class="clearruns" title="Delete every finished, failed or cancelled run">Clear finished runs</button>' : '')
     : '<div class="empty" style="padding:20px 0">No runs yet.</div>';
 }
+
+// Deleting a run, or all the finished ones.
+document.addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-del-run]');
+  if (del) {
+    e.stopPropagation(); e.preventDefault();
+    const id = Number(del.dataset.delRun);
+    const run = state.runs.find((r) => r.id === id);
+    const going = run && !['done', 'failed', 'cancelled'].includes(run.status);
+    if (!confirm(`Delete this run?\n\n“${(run?.goal ?? '').slice(0, 120)}”\n\n${going ? 'It is still going — it will be stopped first. ' : ''}Its tasks and results on this page are deleted for good. Files it wrote and artifacts it saved are kept.`)) return;
+    try {
+      await api(`/api/swarms/${id}`, { method: 'DELETE' });
+      if (state.current?.id === id) state.current = null;
+      say('run deleted', 'ok');
+      await refresh();
+    } catch (err) { say(err.message, 'err'); }
+    return;
+  }
+  if (e.target.closest('#clearRuns')) {
+    const n = state.runs.filter((r) => ['done', 'failed', 'cancelled'].includes(r.status)).length;
+    if (!confirm(`Delete ${n} finished run${n === 1 ? '' : 's'}?\n\nRuns still going are left alone. Files and artifacts are kept.`)) return;
+    try {
+      const r = await api('/api/swarms/clear', { method: 'POST', body: '{}' });
+      if (state.current && ['done', 'failed', 'cancelled'].includes(state.current.status)) state.current = null;
+      say(`${r.removed} run${r.removed === 1 ? '' : 's'} deleted`, 'ok');
+      await refresh();
+    } catch (err) { say(err.message, 'err'); }
+  }
+}, true);
 
 function renderRun() {
   const r = state.current;

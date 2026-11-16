@@ -2410,6 +2410,21 @@ export class Hub {
     return this.getSwarm(run.id);
   }
 
+  /** Delete a run and its tasks for good. What it wrote to disk or saved as an artifact is not touched. */
+  deleteSwarm({ id }) {
+    const run = this.getSwarm(id);
+    this.db.prepare('DELETE FROM swarm_tasks WHERE run_id = ?').run(run.id);
+    this.db.prepare('DELETE FROM swarm_runs WHERE id = ?').run(run.id);
+    return { removed: true, id: run.id };
+  }
+
+  /** Delete every run that is not going any more — a clean slate for the Work page. */
+  clearSwarms() {
+    const ids = this.db.prepare(`SELECT id FROM swarm_runs WHERE status IN ('done','failed','cancelled')`).all().map((r) => r.id);
+    for (const id of ids) this.deleteSwarm({ id });
+    return { removed: ids.length };
+  }
+
   cancelSwarm({ id }) {
     const run = this.getSwarm(id);
     this.db.prepare(`UPDATE swarm_tasks SET status = 'failed', error = 'cancelled' WHERE run_id = ? AND status IN ('queued','running')`).run(run.id);
