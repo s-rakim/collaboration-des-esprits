@@ -35,6 +35,12 @@ const TURN_TIMEOUT_MS = 180_000;
  */
 const STREAM_FIRST_MS = 150_000;
 const STREAM_IDLE_MS = 60_000;
+/**
+ * Before the first headers the SDK's own timeout is the one that should fire —
+ * it says "no reply within Ns", which is the right thing to say. The leash is
+ * set just beyond it, so it only ever catches what the SDK lets through.
+ */
+const LEASH_SLACK_MS = 2_000;
 /** And nothing runs longer than this, however steadily it trickles. */
 const MAX_REQUEST_MS = 10 * 60_000;
 
@@ -241,7 +247,7 @@ export function chatAdapter({
 
       const attempt = async (g) => {
         // The whole request, for one that is not streamed; a streamed one takes over below.
-        g.poke(timeoutMs);
+        g.poke(timeoutMs + LEASH_SLACK_MS);
         if (!onDelta || memory.noStream) return client.chat.completions.create(body(), { signal: g.signal });
         let stream;
         try {
@@ -250,7 +256,7 @@ export function chatAdapter({
           // An endpoint that will not stream says so; ask it the plain way, and remember.
           if ((err?.status === 400 || err?.status === 422) && /stream/i.test(err.message ?? '')) {
             memory.noStream = true;
-            g.poke(timeoutMs);
+            g.poke(timeoutMs + LEASH_SLACK_MS);
             return client.chat.completions.create(body(), { signal: g.signal });
           }
           throw err;
@@ -293,7 +299,7 @@ export function chatAdapter({
           // Asked to stream and sent nothing that reads as one: it does not
           // stream. Ask again the plain way rather than report an empty answer.
           memory.noStream = true;
-          g.poke(timeoutMs);
+          g.poke(timeoutMs + LEASH_SLACK_MS);
           return client.chat.completions.create(body(), { signal: g.signal });
         }
         const made = calls.filter(Boolean).map((c, i) => ({ ...c, id: c.id || `call_${i}` }));
