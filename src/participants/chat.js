@@ -24,6 +24,21 @@ import { messagesAdapter } from './messages.js';
 const TURN_TIMEOUT_MS = 180_000;
 
 /**
+ * How long a streamed answer may go quiet.
+ *
+ * The SDK's own timeout stops counting the moment the first headers arrive.
+ * A provider that sends them and then goes silent — which free tiers under
+ * load do — was therefore waited on for ever: a call "in progress" for hours.
+ * Between chunks the limit is short, because a live stream sends something
+ * every second or two; before the first, it is long, because a model can think
+ * a while before it writes.
+ */
+const STREAM_FIRST_MS = 150_000;
+const STREAM_IDLE_MS = 60_000;
+/** And nothing runs longer than this, however steadily it trickles. */
+const MAX_REQUEST_MS = 10 * 60_000;
+
+/**
  * How many tokens an endpoint will take, read from its refusal.
  *
  * A seat asks for a generous reply length by default, and plenty of models
@@ -102,6 +117,8 @@ export function partialString(json, key) {
 export function chatAdapter({
   apiKey, model, maxTokens, effort, effortParam, baseURL, createClient,
   timeoutMs = TURN_TIMEOUT_MS, maxRetries = 1, tokenParam, shape,
+  // Overridable so a test need not wait a minute to see a hung stream cut off.
+  firstChunkMs = STREAM_FIRST_MS, idleChunkMs = STREAM_IDLE_MS,
   // Called as the answer is written: ({ thinking, text, tool, args }). Asking
   // for it is asking for the reply to be streamed.
   onDelta = null,
@@ -179,16 +196,62 @@ export function chatAdapter({
        * thirty-five of them. Streamed, the first words are on the screen in the
        * first second or two, and the wait stops looking like nothing happening.
        */
+      /**
+       * A request's own leash. Stopping the turn still stops it, but it can
+       * also be cut off for going quiet — and told apart from a stop, which is
+       * what `why` is for.
+       */
+      const guard = () => {
+        const req = new AbortController();
+        let why = null;
+        let idle = null;
+        const onStop = () => req.abort();
+        if (ctl.signal.aborted) req.abort(); else ctl.signal.addEventListener('abort', onStop, { once: true });
+        const stop = (reason) => { why ??= reason; req.abort(); };
+        const total = setTimeout(() => stop(`was still going after ${MAX_REQUEST_MS / 60_000} minutes`), MAX_REQUEST_MS);
+        return {
+          signal: req.signal,
+          get why() { return why; },
+          poke(ms) {
+            clearTimeout(idle);
+            idle = setTimeout(() => stop(`sent nothing for ${Math.round(ms / 1000)}s`), ms);
+          },
+          done() { clearTimeout(total); clearTimeout(idle); ctl.signal.removeEventListener('abort', onStop); },
+        };
+      };
+
       const once = async () => {
-        if (!onDelta || memory.noStream) return client.chat.completions.create(body(), { signal: ctl.signal });
+        const g = guard();
+        try {
+          return await attempt(g);
+        } catch (err) {
+          if (g.why && !ctl.signal.aborted) {
+            const stalled = new Error(
+              `${baseURL || 'the provider'} ${g.why}, part-way through its answer. That is the provider hanging `
+              + '— not your key, and not this app waiting politely. Send it again, or pick another model for this seat',
+            );
+            stalled.stalled = true;
+            throw stalled;
+          }
+          throw err;
+        } finally {
+          g.done();
+        }
+      };
+
+      const attempt = async (g) => {
+        // The whole request, for one that is not streamed; a streamed one takes over below.
+        g.poke(timeoutMs);
+        if (!onDelta || memory.noStream) return client.chat.completions.create(body(), { signal: g.signal });
         let stream;
         try {
-          stream = await client.chat.completions.create({ ...body(), stream: true }, { signal: ctl.signal });
+          stream = await client.chat.completions.create({ ...body(), stream: true }, { signal: g.signal });
         } catch (err) {
           // An endpoint that will not stream says so; ask it the plain way, and remember.
           if ((err?.status === 400 || err?.status === 422) && /stream/i.test(err.message ?? '')) {
             memory.noStream = true;
-            return client.chat.completions.create(body(), { signal: ctl.signal });
+            g.poke(timeoutMs);
+            return client.chat.completions.create(body(), { signal: g.signal });
           }
           throw err;
         }
@@ -199,7 +262,9 @@ export function chatAdapter({
         let finish = null;
         let chunks = 0;
         const calls = [];
+        g.poke(firstChunkMs);
         for await (const chunk of stream) {
+          g.poke(idleChunkMs);
           const choice = chunk?.choices?.[0];
           if (!choice) continue;
           chunks += 1;
@@ -228,7 +293,8 @@ export function chatAdapter({
           // Asked to stream and sent nothing that reads as one: it does not
           // stream. Ask again the plain way rather than report an empty answer.
           memory.noStream = true;
-          return client.chat.completions.create(body(), { signal: ctl.signal });
+          g.poke(timeoutMs);
+          return client.chat.completions.create(body(), { signal: g.signal });
         }
         const made = calls.filter(Boolean).map((c, i) => ({ ...c, id: c.id || `call_${i}` }));
         return {
@@ -252,11 +318,12 @@ export function chatAdapter({
             // That is the network hiccuping far more often than it is the
             // address being wrong, so it is tried again, twice, a moment apart,
             // before anybody is told about it.
-            const dropped = (e) => e instanceof OpenAI.APIError && (e.status === undefined || e.status === null)
-              && !(e instanceof OpenAI.APIConnectionTimeoutError) && e.name !== 'APIConnectionTimeoutError' && e.name !== 'APIUserAbortError';
+            const dropped = (e) => e?.stalled === true || (e instanceof OpenAI.APIError && (e.status === undefined || e.status === null)
+              && !(e instanceof OpenAI.APIConnectionTimeoutError) && e.name !== 'APIConnectionTimeoutError' && e.name !== 'APIUserAbortError');
             if (dropped(first) && !ctl.signal.aborted) {
               let last = first;
-              for (const wait of [700, 2000]) {
+              // A hung request already cost its whole wait; it gets one more go, not two.
+              for (const wait of first?.stalled ? [700] : [700, 2000]) {
                 await new Promise((r) => setTimeout(r, wait));
                 if (ctl.signal.aborted) break;
                 try { response = await once(); last = null; break; } catch (again) { last = again; if (!dropped(again)) break; }

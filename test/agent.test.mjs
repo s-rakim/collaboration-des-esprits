@@ -681,3 +681,45 @@ test('a connection that drops is tried again before anybody is told, and a dead 
   );
   assert.equal(dead.calls(), 3);
 });
+
+test('a stream that goes quiet part-way is cut off and retried, instead of being waited on for ever', async () => {
+  const { chatAdapter } = await import('../src/participants/chat.js');
+  const chunk = (text, finish = null) => ({ choices: [{ delta: { content: text }, finish_reason: finish }] });
+  const hangs = (signal) => new Promise((_, reject) => {
+    // Never sends another chunk; only the abort ends it, as with a real socket.
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+  });
+  const streamer = (script) => {
+    let n = 0;
+    return { calls: () => n, createClient: () => ({ chat: { completions: { create: async (_body, opts) => {
+      const mine = script[Math.min(n, script.length - 1)];
+      n += 1;
+      return { async *[Symbol.asyncIterator]() {
+        for (const step of mine) {
+          if (step === 'hang') await hangs(opts.signal); else yield step;
+        }
+      } };
+    } } } }) };
+  };
+  // Stalls once, answers the second time: the person only sees the answer.
+  const flaky = streamer([[chunk('Hel'), 'hang'], [chunk('Hello'), chunk('', 'stop')]]);
+  const t0 = Date.now();
+  const ok = await chatAdapter({
+    apiKey: 'k', model: 'm', baseURL: 'https://api.example.com/v1', createClient: flaky.createClient,
+    firstChunkMs: 80, idleChunkMs: 80, onDelta: () => {},
+  }).startTurn({ system: 's', tools: [] }).send('hi');
+  assert.equal(ok.text, 'Hello');
+  assert.equal(flaky.calls(), 2);
+  assert.ok(Date.now() - t0 < 3000, 'it must not wait long to notice');
+
+  // Stalls every time: said plainly, and not blamed on the key.
+  const dead = streamer([[chunk('x'), 'hang']]);
+  await assert.rejects(
+    () => chatAdapter({
+      apiKey: 'k', model: 'm', baseURL: 'https://api.example.com/v1', createClient: dead.createClient,
+      firstChunkMs: 80, idleChunkMs: 80, onDelta: () => {},
+    }).startTurn({ system: 's', tools: [] }).send('hi'),
+    (err) => /part-way through its answer/.test(err.message) && /not your key/.test(err.message),
+  );
+  assert.equal(dead.calls(), 2, 'one retry, not two');
+});
