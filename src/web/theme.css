@@ -1,42 +1,46 @@
 /*
  * The room's look, in one place.
  *
- * A dark editor's look, drawn on glass. The page is near-black with a soft
- * glow behind it; bars, cards, menus and windows are translucent panes over
- * that glow, edged with a hairline. One accent colour, worn only by the thing
- * to press and the thing that is selected. Type is a plain sans at a size that
- * can be read all day.
+ * Solid. Every surface is opaque and has an edge you can see: the page, a
+ * panel raised one step above it, a control raised one more. Nothing is
+ * translucent, nothing glows, nothing moves when the pointer passes over it.
+ * One accent, worn only by the thing to press and the thing selected.
+ *
+ * One grid. Spacing is in steps of 4 (4, 8, 12, 16, 20, 24); a control is 36
+ * tall, a compact one 28; corners are 8 on controls and 12 on panels. Things
+ * line up because they are all cut from the same few numbers.
  *
  * Nothing is fetched. The room runs on a machine that may have no internet,
  * so the fonts are whichever good ones the system already has.
  *
  * The colours are not here. They are in src/theme.js and served in front of
- * this file, so there is one place to change them; what is here is what is
- * made *from* them — the glass, the hairlines, the glow.
+ * this file, so there is one place to change them.
  */
 
 :root {
-  --radius:18px;
+  --radius:12px;
+  --r-ctl:8px;
   --top:52px;
+  --gutter:20px;
 
   --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
   --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:"JetBrains Mono","Cascadia Code",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 
-  /* Liquid glass: a surface that bends the light behind it. Each is a sheen
-     laid over a tint — brighter at the top-left where light would land,
-     nearly clear at the bottom-right — so a pane reads as thick glass. */
-  --sheen:linear-gradient(135deg, color-mix(in srgb, #fff 13%, transparent) 0%, color-mix(in srgb, #fff 4%, transparent) 38%, transparent 62%, color-mix(in srgb, #fff 5%, transparent) 100%);
-  --glass:var(--sheen), color-mix(in srgb, var(--panel) 46%, transparent);
-  --glass-strong:var(--sheen), color-mix(in srgb, var(--panel) 80%, transparent);
-  --glass-soft:color-mix(in srgb, var(--panel) 30%, transparent);
-  /* The edge of a pane: a lit rim inside, a soft shadow beneath. */
-  --rim:inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent), inset 0 -1px 0 color-mix(in srgb, #000 18%, transparent), inset 0 0 0 1px color-mix(in srgb, #fff 5%, transparent);
-  --lift:0 10px 34px rgba(0,0,0,.28);
-  --blur:blur(30px) saturate(1.9) brightness(1.06);
-  /* A hairline: the border colour, thinned, so edges are felt more than seen. */
-  --hair:color-mix(in srgb, var(--text) 13%, transparent);
-  --shadow:0 18px 50px rgba(0,0,0,.42);
+  /* The surfaces, lowest to highest. --surface sits between the page and a panel, for a column of the page itself. */
+  --surface:color-mix(in srgb, var(--panel) 50%, var(--bg));
+  /* Kept under their old names for everything written against them; all of them are opaque now. */
+  --glass:var(--panel);
+  --glass-strong:var(--panel);
+  --glass-soft:var(--surface);
+  --sheen:none;
+  --hair:var(--line);
+  --rim:0 0 0 0 transparent;
+  --lift:0 1px 2px rgba(0,0,0,.2);
+  --blur:none;
+  --shadow:0 16px 48px rgba(0,0,0,.5);
+  /* What floats over the page — a menu, a dialog, a window — casts this. */
+  --float:0 0 0 1px rgba(0,0,0,.25), 0 12px 32px rgba(0,0,0,.45);
 }
 
 /* ------------------------------------------------------------------ the page */
@@ -51,15 +55,7 @@ body {
   font:15px/1.6 var(--sans);
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
-  /* What the glass has to bend: slow pools of light behind everything.
-     In the dark they are plain light; in the light they are the accent. */
-  background:
-    radial-gradient(900px 560px at 86% -6%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * 1.5), transparent), transparent 60%),
-    radial-gradient(760px 620px at -6% 104%, color-mix(in srgb, var(--glow) var(--glow-strength), transparent), transparent 58%),
-    radial-gradient(520px 420px at 22% 18%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .6), transparent), transparent 66%),
-    radial-gradient(640px 480px at 70% 78%, color-mix(in srgb, var(--glow) calc(var(--glow-strength) * .55), transparent), transparent 64%),
-    var(--bg);
-  background-attachment:fixed;
+  background:var(--bg);
 }
 
 /* A page's own bar, under the tabs: what this page is, and what you can do on it. */
@@ -407,29 +403,6 @@ body #edge-tabs button.on { background:var(--accent); border-color:var(--accent)
 }
 .composer .chips .chip button { background:none; border:0; color:var(--faint); padding:0 2px; font-size:15px; line-height:1 }
 
-/* ------------------------------------------------------- the routers panel */
-/* Three cards in a row on a wide screen, stacked on a narrow one. Each says
-   what it is, whether it is answering, and the one thing to press. */
-.routers { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)) }
-.router {
-  border:1px solid var(--line); border-radius:var(--radius);
-  padding:12px 13px; background:var(--panel2);
-}
-.router.up { border-color:var(--accent) }
-.router .rname { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
-.router .rname .hint { font-size:13px }
-.router .dot {
-  width:8px; height:8px; border-radius:50%; flex:none;
-  border:1.4px solid var(--faint); background:none;
-}
-.router .dot.live { background:var(--good); border-color:var(--good) }
-.router .row { gap:8px; flex-wrap:wrap; align-items:center }
-.router a.btn {
-  font-size:14px; padding:5px 10px; border:1px solid var(--line);
-  border-radius:7px; color:var(--dim); text-decoration:none;
-}
-.router a.btn:hover { color:var(--text); border-color:var(--dim) }
-
 /* ------------------------------------------------------------ the paste box */
 /* The way in. Four boxes typed one at a time is four chances to get something
    subtly wrong, and none of them announce themselves — so the provider's own
@@ -442,18 +415,6 @@ body #edge-tabs button.on { background:var(--accent); border-color:var(--accent)
 }
 .paste textarea:focus { border-color:var(--accent); outline:none }
 .paste textarea::placeholder { color:var(--faint) }
-
-/* A router that is not there should say how to get it, rather than only that
-   it is not answering — which is the point at which somebody opens a search. */
-.router .install { font-size:13.5px; color:var(--dim); width:100% }
-.router .install summary { cursor:pointer; color:var(--faint); padding:2px 0 }
-.router .install summary:hover { color:var(--text) }
-.router .install code {
-  display:block; margin:6px 0 4px; padding:7px 9px; white-space:pre-wrap;
-  overflow-wrap:anywhere; background:var(--bg); border:1px solid var(--line);
-  border-radius:7px; font-size:13px; user-select:all;
-}
-.router .install a { color:var(--dim); font-size:13px }
 
 /* ------------------------------------------------------------------ the feel */
 
@@ -497,48 +458,176 @@ header #toolTerminal, header #toolBrowser { display:none }
 /* On the chat page the bar's own "New idea" is the way to drop one. */
 header #newIdea { display:none }
 
-/* ------------------------------------------------------------- liquid glass
+/* ------------------------------------------------------------------ solid
  *
- * One treatment for every pane: the sheen and tint from --glass, the page
- * behind it blurred and brightened, a lit rim, generous corners. Applied here
- * rather than page by page, so a pane added later is glass for nothing.
+ * One treatment for every surface, stated once so a page added later gets it
+ * for nothing. It comes last, and it is what decides.
  */
-.card, dialog, .topmenu, .freecard, .router,
-body #tools, body #dock, body .fwin,
-.composer .box, .jobbox .box, .composer .menu,
-body main > aside, body main > .ctx, body main > #rail {
-  backdrop-filter:var(--blur);
-  -webkit-backdrop-filter:var(--blur);
+
+/* A page's own bar: what this page is, on the same gutter as everything under it. */
+body header {
+  background:var(--bg);
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+  border-bottom:1px solid var(--line);
+  min-height:48px;
+  padding:6px var(--gutter);
+  gap:12px;
 }
-.card, .freecard, .router, .thread, .build {
-  background:var(--glass) !important;
-  border:1px solid var(--hair) !important;
+body header h1 { font-size:15.5px; font-weight:650; letter-spacing:-.01em }
+body header h1 small { font-size:13.5px }
+
+/* Panels. */
+.card, .freecard, .thread, .build {
+  background:var(--panel) !important;
+  border:1px solid var(--line) !important;
   border-radius:var(--radius) !important;
-  box-shadow:var(--rim), var(--lift);
+  box-shadow:none;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
 }
-dialog, .topmenu, .composer .menu { background:var(--glass-strong); border-radius:20px; box-shadow:var(--rim), 0 30px 80px rgba(0,0,0,.5) }
+.card { padding:16px 20px }
+/* A panel inside a panel steps up once more rather than drawing the same box twice. */
+.card .router, .card .freecard, .card .card { background:var(--panel2) !important; border-color:var(--line) !important; border-radius:10px !important; box-shadow:none }
+.router { box-shadow:none }
+.card { transition:none }
+
+/* The columns of a page. */
+body main > aside, body main > .ctx, body main > #rail {
+  background:var(--surface);
+  border-color:var(--line) !important;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+
+/* Controls: one height, one corner, no movement. */
+button {
+  min-height:36px;
+  padding:0 14px;
+  border-radius:var(--r-ctl);
+  background:var(--panel2);
+  border:1px solid var(--line);
+  box-shadow:none;
+  font-weight:500;
+  transition:background .08s linear, border-color .08s linear, color .08s linear;
+}
+button:hover:not(:disabled) { background:color-mix(in srgb, var(--text) 9%, var(--panel2)); border-color:color-mix(in srgb, var(--text) 22%, var(--line)); transform:none }
+button:active:not(:disabled) { background:color-mix(in srgb, var(--text) 14%, var(--panel2)); transform:none }
+button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600; box-shadow:none; border-radius:var(--r-ctl) }
+button.primary:hover:not(:disabled) { background:color-mix(in srgb, var(--accent) 88%, var(--bg)); border-color:color-mix(in srgb, var(--accent) 88%, var(--bg)); filter:none; box-shadow:none }
+button:disabled { opacity:.45 }
+/* The small ones: a button inside a row of something else. */
+.composer .bar button, .jobbox .row button, .fwin button, #tools button, #dock button, .chat button, .agent button, .run button, .topmenu button, dialog .row button, .conn button, .seat button {
+  min-height:28px;
+}
+input, textarea, select {
+  min-height:36px;
+  padding:7px 11px;
+  border-radius:var(--r-ctl);
+  background:var(--bg);
+  border:1px solid var(--line);
+  transition:border-color .08s linear, box-shadow .08s linear;
+}
+input[type=checkbox], input[type=radio] { min-height:0; width:16px; height:16px }
+input[type=color], input[type=range] { min-height:0 }
+input:focus, textarea:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent) }
+:focus-visible { outline:2px solid var(--accent); outline-offset:1px }
+
+/* What floats: menus, dialogs, windows. Opaque, edged, with one clear shadow. */
+dialog, .topmenu, .composer .menu, .jobbox .menu {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--float);
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+dialog { padding:20px }
+dialog::backdrop { background:rgba(0,0,0,.6); backdrop-filter:none }
+dialog h3 { font-size:16.5px; margin:0 0 12px }
 body #tools, body #dock, body .fwin {
-  background:var(--sheen), color-mix(in srgb, var(--bg) 70%, transparent);
-  border:1px solid var(--hair);
-  border-radius:20px;
-  box-shadow:var(--rim), 0 34px 90px rgba(0,0,0,.55);
+  background:var(--bg);
+  border:1px solid color-mix(in srgb, var(--text) 16%, var(--line));
+  border-radius:var(--radius);
+  box-shadow:var(--float);
+  backdrop-filter:none; -webkit-backdrop-filter:none;
 }
-.composer .box, .jobbox .box { background:var(--glass); border:1px solid var(--hair); border-radius:22px; box-shadow:var(--rim), var(--lift); padding:11px 11px 11px 18px }
-body header { background:none; backdrop-filter:none; -webkit-backdrop-filter:none; border-bottom:0; min-height:50px }
-body main > aside, body main > .ctx, body main > #rail { background:var(--glass-soft); border-color:var(--hair) !important }
+body #tools .tbar, body #dock .nav, body .fwin .tbar, body .fwin .foot, body .fwin .bar2 { background:var(--panel) }
+body .fwin .tbar, body #dock .nav { min-height:40px }
 
-/* Controls: rounded like drops, with the same lit rim. */
-button { border-radius:12px; box-shadow:inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent) }
-button:hover:not(:disabled) { transform:translateY(-1px) }
-button:active:not(:disabled) { transform:translateY(0) scale(.97) }
-button.primary { border-radius:12px; box-shadow:inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 8px 22px color-mix(in srgb, var(--accent) 22%, rgba(0,0,0,.3)) }
-input, textarea, select { border-radius:12px; background:color-mix(in srgb, var(--bg) 55%, transparent) }
-body #edge-tabs button { background:var(--glass); border:1px solid var(--hair); border-right:0; border-radius:14px 0 0 14px; box-shadow:var(--rim); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur) }
+/* The tabs on the right edge: slim, and plainly attached to it. */
+body #edge-tabs { gap:4px }
+body #edge-tabs button {
+  min-height:0; padding:12px 6px; font-size:12.5px; font-weight:500; letter-spacing:.02em;
+  background:var(--panel); border:1px solid var(--line); border-right:0; border-radius:8px 0 0 8px;
+  box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; color:var(--dim);
+}
+body #edge-tabs button:hover { padding-right:6px; background:var(--panel2); color:var(--text) }
+body #edge-tabs button.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent) }
 
-/* Room to breathe: the same things, with more air between them. */
-h2 { letter-spacing:.09em; margin-top:26px }
-.card { padding:18px 20px }
+/* The message box: a field, with its controls in a row beneath. */
+.composer, .jobbox { background:var(--bg); padding:12px var(--gutter) 14px }
+.composer > .wrap, .jobbox > .wrap { max-width:860px; width:100%; margin:0 auto }
+.composer .box, .jobbox .box {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:none;
+  padding:8px 8px 8px 14px;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+  transition:border-color .08s linear, box-shadow .08s linear;
+}
+.composer .box:focus-within, .jobbox .box:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent) }
+.composer .box textarea, .jobbox .box textarea { min-height:28px; border:0; background:none; box-shadow:none; padding:5px 0 }
+.composer .box .go, .jobbox .box .go, .composer .box .stop { min-height:0; width:32px; height:32px; border-radius:var(--r-ctl) }
+.composer .bar .i, .jobbox .bar .i { min-height:0; width:30px; height:30px; background:none; border-color:transparent }
+.composer .bar .t, .jobbox .bar .t { min-height:0; height:30px; background:none; border-color:transparent }
+.composer .bar .i:hover:not(:disabled), .composer .bar .t:hover:not(:disabled) { background:var(--panel2); border-color:var(--line) }
+.composer .chips .chip, .jobbox .chips .chip { background:var(--panel); border:1px solid var(--line); border-radius:6px }
+.composer .chips .chip button { min-height:0 }
 
-@media (prefers-reduced-transparency:reduce) {
-  :root { --glass:var(--panel); --glass-strong:var(--panel); --glass-soft:var(--panel); --blur:none }
+/* The job box has more in it than a message does: the goal on top, its settings in a row under it. */
+.jobbox .box { flex-direction:column; align-items:stretch; gap:8px; padding:12px 12px 10px 14px }
+.jobbox .box textarea { width:100%; min-height:44px }
+.jobbox .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 }
+.jobbox .row .note { flex:1; min-width:120px }
+.jobbox .row input[type=number] { min-height:28px; height:28px; width:56px; padding:0 8px }
+.jobbox .row select.quiet { min-height:28px; height:28px; padding:0 8px }
+.jobbox button.go { width:auto; height:32px; padding:0 14px; white-space:nowrap; color:var(--on-accent); margin-left:auto }
+
+/* Headings inside a page: small signposts, evenly spaced. */
+h2 { font-size:12px; letter-spacing:.07em; margin:24px 0 8px }
+h2:first-child { margin-top:0 }
+
+/* ----------------------------------------------------------------- touch
+ *
+ * A finger has no hover, so nothing that only appears on hover may be the only
+ * way to do something; and a finger is a bigger pointer than a mouse, so
+ * controls get taller and fields stop making the page zoom when they are focused.
+ */
+@media (hover:none) {
+  .chat button, .agent .rm, .run .rm { display:grid !important; place-items:center }
+  .chat .n { display:none }
+  .msg .tools { opacity:1 !important; transform:none !important; pointer-events:auto !important }
+  .msg .when { opacity:1 !important }
+  pre.code .copy { opacity:1 !important }
+}
+@media (pointer:coarse) {
+  button, select { min-height:44px }
+  input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]), textarea, select { min-height:44px; font-size:16px }
+  .composer .bar .i, .jobbox .bar .i { width:40px; height:40px }
+  .composer .bar .t, .jobbox .bar .t { height:40px }
+  .composer .box .go, .jobbox .box .go, .composer .box .stop { width:40px; height:40px }
+  .chat { height:44px }
+  .chat button, .agent .rm, .run .rm { width:36px; height:36px; min-height:0 }
+  body header { min-height:48px }
+}
+@media (max-width:700px) {
+  :root { --gutter:14px }
+  body { font-size:15px }
+  .card { padding:14px }
+  dialog { width:calc(100% - 16px); max-width:none; padding:16px; border-radius:14px }
+  dialog .row { flex-wrap:wrap }
+  /* Two columns of controls become one: nothing is asked to fit side by side. */
+  .conn, .seat, .sched { grid-template-columns:1fr !important }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
 }

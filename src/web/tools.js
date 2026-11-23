@@ -43,7 +43,7 @@ body.solo .tbar,body.solo #dock .nav{cursor:default!important}
 @keyframes tools-in{from{opacity:0;transform:translateY(10px) scale(.985)}}
 #tools .tbar{display:flex;align-items:center;gap:4px;padding:6px 8px 6px 10px;border-bottom:1px solid var(--line);background:var(--panel);cursor:move;touch-action:none}
 #tools .tbar .ttl{font-size:12.5px;color:var(--faint);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
-@media (max-width:700px){#tools{left:8px!important;right:8px!important;top:auto!important;bottom:8px!important;width:auto!important;height:60vh!important;resize:none}}
+
 
 /* The browser: a second small window, moved and sized like the terminal. */
 #dock{position:fixed;right:52px;top:72px;width:520px;height:400px;z-index:60;display:none;flex-direction:column;
@@ -53,7 +53,7 @@ body.solo .tbar,body.solo #dock .nav{cursor:default!important}
 #dock.open{display:flex;animation:tools-in .16s cubic-bezier(.2,.7,.3,1)}
 #dock.moving,#tools.moving{user-select:none;opacity:.96}
 #tools.front,#dock.front{z-index:61}
-@media (max-width:700px){#dock{left:8px!important;right:8px!important;top:8px!important;bottom:auto!important;width:auto!important;height:55vh!important;resize:none}}
+
 
 /* The way in to both: tabs on the right-hand edge of every page. */
 #edge-tabs{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:59;display:flex;flex-direction:column;gap:6px}
@@ -62,7 +62,7 @@ body.solo .tbar,body.solo #dock .nav{cursor:default!important}
   transition:padding .12s ease,color .12s ease,background .12s ease}
 #edge-tabs button:hover{padding-right:12px;color:var(--text);background:var(--panel2)}
 #edge-tabs button.on{color:var(--bg);background:var(--text);border-color:var(--text)}
-@media (max-width:700px){#edge-tabs button{padding:10px 5px;font-size:12.5px}}
+
 #dock .nav{cursor:move;touch-action:none;display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
 #dock .nav button{padding:4px 9px;font-size:14.5px;line-height:1.2;background:none;border-color:transparent;color:var(--dim)}
 #dock .nav button:hover:not(:disabled){background:var(--panel2);border-color:var(--line);color:var(--text)}

@@ -614,6 +614,36 @@ try {
     await page.close();
   }
 
+  // ------------------------------------------------------ phone and tablet widths
+
+  // Every page, at a phone and at a tablet: nothing runs off the edge, and on a phone
+  // the tabs are a bar at the bottom with the conversation filling what is left.
+  for (const [width, height, label] of [[390, 800, 'phone'], [820, 1100, 'tablet']]) {
+    for (const path of ['/', '/threads', '/pc', '/work', '/artifacts', '/setup', '/dashboard', '/plugins', '/design']) {
+      const page = await browser.newPage({ viewport: { width, height } });
+      watch(page, `${label} ${path}`);
+      await page.addInitScript(() => { try { localStorage.setItem('esprits.me', 'rakim'); } catch {} });
+      await page.goto(BASE + path, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(500);
+      const over = await page.evaluate(() => {
+        const sp = document.getElementById('shell-page');
+        return sp.scrollWidth - sp.clientWidth;
+      });
+      if (over > 1) note(`${label} ${path}`, `the page runs ${over}px off the side`);
+      if (label === 'phone') {
+        const tabs = await (await page.$('#topbar .tabs'))?.boundingBox();
+        if (!tabs || Math.abs(tabs.y + tabs.height - height) > 2) note(`${label} ${path}`, 'the tabs are not a bar along the bottom');
+        if (await page.isVisible('#edge-tabs')) note(`${label} ${path}`, 'the edge tabs are covering the page on a phone');
+      }
+      if (path === '/') {
+        // The conversation is the page: the message box is on the screen without scrolling.
+        const box = await (await page.$('.composer .box'))?.boundingBox();
+        if (!box || box.y + box.height > height) note(`${label} ${path}`, 'the message box is below the fold');
+      }
+      await page.close();
+    }
+  }
+
   // ------------------------------------------------------------------- a phone
 
   {

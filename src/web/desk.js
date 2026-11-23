@@ -41,7 +41,7 @@ const CSS = `
 .fwin .live{display:inline-flex;align-items:center;gap:5px}
 .fwin .live i{width:6px;height:6px;border-radius:50%;background:var(--good);animation:desk-pulse 1.6s ease-in-out infinite}
 @keyframes desk-pulse{50%{opacity:.25}}
-@media (max-width:700px){.fwin{left:8px!important;right:8px!important;top:8px!important;width:auto!important;height:70vh!important;resize:none}}
+
 
 #explorer{left:calc(50% - 380px);top:90px;width:760px;height:480px}
 #explorer .crumbs{display:flex;align-items:center;gap:2px;flex:1;min-width:120px;font-size:14px;overflow:hidden;white-space:nowrap}
@@ -148,6 +148,17 @@ const CSS = `
 #pcwin .rw code{font-family:var(--mono);font-size:13.5px;color:var(--text)}
 #pcwin .rw span{font-size:12.5px;color:var(--faint);white-space:nowrap} #pcwin .rw button{padding:1px 8px;font-size:12.5px} #pcwin .rw a{color:var(--dim);font-size:13px}
 
+/* A phone: a window is the whole screen between the bars — there is no room to float. */
+@media (max-width:700px){
+  body #tools,body #dock,body .fwin{left:0!important;right:0!important;top:var(--top)!important;bottom:var(--bottom-nav,0px)!important;
+    width:auto!important;height:auto!important;max-width:none;max-height:none;min-width:0;min-height:0;border-radius:0;resize:none;border-left:0;border-right:0}
+  .popout{display:none}
+  #explorer .tree,#explorer #xSplitT{display:none}
+  #explorer .row{grid-template-columns:20px minmax(0,1fr) 64px 70px}
+  #explorer .row>:nth-child(3){display:none}
+  #explorer .peek{max-height:46%}
+  .editor .gut{width:38px}
+}
 #permissions{left:calc(50% - 260px);top:84px;width:520px;height:580px}
 #permissions .scroll{flex:1;min-height:0;overflow:auto;padding:2px 16px 14px}
 #permissions h5{margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:600}

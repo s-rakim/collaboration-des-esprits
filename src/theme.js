@@ -69,7 +69,7 @@ export const PRESETS = {
     // faint glow, so panels and windows read as panes of glass, not boxes.
     // The only colours are the ones that mean something: done, waiting, failed.
     dark: {
-      bg: '#0c0c0d', panel: '#171718', panel2: '#202022', line: '#303033',
+      bg: '#0d0d0e', panel: '#18181a', panel2: '#222225', line: '#333338',
       text: '#eeeeee', dim: '#ababaf', faint: '#77777c',
       accent: '#f4f4f4', good: '#6fcf97', warn: '#e5b45f', bad: '#f0706a', human: '#c8c8cc',
     },
@@ -291,13 +291,13 @@ export function resolveTheme(saved) {
  */
 export const DERIVED = {
   dark: [
-    '--bar-bg:linear-gradient(180deg, color-mix(in srgb, #fff 7%, transparent), transparent), color-mix(in srgb, var(--panel) 42%, transparent);',
-    '--bar-fg:var(--dim);', '--bar-on:var(--text);', '--bar-line:color-mix(in srgb, var(--line) 70%, transparent);',
+    '--bar-bg:var(--panel);',
+    '--bar-fg:var(--dim);', '--bar-on:var(--text);', '--bar-line:var(--line);',
     '--bar-go-bg:var(--accent);', '--bar-go-fg:var(--bg);',
     '--on-accent:var(--bg);', '--glow:var(--accent);', '--glow-strength:13%;',
   ],
   light: [
-    '--bar-bg:linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #00b4f0));',
+    '--bar-bg:var(--accent);',
     '--bar-fg:rgba(255,255,255,.84);', '--bar-on:#ffffff;', '--bar-line:transparent;',
     '--bar-go-bg:#ffffff;', '--bar-go-fg:var(--accent);',
     '--on-accent:#ffffff;', '--glow:var(--accent);', '--glow-strength:16%;',

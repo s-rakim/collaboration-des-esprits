@@ -608,12 +608,18 @@ folded until you say otherwise. The chat's left panel (search, who is
 speaking, who is in the room) starts folded, so the conversation has the
 screen.
 
-The look is dark glass by default: neutral near-black, hairline borders,
-translucent panels and windows, white as the accent. Light mode is white
-panes with a blue bar. *Setup → Colours* has the other palettes, including
-**Blue glass** (blue on near-black), and every colour can be changed.
+The look is solid: opaque panels with a visible edge, one step of brightness
+between the page, a panel and a control, no transparency and nothing that moves
+when the pointer passes over it. Dark is neutral near-black with white as the
+accent; light is white panes with a blue bar. Spacing sits on a grid of 4, a
+control is 36 tall, corners are 8 on controls and 12 on panels. *Setup → Colours*
+has the other palettes, including **Blue glass** (blue on near-black), and every
+colour can be changed.
 
-On a phone the tabs become icons on the same single row.
+On a phone the tabs become a bar along the bottom, the conversation fills the
+screen with the chats and the "needs attention" list folded to a strip above
+and below it, and the PC's windows open full screen. On a tablet the tabs are
+icons across the top. Nothing on any page runs off the side at either size.
 
 ## The / menu
 

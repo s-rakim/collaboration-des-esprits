@@ -82,11 +82,10 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 #shell-page{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
 #shell-page>main{flex:1}
 /* A gutter down the right for the tabs that open the PC's windows, so they never sit on top of the page. */
-@media (min-width:701px){#shell-page{margin-right:38px}}
+@media (min-width:701px){#shell-page{margin-right:32px;border-right:1px solid var(--line)}}
 
-#topbar{flex:none;height:var(--top);position:relative;z-index:45;display:flex;align-items:center;gap:6px;padding:0 14px;
-  background:var(--bar-bg);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
-  border-bottom:1px solid var(--bar-line);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 14%,transparent),0 8px 30px rgba(0,0,0,.18)}
+#topbar{flex:none;height:var(--top);position:relative;z-index:45;display:flex;align-items:center;gap:8px;padding:0 var(--gutter);
+  background:var(--bar-bg);border-bottom:1px solid var(--bar-line)}
 #topbar svg{width:17px;height:17px;flex:none}
 #topbar .brand{display:flex;align-items:center;gap:9px;font-size:15.5px;font-weight:650;letter-spacing:-.02em;color:var(--bar-on);
   text-decoration:none;margin-right:10px;white-space:nowrap}
@@ -95,36 +94,35 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 
 #topbar .tabs{display:flex;align-items:stretch;gap:2px;height:100%;min-width:0;overflow-x:auto;scrollbar-width:none}
 #topbar .tabs::-webkit-scrollbar{display:none}
-#topbar a.tab,#topbar button.tab{position:relative;display:flex;align-items:center;gap:8px;padding:0 14px;margin:8px 0;border-radius:999px;
+#topbar a.tab,#topbar button.tab{position:relative;display:flex;align-items:center;gap:8px;padding:0 12px;margin:8px 0;min-height:0;border-radius:8px;box-shadow:none;
   font:inherit;font-size:14px;font-weight:500;color:var(--bar-fg);text-decoration:none;background:none;border:0;cursor:pointer;white-space:nowrap;
   transition:color .12s ease,background .12s ease}
 #topbar a.tab:hover,#topbar button.tab:hover{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 10%,transparent)}
-#topbar .tab.on{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 14%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 22%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--bar-on) 10%,transparent)}
-#topbar .tab.on::after{content:none}
+#topbar .tab.on{color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 12%,transparent);font-weight:600}
+#topbar .tab.on::after{content:'';position:absolute;left:10px;right:10px;bottom:-8px;height:2px;background:var(--bar-on)}
 
 #topbar .grow{flex:1;min-width:8px}
-#topbar .pill{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 12%,transparent);font:inherit;font-size:13.5px;cursor:pointer;
+#topbar .pill{display:flex;align-items:center;gap:7px;height:36px;min-height:0;padding:0 12px;border-radius:8px;box-shadow:none;font:inherit;font-size:13.5px;cursor:pointer;
   color:var(--bar-fg);background:color-mix(in srgb,var(--bar-on) 8%,transparent);border:1px solid color-mix(in srgb,var(--bar-on) 16%,transparent);white-space:nowrap;max-width:260px}
 #topbar .pill:hover{color:var(--bar-on);border-color:color-mix(in srgb,var(--bar-on) 35%,transparent)}
-#topbar .pill.icon{padding:0;width:34px;justify-content:center}
+#topbar .pill.icon{padding:0;width:36px;justify-content:center}
 #topbar .pill .t{overflow:hidden;text-overflow:ellipsis}
 #topbar .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
-#topbar .go{display:flex;align-items:center;gap:7px;height:34px;padding:0 15px;border-radius:999px;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 50%,transparent),0 6px 18px rgba(0,0,0,.25);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+#topbar .go{display:flex;align-items:center;gap:7px;height:36px;min-height:0;padding:0 14px;border-radius:8px;box-shadow:none;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
   color:var(--bar-go-fg);background:var(--bar-go-bg);border:1px solid var(--bar-go-bg);white-space:nowrap}
-#topbar .go:hover{filter:brightness(1.08)}
+#topbar .go:hover{background:color-mix(in srgb,var(--bar-go-bg) 88%,var(--bar-go-fg));border-color:transparent}
 #topbar .go kbd{font:500 10.5px var(--mono);opacity:.7;border:1px solid currentColor;border-radius:4px;padding:0 4px}
-#topbar .me{width:32px;height:32px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:13px;font-weight:650;
+#topbar .me{width:36px;height:36px;border-radius:8px;flex:none;display:grid;place-items:center;font-size:13px;font-weight:650;
   color:var(--bar-on);background:color-mix(in srgb,var(--bar-on) 14%,transparent);border:1px solid color-mix(in srgb,var(--bar-on) 22%,transparent);cursor:default}
 
 /* The menus that drop from the bar. */
 #topbar .drop{position:relative;display:flex;align-items:center;height:100%}
 .topmenu{position:absolute;top:calc(100% - 4px);right:0;z-index:50;min-width:270px;max-height:min(70vh,560px);overflow:auto;padding:6px;
-  background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
-  border:1px solid var(--hair);border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:menu-in .13s ease-out}
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--float)}
 .topmenu.left{left:0;right:auto}
 .topmenu[hidden]{display:none}
 @keyframes menu-in{from{opacity:0;transform:translateY(-6px)}}
-.topmenu a,.topmenu button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:9px;font:inherit;font-size:14px;
+.topmenu a,.topmenu button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:8px;font:inherit;font-size:14px;
   color:var(--dim);text-decoration:none;background:none;border:0;cursor:pointer;text-align:left}
 .topmenu a:hover,.topmenu button:hover{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
 .topmenu a.on{color:var(--text);background:color-mix(in srgb,var(--text) 8%,transparent)}
@@ -137,8 +135,8 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 .topmenu svg{width:17px;height:17px;flex:none}
 
 /* The button that puts a side panel away, pinned to its inner edge. */
-.panel-toggle{position:absolute;top:10px;left:6px;z-index:3;display:flex;align-items:center;justify-content:center;
-  width:28px;height:28px;padding:0;border:1px solid transparent;border-radius:8px;cursor:pointer;background:none;color:var(--faint)}
+.panel-toggle{position:absolute;top:8px;left:8px;z-index:3;display:flex;align-items:center;justify-content:center;
+  width:28px;height:28px;min-height:0;padding:0;border:1px solid transparent;border-radius:8px;cursor:pointer;background:none;color:var(--faint)}
 .panel-toggle:hover{background:var(--panel2);border-color:var(--line);color:var(--text)}
 .panel-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 
@@ -151,6 +149,30 @@ dialog .shell-msg:empty{display:none}
 @media (max-width:1180px){#topbar .go kbd{display:none} #topbar .pill{max-width:170px}}
 @media (max-width:980px){#topbar a.tab .t,#topbar button.tab .t{display:none} #topbar a.tab,#topbar button.tab{padding:0 11px}
   #topbar .brand b{display:none} #topbar .go .t{display:none}}
+
+/* A phone: the tabs move to the bottom, where a thumb is, as a bar of five and a More. */
+@supports (height:100dvh){body{height:100dvh}}
+@media (max-width:700px){
+  :root{--bottom-nav:60px}
+  #topbar{gap:8px;padding:0 12px}
+  #topbar .brand{margin-right:auto}
+  #topbar .me{display:none}
+  #topbar .pill{max-width:none;min-width:0}
+  #topbar .pill .t{max-width:38vw}
+  #topbar .go{padding:0;width:36px;justify-content:center}
+  #topbar .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--bottom-nav);z-index:46;overflow:visible;gap:0;
+    padding:0 4px env(safe-area-inset-bottom);background:var(--bar-bg);border-top:1px solid var(--bar-line);align-items:stretch}
+  #topbar .tabs>a.tab,#topbar .tabs>.drop{flex:1 1 0;min-width:0}
+  #topbar a.tab,#topbar button.tab{flex-direction:column;justify-content:center;gap:3px;margin:6px 2px;padding:0 2px;border-radius:10px;font-size:11px}
+  #topbar .drop{height:auto}
+  #topbar .drop button.tab{width:100%;height:calc(100% - 12px);margin:6px 2px}
+  #topbar .tab .t{display:block !important;font-size:11px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  #topbar .tab.on::after{content:none}
+  #topbar .tabs .topmenu{top:auto;bottom:calc(100% + 6px);left:auto;right:8px;min-width:240px}
+  #shell-page{padding-bottom:var(--bottom-nav)}
+  /* The PC's windows open from the Agents' PC page here; a strip of tabs down the edge would sit on the content. */
+  body #edge-tabs{display:none}
+}
 `;
 
 const path = () => location.pathname.replace(/\.html$/, '').replace(/^\/index$/, '/') || '/';
