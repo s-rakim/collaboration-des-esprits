@@ -1,113 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { EventEmitter } from 'node:events';
 
-import { createRouters, ROUTERS, ROUTER_ORDER } from '../src/routers.js';
 import { messagesAdapter, detectShape } from '../src/participants/messages.js';
-
-/** A child process that never really starts, so nothing is spawned in a test. */
-function fakeChild({ exitWith = null } = {}) {
-  const child = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.killed = false;
-  child.kill = () => { child.killed = true; };
-  if (exitWith !== null) setTimeout(() => child.emit('exit', exitWith), 10);
-  return child;
-}
-
-test('the three routers are described honestly, and the collision is written down', () => {
-  assert.deepEqual(ROUTER_ORDER, ['fcc', '9router', 'mcc']);
-  for (const id of ROUTER_ORDER) {
-    const r = ROUTERS[id];
-    assert.match(r.base, /^http:\/\/127\.0\.0\.1:\d+\/v1$/, `${id} needs a local base URL`);
-    assert.ok(r.command && r.install && r.home.startsWith('https://github.com/'));
-    assert.ok(['chat', 'messages'].includes(r.shape), `${id} must declare a shape`);
-  }
-  // The one that would otherwise be found out the hard way: two of them listen
-  // on the same port as shipped, so they cannot both be up.
-  assert.equal(ROUTERS.fcc.base, ROUTERS.mcc.base);
-  assert.notEqual(ROUTERS['9router'].base, ROUTERS.fcc.base);
-  // And the one that cannot do media, so the page never offers it for voice.
-  assert.equal(ROUTERS.fcc.media, false);
-});
-
-test('a router already running is used rather than started again', async () => {
-  const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"data":[{"id":"a"},{"id":"b"}]}');
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const port = server.address().port;
-
-  let spawned = 0;
-  const routers = createRouters({
-    spawnImpl: () => { spawned += 1; return fakeChild(); },
-    fetchImpl: (url, opts) => fetch(String(url).replace(/127\.0\.0\.1:\d+/, `127.0.0.1:${port}`), opts),
-  });
-
-  const out = await routers.start('fcc');
-  assert.equal(out.ok, true);
-  assert.equal(out.started, false);
-  assert.match(out.note, /already running/);
-  // Somebody else's router is as good as ours, and starting a second would
-  // only collide with the first.
-  assert.equal(spawned, 0, 'it should not have spawned anything');
-  server.close();
-});
-
-test('a router that dies on startup says what it said, and how to install it', async () => {
-  const routers = createRouters({
-    spawnImpl: () => fakeChild({ exitWith: 127 }),
-    // Nothing is listening, so health always fails.
-    fetchImpl: () => Promise.reject(new Error('connect ECONNREFUSED')),
-  });
-
-  const child = routers.start('fcc');
-  await assert.rejects(child, (err) => {
-    assert.match(err.message, /stopped straight away/);
-    assert.match(err.message, /exit 127/);
-    // The next thing to do, rather than only what went wrong — and the real
-    // installer, since the command it installs is fcc-server and "fcc" is not
-    // a command it ships at all.
-    assert.match(err.message, /install\.ps1|install\.sh/);
-    return true;
-  });
-  assert.equal(routers.running, null, 'a router that died must not be left marked as running');
-});
-
-test('only one router runs from here at a time', async () => {
-  const alive = http.createServer((req, res) => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"data":[]}');
-  });
-  await new Promise((r) => alive.listen(0, '127.0.0.1', r));
-  const port = alive.address().port;
-
-  // 9Router answers; the others do not.
-  const routers = createRouters({
-    spawnImpl: () => fakeChild(),
-    fetchImpl: (url, opts) => {
-      const target = String(url);
-      if (target.includes('20128')) return fetch(target.replace('20128', String(port)), opts);
-      return Promise.reject(new Error('connect ECONNREFUSED'));
-    },
-  });
-
-  const nine = await routers.start('9router');
-  assert.equal(nine.ok, true);
-  assert.equal(nine.started, false, 'it was already answering');
-
-  alive.close();
-});
-
-test('stopping something nothing started is not an error', () => {
-  const routers = createRouters({ spawnImpl: () => fakeChild(), fetchImpl: () => Promise.reject(new Error('no')) });
-  const out = routers.stop();
-  assert.equal(out.stopped, false);
-  assert.match(out.note, /nothing was started/);
-});
 
 // --------------------------------------------------------- the Messages shape
 
@@ -140,7 +35,7 @@ test('which shape a router speaks is asked, not assumed', async () => {
   assert.equal(await detectShape('http://127.0.0.1:9/v1', { timeoutMs: 500 }), 'chat');
 });
 
-test('a whole turn runs in the shape FCC serves', async () => {
+test('a whole turn runs in the Messages shape', async () => {
   const bodies = [];
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -256,13 +151,3 @@ test('a refused key is flagged rather than only worded, in this shape too', asyn
   server.close();
 });
 
-test('each router is started by a command it actually installs', () => {
-  // "fcc" is not a command FCC ships — its own pyproject names the
-  // server entry point fcc-server — so starting it would have failed with the
-  // same "not recognized" a missing program gives, and looked like our bug.
-  assert.equal(ROUTERS.fcc.command, 'fcc-server');
-  assert.equal(ROUTERS.mcc.command, 'mcc-server');
-  assert.equal(ROUTERS['9router'].command, '9router');
-  // And every card can say how to get the thing it cannot find.
-  for (const id of ROUTER_ORDER) assert.ok(ROUTERS[id].install.trim().length > 10, id);
-});

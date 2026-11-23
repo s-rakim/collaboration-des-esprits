@@ -1,11 +1,10 @@
 /**
  * The Messages shape.
  *
- * FCC serves /v1/messages and /v1/responses and has no
- * /chat/completions at all, so without this the room pointed at it would 404
- * every turn. 9Router and MCC serve both, and for those the OpenAI
- * adapter is still the one used — this exists for the router that only speaks
- * the other language.
+ * Some endpoints serve /v1/messages and have no /chat/completions at all, so
+ * without this a room pointed at one would 404 every turn. Endpoints that
+ * serve both keep the OpenAI adapter — this exists for the ones that only
+ * speak the other language.
  *
  * Three differences do the work:
  *
@@ -16,7 +15,7 @@
  *     messages is refused outright.
  *
  * The transcript is kept in the OpenAI shape internally and translated on the
- * way out, so one conversation survives being moved between routers.
+ * way out, so one conversation survives being moved between endpoints.
  */
 
 const TURN_TIMEOUT_MS = 180_000;

@@ -75,8 +75,7 @@ export function createSeats(db, connections) {
         // until its own default — which reads as the endpoint hanging.
         tokenParam: conn.extra?.tokenParam ?? null,
         // Which request language this endpoint speaks. Discovered by find/test
-        // rather than guessed, because two of the routers listen on the same
-        // port as shipped and only one of them has /chat/completions.
+        // rather than guessed: some endpoints only serve the Messages shape.
         shape: conn.extra?.shape ?? null,
       };
     },

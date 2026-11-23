@@ -331,9 +331,8 @@ polling. That is what makes the room feel live.
 
 Everything the room can reach is a **connection** you define: a name, a URL, a
 key, and what it is for. Nothing is a fixed list. Presets fill the boxes in for
-OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, xAI, NVIDIA, Ollama, LM
-Studio and MCC,
-but you can type your own URL and model for anything that isn't there — a
+OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, xAI, NVIDIA, Ollama and LM
+Studio, but you can type your own URL and model for anything that isn't there — a
 provider that launches next month needs no change to this code.
 
 Add as many as you want, including several from one provider under different
@@ -356,28 +355,6 @@ key set in your shell needs no typing.
 need a model first: with the box empty it asks the endpoint what it serves,
 proves the key against the first model your account can actually reach, and
 keeps that one.
-
-### Using MCC as the way out
-
-MCC is a local
-proxy in front of many providers. It speaks the same shape this app speaks, on
-the same paths, so it is not a special case here: it is one more endpoint, and
-pressing **Use MCC** on the setup page asks it what it can reach and
-writes down a row per job — chat, voice, ears, images.
-
-Worth doing if you have more than a couple of providers, because it moves a
-problem out of this app: MCC holds the keys, rotates them, falls back between
-providers when one is down, and keeps the cost accounting. The rows it leaves
-behind have no key in them at all.
-
-It has to be running first (`mcc-server`, default `http://127.0.0.1:8082/v1`),
-and the rows are ordinary afterwards — edit them, delete them, point them
-elsewhere. If MCC goes away, nothing in here needs to know.
-
-Rows for voice, ears and images get a model only if something in MCC's
-catalogue obviously suits the job; otherwise the box is left empty and **find**
-on that row fills it from the list. A guess that looks confident and is wrong
-is worse than a box that says it needs you.
 
 ## The models in your chat
 
